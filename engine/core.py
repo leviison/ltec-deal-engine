@@ -125,13 +125,45 @@ def case_cap_basis(case: dict, deal: dict, nxt5: float) -> float:
     return case["exit_cap"]
 
 
-def case_operations(case: dict, deal: dict) -> dict:
-    """Annual P&L for Years 1..H plus the NOI of the year after the sale (what a buyer prices), with the debt
-    schedule - the assumed loan, or a refinance at the end of year R. Past Year 5 every line grows at the case's
-    long-run rate (the rate it uses for Year-6 NOI)."""
-    H = hold_years(deal)
-    Y = uw_years(deal)
-    n = max(H + 1, Y + 1)
+def _merge(base: dict, ov: dict) -> dict:
+    out = dict(base)
+    for k, v in ov.items():
+        out[k] = _merge(base[k], v) if isinstance(v, dict) and isinstance(base.get(k), dict) else v
+    return out
+
+
+def case_deal(inp: dict, key: str) -> dict:
+    """The deal as one case sees it: the deal inputs with that case's deal_overrides merged in (e.g. a downside
+    case where a buyer pays nothing for the tax rebates left at the sale)."""
+    ov = inp["cases"][key].get("deal_overrides")
+    return _merge(inp["deal"], ov) if ov else inp["deal"]
+
+
+def case_lines(case: dict, deal: dict, n: int, cases: dict | None = None):
+    """Rents, other income, operating expenses and CapEx for years 1..n.
+
+    kind 'derived' (our cases on any deal) starts from another case's lines (`from`, usually the sponsor's) and
+    adjusts them: each of rents / other income / opex either follows the source year by year ('source', rents and
+    each times a factor) or grows from the source's Year 1 at a set rate ('growth'); `rent_adjust` adds $
+    by year (e.g. concessions above the sponsor's); `opex_add` adds $ from `opex_add_start_year`, growing at
+    `opex_add_growth` (e.g. a tax reassessment). CapEx follows the source."""
+    if case["kind"] == "derived":
+        r, o, x, cx = case_lines(cases[case["from"]], deal, n, cases)
+
+        def path(base, mode, g, factor):
+            out = [base[0] * factor]
+            for i in range(1, n):
+                out.append(out[-1] * (1 + g) if mode == "growth" else base[i] * factor)
+            return out
+
+        adj = case["rent_adjust"]
+        r2 = [v + (adj[i] if i < len(adj) else 0.0)
+              for i, v in enumerate(path(r, case["rent_path"], case["rent_growth"], case["rent_factor"]))]
+        o2 = path(o, case["other_income_path"], case["other_income_growth"], case["other_income_factor"])
+        st = int(case["opex_add_start_year"])
+        x2 = [v + (case["opex_add"] * (1 + case["opex_add_growth"]) ** (i + 1 - st) if i + 1 >= st else 0.0)
+              for i, v in enumerate(path(x, case["opex_path"], case["opex_growth"], case["opex_factor"]))]
+        return r2, o2, x2, cx
     if case["kind"] in ("explicit", "custom"):
         if case["kind"] == "explicit":
             gr = go = gx = case["y6_noi_growth"]
@@ -149,6 +181,17 @@ def case_operations(case: dict, deal: dict) -> dict:
         else:
             o_all = _grow([case["other_income_y1"]], n, case["other_income_growth"])
         x_all = _grow([case["opex_y1"]], n, case["opex_growth"])
+    capex_in = list(case["capex"]) if "capex" in case else [deal["annual_capex_reserves"]]
+    return r_all, o_all, x_all, (capex_in + [capex_in[-1]] * n)[:n]
+
+
+def case_operations(case: dict, deal: dict, cases: dict | None = None) -> dict:
+    """Annual P&L for Years 1..H plus the NOI a buyer prices, with the debt schedule - the loan, or a refinance at
+    the end of year R. Past the underwritten years every line grows at the case's long-run rate."""
+    H = hold_years(deal)
+    Y = uw_years(deal)
+    n = max(H + 1, Y + 1)
+    r_all, o_all, x_all, cx_all = case_lines(case, deal, n, cases)
     noi_all = [r + o - x for r, o, x in zip(r_all, o_all, x_all)]
     # the NOI a buyer prices at the end of year H: next year's (forward) or the final hold year's (trailing)
     exit_noi = noi_all[H] if deal["exit_noi_basis"] == "forward" else noi_all[H - 1]
@@ -156,8 +199,7 @@ def case_operations(case: dict, deal: dict) -> dict:
     rents, oi, opex = r_all[:H], o_all[:H], x_all[:H]
     income = [r + o for r, o in zip(rents, oi)]
     noi = [i - e for i, e in zip(income, opex)]
-    capex_in = list(case["capex"]) if "capex" in case else [deal["annual_capex_reserves"]]
-    capex = (capex_in + [capex_in[-1]] * n)[:H]
+    capex = cx_all[:H]
     am_fee = [i * deal["asset_mgmt_fee_pct_of_income"] for i in income]
     assume = [deal.get("assumption_fee_pct", 0.0) * deal["loan_amount"]] + [0.0] * (H - 1)
 
@@ -408,11 +450,12 @@ def vehicle_periods(pay_dates: list[date], pay_amts: list[float], inp: dict):
 # ---------------------------------------------------------------- top-level
 
 def run_case(key: str, inp: dict) -> dict:
-    deal = inp["deal"]
+    deal = case_deal(inp, key)
+    inp_c = inp if deal is inp["deal"] else dict(inp, deal=deal)
     case = inp["cases"][key]
-    ops = case_operations(case, deal)
+    ops = case_operations(case, deal, inp["cases"])
     ex = case_exit(case, ops, deal)
-    out = _returns(ops, ex["net_sale_proceeds"], inp)
+    out = _returns(ops, ex["net_sale_proceeds"], inp_c)
     return {"key": key, "label": case["label"], "note": case.get("note", ""), "operations": ops, "exit": ex, **out}
 
 
@@ -567,7 +610,8 @@ def sensitivity(inp: dict, case: dict | None = None, *, include_own: bool = Fals
     """LP IRR on one case's operations across exit caps and Year-6 NOI factors (v10 'Sensitivity', which used
     Adjusted Base). include_own adds the case's own exit cap as a row when it isn't already on the grid."""
     case = case or run_case("custom", inp)
-    deal, s = inp["deal"], inp["sensitivity"]
+    deal, s = case_deal(inp, case["key"]), inp["sensitivity"]
+    inp = inp if deal is inp["deal"] else dict(inp, deal=deal)
     ops, y6 = case["operations"], case["operations"]["y6_noi"]
     own = case["exit"]["exit_cap"]
     caps = list(s["exit_caps"])

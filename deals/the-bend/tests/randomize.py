@@ -39,6 +39,17 @@ def randomized(base, seed):
             c[key] = [v * r.uniform(0.85, 1.15) for v in c[key]][:r.choice([5, 8])]
         c.update(exit_cap=r.uniform(0.045, 0.07), exit_method=r.choice(["cap_rate", "cap_rate", "sale_price"]),
                  sale_price=r.uniform(5e7, 8e7), rent_growth_y6=r.uniform(-0.01, 0.05), opex_growth_y6=r.uniform(0, 0.05))
+    for k in ("base", "downside", "stress"):  # our derived cases
+        c = inp["cases"][k]
+        c.update(**{"from": r.choice(["sponsor", "sponsor", "custom"])}, rent_factor=r.uniform(0.9, 1.05),
+                 rent_path=r.choice(["source", "growth"]), rent_growth=r.uniform(-0.02, 0.05),
+                 rent_adjust=[r.uniform(-2e5, 5e4) for _ in range(r.randint(0, 6))],
+                 other_income_factor=r.uniform(0.9, 1.05), other_income_path=r.choice(["source", "growth"]),
+                 other_income_growth=r.uniform(-0.02, 0.05), opex_factor=r.uniform(0.95, 1.1),
+                 opex_path=r.choice(["source", "growth"]), opex_growth=r.uniform(0, 0.06), opex_add=r.uniform(0, 3e5),
+                 opex_add_start_year=r.randint(1, 6), opex_add_growth=r.uniform(0, 0.05), exit_cap=r.uniform(0.045, 0.075))
+        c["deal_overrides"] = r.choice([{}, {"below_noi_income": {"sale_value": r.choice(["npv", "none"]), "npv_rate": r.uniform(0.05, 0.1)}},
+                                        {"selling_cost_pct": r.uniform(0.01, 0.04), "exit_noi_basis": r.choice(["forward", "trailing"])}])
     d["hold_years"] = r.choice([5, 5, 3, 4, 6, 7, 8, 10])
     if r.random() < 0.4 and d["hold_years"] > 1:
         d["refi"].update(enabled=True, year=r.randint(1, d["hold_years"] - 1), sizing=r.choice(["ltv", "amount"]),

@@ -1,0 +1,33 @@
+{
+  "_about": "LTEC's standard cases, added to a new deal by scripts/add_standard_cases.py. Each is a 'derived' case built from the deal's sponsor case. exit_cap_spread is added to the sponsor case's exit cap; deal_overrides_if_below_noi applies only when the deal has below-NOI income (e.g. a TIF rebate). These are starting points: tune each deal's cases to its own diligence and give them sources.",
+  "base": {
+    "label": "Adjusted Base",
+    "rent_factor": 0.99, "rent_adjust": [], "rent_path": "source", "rent_growth": 0.03,
+    "other_income_factor": 1.0, "other_income_path": "source", "other_income_growth": 0.03,
+    "opex_factor": 1.03, "opex_path": "source", "opex_growth": 0.03,
+    "opex_add": 0, "opex_add_start_year": 2, "opex_add_growth": 0.03,
+    "exit_cap_spread": 0.0025,
+    "deal_overrides_if_below_noi": {"below_noi_income": {"npv_rate": 0.08}},
+    "note": "Sponsor's operations 1% lower on rents and 3% higher on expenses; exit cap 0.25% above the sponsor's."
+  },
+  "downside": {
+    "label": "Downside",
+    "rent_factor": 0.97, "rent_adjust": [], "rent_path": "source", "rent_growth": 0.02,
+    "other_income_factor": 1.0, "other_income_path": "growth", "other_income_growth": 0.02,
+    "opex_factor": 1.05, "opex_path": "growth", "opex_growth": 0.035,
+    "opex_add": 0, "opex_add_start_year": 2, "opex_add_growth": 0.03,
+    "exit_cap_spread": 0.0065,
+    "deal_overrides_if_below_noi": {"below_noi_income": {"sale_value": "none"}},
+    "note": "Rents 3% below the sponsor's path; other income +2%/yr; expenses 5% higher, growing 3.5%; exit cap 0.65% above the sponsor's."
+  },
+  "stress": {
+    "label": "Stress",
+    "rent_factor": 0.98, "rent_adjust": [], "rent_path": "growth", "rent_growth": 0.01,
+    "other_income_factor": 0.95, "other_income_path": "growth", "other_income_growth": 0.0,
+    "opex_factor": 1.07, "opex_path": "growth", "opex_growth": 0.04,
+    "opex_add": 0, "opex_add_start_year": 2, "opex_add_growth": 0.03,
+    "exit_cap_spread": 0.0115,
+    "deal_overrides_if_below_noi": {"below_noi_income": {"sale_value": "none"}},
+    "note": "No growth beyond 1%/yr from the sponsor's Year 1, rents 2% lower; other income 5% lower and flat; expenses 7% higher, growing 4%; exit cap 1.15% above the sponsor's."
+  }
+}

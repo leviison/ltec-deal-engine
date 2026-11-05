@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "meta": {
     "slug": "the-bend",
     "name": "The Bend",
@@ -112,6 +112,11 @@
         "note": "Deck Year-1 EGI $5.171M / NOI $3.026M; model $5.178M / $3.033M (loss-to-lease changed). Deck sample distributions ($6,201 Y1) are from the earlier version; model gives $6,240."
       },
       {
+        "item": "Lease-up and the Year-5 step-down",
+        "status": "open",
+        "note": "Sponsor's rents rest on lease-up: economic vacancy 12.6% (Year 1) -> 8.7% (Year 5), with general vacancy 7% -> 5% and concessions / bad debt 1% -> 0.5% in Year 5, the year the sale is priced on (Year-5 NOI +9.2%). Its Year-1 GPR ($5.02M) sits below Aug-2026 T-12 GPR ($5.16M annualized); a $139/unit 'renovation' premium at $0 cost brings it back. Overall GPR grows ~3.5%/yr from today."
+      },
+      {
         "item": "TIF rebate value at sale",
         "status": "open",
         "note": "Model adds $3.36M to sale proceeds: NPV at 6% of the 2032-2041 rebates ($475k/yr, $238k in 2041). Needs the TIF agreement: transferable to a buyer? paid as a bond? Without it LP IRR falls (see 'No TIF value at sale')."
@@ -119,7 +124,7 @@
       {
         "item": "Property taxes",
         "status": "open",
-        "note": "Model: $650k Y1, $845k Y2 (+3%/yr), TIF rebate $475k below NOI. T-12 taxes $1.33M incl. a $760k Dec-2025 true-up; Jan-Aug 2026 run-rate ~$29-44k/month. Reassessment after a $52M sale?"
+        "note": "Model: $650k Y1, $845k Y2 (+3%/yr), TIF rebate $475k below NOI. T-12 taxes $1.33M incl. a $760k Dec-2025 true-up; Jan-Aug 2026 run-rate ~$29-44k/month. Reassessment after a $52M sale? Indiana caps rental property at 2% of gross AV: $1.04M on a $52M assessment (Downside / Stress assume it)."
       },
       {
         "item": "Lease-up and occupancy",
@@ -157,7 +162,7 @@
     "ui": {
       "deal_short": "The Bend",
       "sponsor_short": "Focused / Elkstone",
-      "primary_case": "sponsor",
+      "primary_case": "base",
       "location": "Clarksville, IN (Louisville MSA)",
       "loan_title": "Senior loan",
       "loan_note": "Deck: $39M, 5.84% fixed, 60 months interest-only, 5-year term.",
@@ -246,7 +251,10 @@
     "sensitivity.noi_factors": "Assumption: +/-10%",
     "warehouse": "Assumption: pass-through until LTEC decides on an SPV (no fees, no promote, one member)",
     "warehouse.close_date": "Deck p21: targeted close Oct 10, 2026 (slipped; model assumes Jan 31, 2027)",
-    "direct_investors": "None"
+    "direct_investors": "None",
+    "cases.base": "LTEC assumption (Nov 5, 2026), applied to the sponsor case. Rent path: sponsor's (its Year-5 GPR is ~3.5%/yr above Aug-2026 T-12 GPR), 1% lower. Concessions: T-12 $210k vs model Year 1 $50k. Expenses: T-12 ex-taxes $1.64M vs model Year 1 $1.50M. Taxes: Indiana caps rental property at 2% of gross AV (DLGF circuit-breaker fact sheet, Nov 2025) = $1.04M on $52M vs model $845k; about half assumed",
+    "cases.downside": "LTEC assumption (Nov 5, 2026). Taxes at the 2% cap: +$195k vs model Year 2. Concessions at T-12 level, burning off. No TIF value to a buyer",
+    "cases.stress": "LTEC assumption (Nov 5, 2026). No lease-up, +1% rents, taxes at the 2% cap, 6.75% exit, no TIF value at sale"
   },
   "version": "bend-v1",
   "as_of": "2026-11-04",
@@ -406,6 +414,94 @@
       "exit_cap": 0.056,
       "sale_price": 68637815.25278169,
       "note": "The sponsor model's Years 1-8 (rental revenue after vacancy, concessions, bad debt and loss-to-lease; RUBS + other income; operating expenses incl. management fee and taxes before the TIF rebate; lender reserves). Sale at the end of Year 5 on Year-5 NOI at a 5.6% cap."
+    },
+    "base": {
+      "label": "Adjusted Base",
+      "kind": "derived",
+      "from": "sponsor",
+      "rent_factor": 0.99,
+      "rent_adjust": [
+        -100000,
+        -50000
+      ],
+      "rent_path": "source",
+      "rent_growth": 0.035,
+      "other_income_factor": 1.0,
+      "other_income_path": "source",
+      "other_income_growth": 0.03,
+      "opex_factor": 1.03,
+      "opex_path": "source",
+      "opex_growth": 0.03,
+      "opex_add": 100000,
+      "opex_add_start_year": 2,
+      "opex_add_growth": 0.03,
+      "exit_cap": 0.0585,
+      "deal_overrides": {
+        "below_noi_income": {
+          "sale_value": "npv",
+          "npv_rate": 0.08
+        }
+      },
+      "note": "Sponsor's rent path (lease-up to 5% vacancy by Year 5) stabilizing 1% lower; concessions $100k / $50k above the sponsor's in Years 1-2; expenses 3% over the sponsor (T-12 runs higher); taxes partly reassessed (+$100k from Year 2); 5.85% exit cap; TIF rebates left at the sale valued at 8%."
+    },
+    "downside": {
+      "label": "Downside",
+      "kind": "derived",
+      "from": "sponsor",
+      "rent_factor": 0.97,
+      "rent_adjust": [
+        -160000,
+        -120000,
+        -80000
+      ],
+      "rent_path": "source",
+      "rent_growth": 0.02,
+      "other_income_factor": 1.0,
+      "other_income_path": "growth",
+      "other_income_growth": 0.02,
+      "opex_factor": 1.05,
+      "opex_path": "growth",
+      "opex_growth": 0.035,
+      "opex_add": 195000,
+      "opex_add_start_year": 2,
+      "opex_add_growth": 0.03,
+      "exit_cap": 0.0625,
+      "deal_overrides": {
+        "below_noi_income": {
+          "sale_value": "none",
+          "npv_rate": 0.06
+        }
+      },
+      "note": "Lease-up stalls 3% short of the sponsor's; T-12 concessions burn off over 3 years; other income +2%/yr; expenses 5% over the sponsor growing 3.5%; taxes at Indiana's 2% cap on a $52M assessment (+$195k from Year 2); 6.25% exit cap; a buyer pays nothing for the TIF rebates left."
+    },
+    "stress": {
+      "label": "Stress",
+      "kind": "derived",
+      "from": "sponsor",
+      "rent_factor": 0.98,
+      "rent_adjust": [
+        -160000,
+        -160000
+      ],
+      "rent_path": "growth",
+      "rent_growth": 0.01,
+      "other_income_factor": 0.95,
+      "other_income_path": "growth",
+      "other_income_growth": 0.0,
+      "opex_factor": 1.07,
+      "opex_path": "growth",
+      "opex_growth": 0.04,
+      "opex_add": 195000,
+      "opex_add_start_year": 2,
+      "opex_add_growth": 0.03,
+      "exit_cap": 0.0675,
+      "deal_overrides": {
+        "below_noi_income": {
+          "sale_value": "none",
+          "npv_rate": 0.06
+        }
+      },
+      "note": "No lease-up gains: rents 2% below the sponsor's Year 1, then +1%/yr; T-12 concessions for 2 years; other income 5% lower and flat; expenses 7% over growing 4%; taxes at the 2% cap (+$195k from Year 2); 6.75% exit cap; nothing for the TIF at sale."
     },
     "custom": {
       "label": "Custom",

@@ -57,8 +57,35 @@
     return c.exit_cap;
   }
 
-  function caseOperations(c, deal) {
-    const H = holdYears(deal), Y = uwYears(deal), n = Math.max(H + 1, Y + 1);
+  function merge(base, ov) {
+    const out = Object.assign({}, base);
+    Object.keys(ov).forEach((k) => {
+      const v = ov[k];
+      out[k] = v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object" && !Array.isArray(base[k]) ? merge(base[k], v) : v;
+    });
+    return out;
+  }
+  // The deal as one case sees it: deal inputs with that case's deal_overrides merged in (see core.py).
+  function caseDeal(inp, key) {
+    const ov = inp.cases[key].deal_overrides;
+    return ov ? merge(inp.deal, ov) : inp.deal;
+  }
+  // Rents, other income, opex and CapEx for years 1..n; 'derived' cases adjust another case's lines (see core.py).
+  function caseLines(c, deal, n, cases) {
+    if (c.kind === "derived") {
+      const [r, o, x, cx] = caseLines(cases[c.from], deal, n, cases);
+      const path = (base, mode, g, factor) => {
+        const out = [base[0] * factor];
+        for (let i = 1; i < n; i++) out.push(mode === "growth" ? out[i - 1] * (1 + g) : base[i] * factor);
+        return out;
+      };
+      const adj = c.rent_adjust;
+      const r2 = path(r, c.rent_path, c.rent_growth, c.rent_factor).map((v, i) => v + (i < adj.length ? adj[i] : 0));
+      const o2 = path(o, c.other_income_path, c.other_income_growth, c.other_income_factor);
+      const st = Math.trunc(c.opex_add_start_year);
+      const x2 = path(x, c.opex_path, c.opex_growth, c.opex_factor).map((v, i) => v + (i + 1 >= st ? c.opex_add * Math.pow(1 + c.opex_add_growth, i + 1 - st) : 0));
+      return [r2, o2, x2, cx];
+    }
     let rAll, oAll, xAll;
     if (c.kind === "explicit" || c.kind === "custom") {
       const gr = c.kind === "explicit" ? c.y6_noi_growth : c.rent_growth_y6;
@@ -71,14 +98,20 @@
       oAll = c.other_income_explicit ? grow(c.other_income_explicit, n, g3) : grow([c.other_income_y1], n, c.other_income_growth);
       xAll = grow([c.opex_y1], n, c.opex_growth);
     }
+    const capexIn = c.capex ? c.capex.slice() : [deal.annual_capex_reserves];
+    return [rAll, oAll, xAll, capexIn.concat(Array(n).fill(capexIn[capexIn.length - 1])).slice(0, n)];
+  }
+
+  function caseOperations(c, deal, cases) {
+    const H = holdYears(deal), Y = uwYears(deal), n = Math.max(H + 1, Y + 1);
+    const [rAll, oAll, xAll, cxAll] = caseLines(c, deal, n, cases);
     const noiAll = rAll.map((r, i) => r + oAll[i] - xAll[i]);
     // the NOI a buyer prices at the end of year H: next year's (forward) or the final hold year's (trailing)
     const exitNoi = deal.exit_noi_basis === "forward" ? noiAll[H] : noiAll[H - 1];
     const rents = rAll.slice(0, H), oi = oAll.slice(0, H), opex = xAll.slice(0, H);
     const income = rents.map((r, i) => r + oi[i]);
     const noi = income.map((x, i) => x - opex[i]);
-    const capexIn = c.capex ? c.capex.slice() : [deal.annual_capex_reserves];
-    const capex = capexIn.concat(Array(n).fill(capexIn[capexIn.length - 1])).slice(0, H);
+    const capex = cxAll.slice(0, H);
     const am = income.map((x) => x * deal.asset_mgmt_fee_pct_of_income);
     const assume = [(deal.assumption_fee_pct || 0) * deal.loan_amount].concat(Array(H - 1).fill(0));
 
@@ -243,11 +276,12 @@
 
   // ------------------------------------------------------------ top level
   function runCase(key, inp) {
-    const c = inp.cases[key];
-    const ops = caseOperations(c, inp.deal);
-    const ex = caseExit(c, ops, inp.deal);
+    const c = inp.cases[key], deal = caseDeal(inp, key);
+    const inpC = deal === inp.deal ? inp : Object.assign({}, inp, { deal });
+    const ops = caseOperations(c, deal, inp.cases);
+    const ex = caseExit(c, ops, deal);
     return Object.assign({ key, label: c.label, note: c.note || "", operations: ops, exit: ex },
-                         returnsFor(ops, ex.net_sale_proceeds, inp));
+                         returnsFor(ops, ex.net_sale_proceeds, inpC));
   }
 
   // Year-5 sale added to operating cash, run through the waterfall.
@@ -360,7 +394,8 @@
   // own exit cap as a row when it isn't already on the grid.
   function sensitivity(inp, kase, includeOwn) {
     kase = kase || runCase("custom", inp);
-    const deal = inp.deal, s = inp.sensitivity;
+    const deal = caseDeal(inp, kase.key), s = inp.sensitivity;
+    if (deal !== inp.deal) inp = Object.assign({}, inp, { deal });
     const ops = kase.operations, y6 = ops.y6_noi, own = kase.exit.exit_cap;
     let caps = s.exit_caps.slice();
     if (includeOwn && !caps.some((c) => Math.abs(c - own) < 1e-9)) caps = caps.concat([own]).sort((a, b) => a - b);
@@ -690,7 +725,7 @@
              warehouse: warehouse(inp, cases) };
   }
 
-  const api = { runAll, runCase, caseOperations, sensitivity, warehouseCase, runWaterfall, irr, xirr, addMonths };
+  const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouseCase, runWaterfall, irr, xirr, addMonths };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DealEngine = api;
 })(typeof window !== "undefined" ? window : this);

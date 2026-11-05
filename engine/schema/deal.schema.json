@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/leviison/ltec-deal-engine/engine/schema/deal.schema.json",
-  "title": "LTEC deal file, schema version 2",
-  "description": "One deal = one file at deals/<slug>/deal.json. The engines read only this file. Keys starting with '_' are notes and are ignored by the engines. v1 = the Siena v1 input set plus meta and sources. v2 (The Bend) adds deal.exit_noi_basis, deal.reserves_returned_at_sale, deal.below_noi_income, waterfall.return_of_capital, investor.side_letter and meta.alternatives.",
+  "title": "LTEC deal file, schema version 3",
+  "description": "One deal = one file at deals/<slug>/deal.json. The engines read only this file. Keys starting with '_' are notes and are ignored by the engines. v1 = the Siena v1 input set plus meta and sources. v2 (The Bend) adds deal.exit_noi_basis, deal.reserves_returned_at_sale, deal.below_noi_income, waterfall.return_of_capital, investor.side_letter and meta.alternatives. v3 adds case kind 'derived' (our cases adjusted from another case, usually the sponsor's) and per-case deal_overrides.",
   "type": "object",
   "required": [
     "schema_version",
@@ -21,7 +21,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 2
+      "const": 3
     },
     "meta": {
       "type": "object",
@@ -728,8 +728,66 @@
             "exit_cap",
             "sale_price"
           ]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "derived"
+            },
+            "rent_path": {
+              "enum": [
+                "source",
+                "growth"
+              ]
+            },
+            "other_income_path": {
+              "enum": [
+                "source",
+                "growth"
+              ]
+            },
+            "opex_path": {
+              "enum": [
+                "source",
+                "growth"
+              ]
+            },
+            "rent_adjust": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "opex_add_start_year": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "from",
+            "rent_factor",
+            "rent_adjust",
+            "rent_path",
+            "rent_growth",
+            "other_income_factor",
+            "other_income_path",
+            "other_income_growth",
+            "opex_factor",
+            "opex_path",
+            "opex_growth",
+            "opex_add",
+            "opex_add_start_year",
+            "opex_add_growth",
+            "exit_cap"
+          ]
         }
-      ]
+      ],
+      "properties": {
+        "deal_overrides": {
+          "type": "object",
+          "description": "Deal inputs this case changes (merged over deal), e.g. {below_noi_income: {sale_value: 'none'}}"
+        }
+      }
     }
   }
 }

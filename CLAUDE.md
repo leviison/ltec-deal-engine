@@ -10,9 +10,14 @@
 - Schema changes bump `schema_version`, update every deal file, and the page's `upgradeInputs` so saved scenarios load.
 - Build a page with `python scripts/build_web.py <slug>`. Dashboard wording, hints, facts and diligence come from the
   deal's `meta` / `meta.ui`; never put deal-specific text in `web/index.template.html`.
-- The Bend dashboard: https://claude.ai/artifact/2j1bHRKCAy91vXT4LZGPiG — republish `dist/the-bend/index.html` there
-  (pass that URL from another session). Capabilities: `db` (rule: `scenarios` read view / write interact), `user`,
-  `downloads`; omit `capabilities` on republish to keep them. Do not republish over the Siena v1 dashboard
-  (https://claude.ai/artifact/XXaQnEbg8T1by6PYY17osj); it stays on leviison/siena-villas-model until replaced.
+- The dashboard is one page with every deal and a deal picker (`#<slug>` opens a deal):
+  https://claude.ai/artifact/DLhZKbmvQwLC1NFoYySKvZ ("LTEC Deal Engine"). Rebuild with `python scripts/build_web.py`
+  (no args) and republish `dist/index.html` there. Capabilities: `db` (rule: `scenarios` read view / write interact),
+  `user`, `downloads`; omit `capabilities` on republish to keep them. Saved scenarios carry a `deal` slug.
+  The single-deal Bend page (https://claude.ai/artifact/2j1bHRKCAy91vXT4LZGPiG) is superseded.
+  Do not republish over the Siena v1 dashboard (https://claude.ai/artifact/XXaQnEbg8T1by6PYY17osj); it stays on
+  leviison/siena-villas-model until replaced.
+- New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from
+  the sponsor case; defaults in `engine/standard_cases.json`), then tune them to the deal's diligence and source them.
 - Context and diligence: claude.ai Project "deal engine" (doc `claude/deal-engine-context.md`); Siena's own context is
   in the "Siena Villas" project.

@@ -21,20 +21,49 @@ LP IRR 17.0861%, 2.0611x), the 'UW Model' tab waterfall as an alternative (17.06
 table, and the deck's $100k sample. `meta.alternatives` holds named variants (UW-tab waterfall, the Oct 14
 side-letter offer, no TIF value at sale); `meta.diligence` the open questions.
 
+## Dashboard
+
+One page, every deal: **LTEC Deal Engine** (https://claude.ai/artifact/DLhZKbmvQwLC1NFoYySKvZ). Pick a deal at the top
+(or open `#the-bend`, `#siena-villas`); each deal shows its own cases, terms, variants, diligence and saved scenarios.
+`python scripts/build_web.py` builds it (`dist/index.html`); `python scripts/build_web.py <slug>` builds one deal alone.
+Adding a deal folder adds it to the picker on the next build.
+
+## Our cases on every deal
+
+Each deal shows the sponsor's case next to ours. Our cases are `derived`: they take the sponsor case's rows and adjust
+them, so any deal can carry them whatever shape the sponsor's model has.
+
+| Setting | What it does |
+|---|---|
+| `rent_factor`, `other_income_factor`, `opex_factor` | scale the source's line every year (0.99 = 1% lower) |
+| `rent_path` / `other_income_path` / `opex_path` | `source` follows the sponsor's year-by-year path; `growth` grows from Year 1 at `*_growth` |
+| `rent_adjust` | $ by year, e.g. concessions above the sponsor's (negative) |
+| `opex_add`, `opex_add_start_year`, `opex_add_growth` | an added expense, e.g. a tax reassessment |
+| `exit_cap` | the case's exit cap |
+| `deal_overrides` | deal inputs this case changes, e.g. `{"below_noi_income": {"sale_value": "none"}}` |
+
+`python scripts/add_standard_cases.py <slug>` adds LTEC's standard Adjusted Base / Downside / Stress to a new deal from
+`engine/standard_cases.json` (exit caps as spreads over the sponsor's), marked `TODO` until tuned to the deal.
+On The Bend, defaults give 13.4% / 8.2% / loss; the tuned cases (concessions at the T-12 level, taxes at Indiana's 2%
+cap, no TIF value at sale in the downside) give 11.8% / 3.4% / loss against the sponsor's 17.1%.
+Siena keeps its v10 cases (growth kind), which tie to the workbook.
+
 ## Layout
 
 ```
 engine/core.py              Python reference engine (operations, debt, refinance, sponsor waterfall, timing, vehicle)
 engine/core.js              line-for-line JS port, runs in the dashboard
-engine/schema/deal.schema.json   what a deal file must contain (schema_version 2)
+engine/schema/deal.schema.json   what a deal file must contain (schema_version 3)
 deals/<slug>/deal.json      the deal: meta, per-input sources, and every assumption
 deals/<slug>/reference/     sponsor / our workbooks and the extracted tie-out targets
 deals/<slug>/tests/         the deal's acceptance tests (tie-outs) and its randomizer for parity tests
 web/index.template.html     dashboard UI
-scripts/build_web.py        engine + deal file -> dist/<slug>/index.html (the published page)
+scripts/build_web.py        engine + deal files -> dist/index.html (all deals, the published page)
+scripts/add_standard_cases.py   adds LTEC's standard cases to a deal
 scripts/export_excel.py     results -> dist/<slug>/<slug>_model_export.xlsx
 tests/test_parity.py        JS = Python on every deal's defaults and randomized set-ups; every set-up reconciles
 tests/test_deal_files.py    schema, meta, sources point at real inputs; reports unsourced / TODO inputs
+tests/test_cases.py         derived cases reproduce their source when neutral; overrides stay in their case
 ```
 
 ## Everyday use
@@ -78,7 +107,7 @@ timing) is the Siena README at `siena-v1.0`; it still applies; the v2 additions 
    list of steps (multiple hurdles, catch-ups, share classes); debt as a list of loans (The Bend's loan matures in
    Year 5); capex / lease-up schedules; Siena names in data (`timing.siena_frequency`) and Redstone/Siena wording in
    the page.
-5. Deal picker, per-deal saved scenarios, side-by-side comparison.
+5. ~~Deal picker, per-deal saved scenarios~~; our cases on every deal. Still to do: side-by-side deal comparison.
 6. Intake as a reusable skill (deck + OA + sponsor model -> draft deal file with citations -> tie-out -> publish).
 
 Not legal, tax or investment advice.
