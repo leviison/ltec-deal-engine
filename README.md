@@ -37,8 +37,9 @@ that viewer's Claude usage.
 **Compare deals** (the view switch at the top, or `#compare`) puts every deal side by side: LP IRR, multiple, Years 1-4
 cash yield and profit per $1M for the sponsor's case, our Adjusted Base and our Downside; the sponsor-vs-us IRR gap;
 cumulative cash per $1M by deal for a chosen case; and deal context (price per unit, going-in cap, loan / total capital,
-Year-1 debt coverage, waterfall, open diligence). Deals run as underwritten in their files, except the open deal, which
-uses your current edits (flagged). Click a deal to open it.
+Year-1 debt coverage, waterfall, open diligence). Each deal keeps your edits for the session as you switch between deals; the
+comparison and the Ask panel use them (flagged "your edits", and "edited" in the picker). Edits last until the page
+is closed; Save keeps a scenario for good. Click a deal to open it.
 
 ## Our cases on every deal
 

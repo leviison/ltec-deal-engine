@@ -1198,6 +1198,7 @@ function diffPaths(a, b, pre = "", out = []) {
   return out;
 }
 function markChanged() {
+  refreshPicker();
   const changed = new Set(diffPaths(inputs, DEFAULTS));
   document.querySelectorAll("[data-path]").forEach((el) => {
     const p = el.dataset.path;
@@ -1654,8 +1655,8 @@ const cmpCache = {};
 let cmpRole = "base";
 function compareData() {
   return SLUGS.map((slug, i) => {
-    const edited = slug === META.slug && diffPaths(inputs, DEFAULTS).length > 0;
-    const inp = slug === META.slug ? inputs : DEALS[slug];
+    const edited = isEdited(slug);
+    const inp = dealInputs(slug);
     let cases;
     if (!edited && cmpCache[slug]) cases = cmpCache[slug];
     else {
@@ -1699,7 +1700,7 @@ function renderCompare() {
   if (cmpShown.has("sponsor") && cmpShown.has("base")) body += `<tr class="cgrp"><td colspan="${data.length + 1}">Gap</td></tr>` + row("Sponsor's IRR minus ours", data.map((d) => d.cases.sponsor && d.cases.base ? d.cases.sponsor.lp.irr - d.cases.base.lp.irr : null),
     (v) => (v * 100).toFixed(1) + " pts", true);
   document.getElementById("cmpReturns").innerHTML = `<table class="cmp">${head}<tbody>${body}</tbody></table>`;
-  document.getElementById("cmpNote").textContent = "LP returns on each deal's waterfall, annual periods. Our cases are LTEC assumptions recorded with sources in each deal file; bold is the better value in each row.";
+  document.getElementById("cmpNote").textContent = "Each deal uses your edits where you've made them this session (marked “your edits”), otherwise the deal file as underwritten. LP returns on each deal's waterfall, annual periods. Our cases are LTEC assumptions recorded with sources in each deal file; bold is the better value in each row.";
 
   // context
   const ctx = (label, f) => `<tr><td class="lbl">${label}</td>${data.map((d) => `<td class="n">${f(d)}</td>`).join("")}</tr>`;
@@ -1798,7 +1799,7 @@ function renderAskChips() {
 }
 
 // ---- engine helpers for the tools
-function dealInputs(slug) { return slug === META.slug ? inputs : DEALS[slug]; }
+function dealInputs(slug) { return slug === META.slug ? inputs : working[slug] ? working[slug].inputs : DEALS[slug]; }
 function needDeal(slug) {
   const s = String(slug || META.slug);
   if (!DEALS[s]) throw new Error(`Unknown deal "${s}". Deals: ${SLUGS.join(", ")}`);
@@ -1868,7 +1869,7 @@ const ASK_TOOLS = [
       setAskStatus(`Reading ${m.name}…`);
       return {
         deal: slug, name: m.name, sponsor: m.sponsor, status: m.status, summary: m.summary, location: (m.ui || {}).location,
-        using: slug === META.slug && diffPaths(inputs, DEFAULTS).length ? "the viewer's current edits on the dashboard" : "the deal file as underwritten",
+        using: isEdited(slug) ? "the viewer's current edits on the dashboard (changed inputs: " + diffPaths(dealInputs(slug), DEALS[slug]).slice(0, 20).join(", ") + ")" : "the deal file as underwritten",
         inputs: inputDigest(inp),
         cases: Object.keys(inp.cases).map((k) => Object.assign({ kind: inp.cases[k].kind, note: inp.cases[k].note || "", from: inp.cases[k].from || null }, caseResult(E.runCase(k, inp), inp))),
         variants: (m.alternatives || []).map((a) => ({ name: a.name, note: a.note, changes: a.changes })),
@@ -1958,7 +1959,7 @@ function askContext() {
     "- If the deal files don't hold what's needed, say so. This is analysis of the files, not legal, tax or investment advice; don't add disclaimers beyond a short note when it truly matters.",
     "- Tool rates are decimals (0.06 = 6%). What-ifs never change the dashboard; the viewer gets a button to open each one.",
     "",
-    "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}")${diffPaths(inputs, DEFAULTS).length ? ", with unsaved edits to its inputs (tools use them for this deal)" : ""}.`),
+    "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),
     "Deals: " + SLUGS.map((k) => `${DEALS[k].meta.name} (slug "${k}", ${DEALS[k].meta.status}, cases: ${Object.keys(dealInputs(k).cases).map((c) => `${c} = ${dealInputs(k).cases[c].label}`).join("; ")})`).join(" | "),
   ].join("\n");
 }
@@ -2097,10 +2098,21 @@ async function connectAsk() {
 }
 
 /* ------------------------------------------------------------ boot and deal switching */
+// Each deal keeps its edits for the session: leaving a deal stores them, coming back restores them, and the
+// comparison and Ask use them. They are not saved anywhere; Save keeps a scenario for good.
+const working = {};
+function isEdited(slug) { const w = slug === META.slug ? inputs : working[slug] && working[slug].inputs; return !!w && diffPaths(w, DEALS[slug]).length > 0; }
+function refreshPicker() {
+  const pick = document.getElementById("dealPick");
+  if (!pick) return;
+  [...pick.options].forEach((o) => { const m = DEALS[o.value].meta; o.textContent = `${m.name} · ${m.status}${isEdited(o.value) ? " · edited" : ""}`; });
+}
 function bootDeal(slug) {
+  if (META && inputs && META.slug !== slug) working[META.slug] = { inputs, activeScenario, activeVariant };
   setDeal(slug);
-  inputs = clone(DEFAULTS); editCase = detailCase = cbpCase = PRIMARY; cbpParty = "p0"; whPerson = 0;
-  activeScenario = null; activeVariant = null; results = null;
+  const w = working[slug];
+  inputs = w ? w.inputs : clone(DEFAULTS); editCase = detailCase = cbpCase = PRIMARY; cbpParty = "p0"; whPerson = 0;
+  activeScenario = w ? w.activeScenario : null; activeVariant = w ? w.activeVariant : null; results = null;
   DEFAULT_RESULTS = E.runAll(DEFAULTS);
   document.getElementById("dealName").textContent = META.name;
   document.getElementById("repoPath").textContent = `deals/${META.slug}/deal.json`;
