@@ -131,6 +131,27 @@
               }
             }
           }
+        },
+        "location": {
+          "type": "string"
+        },
+        "ui": {
+          "type": "object",
+          "description": "Dashboard wording for this deal: deal_short, sponsor_short, primary_case, location, loan_title, loan_note, workbooks, eyebrow, footnote, hold_note, hide_crystallize, hide_assumption_fee, hints (input path -> hint; when present it replaces the built-in hints).",
+          "properties": {
+            "primary_case": {
+              "type": "string"
+            },
+            "hints": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
         }
       }
     },

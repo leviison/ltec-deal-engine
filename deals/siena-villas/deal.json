@@ -42,7 +42,45 @@
       "commit": "2ee8ccde3826d00cbb16a6ec90ae99eed802014e",
       "dashboard": "https://claude.ai/artifact/XXaQnEbg8T1by6PYY17osj"
     },
-    "context_doc": "claude.ai Project 'Siena Villas', doc claude/siena-villas-context.md"
+    "context_doc": "claude.ai Project 'Siena Villas', doc claude/siena-villas-context.md",
+    "location": "Orem, UT",
+    "ui": {
+      "deal_short": "Siena",
+      "sponsor_short": "Redstone",
+      "primary_case": "base",
+      "location": "Orem, UT",
+      "loan_title": "Assumed loan",
+      "loan_note": "Assumption terms are still open diligence.",
+      "workbooks": "the v10 and SV26 workbooks",
+      "eyebrow": "Preferred investment",
+      "footnote": "Annual-period IRR on the partnership waterfall (the OA specifies actual-date XIRR). Warehouse figures use XIRR on dates. Ties to the v10 and SV26 workbooks to the cent at default inputs. Differences from v10: partnership cash is floored at zero each year, pref compounding is a switch (off = v10), and v10's Exit &amp; Disposition tab is now the Custom case, which flows through every section (in v10 it fed nothing downstream). Hold period is fixed at five years. Not legal, tax or investment advice."
+    },
+    "diligence": [
+      {
+        "item": "Written loan-assumption approval and its terms: fee, rate, maturity (2031 vs 2032), reserves, guarantor, covenants.",
+        "status": "open"
+      },
+      {
+        "item": "Whether LTEC signed a UPA and whether the Company accepted it (irrevocable on acceptance, UPA §1.3).",
+        "status": "open"
+      },
+      {
+        "item": "T-12 P&L, rent roll with concessions, and a bridge from $161.6k to $294.5k other income.",
+        "status": "open"
+      },
+      {
+        "item": "Redstone personal cash: Exhibit B shows only the rolled acquisition fee ($382k).",
+        "status": "open"
+      },
+      {
+        "item": "Disposition and refi fee percentages; PM agreement; crystallization plans (§8.7).",
+        "status": "open"
+      },
+      {
+        "item": "Insurance quote; property-tax reassessment at $19.1M.",
+        "status": "open"
+      }
+    ]
   },
   "sources": {
     "deal.purchase_price": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
