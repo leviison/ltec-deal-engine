@@ -1,0 +1,1410 @@
+<title>__DEAL_NAME__ Model</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: underwriting workbench — assumptions rail on the left, read-outs on the right; summary before detail. */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --sunk: #eaeef2;
+  --fg: #17202b;
+  --muted: #5a6574;
+  --line: #d8dee5;
+  --accent: #2b5797;
+  --accent-soft: #e3ebf6;
+  --c-sponsor: #7a8796;
+  --c-base: #2b5797;
+  --c-down: #b7791f;
+  --c-stress: #b4432f;
+  --c-custom: #6a4c9c;
+  --good: #22764a;
+  --bad: #b4432f;
+  --warn-bg: #fbf1dc;
+  --warn-fg: #7a5410;
+  --changed: #fff4cc;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #19202a; --sunk: #0d1217; --fg: #e4e9ef; --muted: #98a3b1; --line: #2b3542;
+    --accent: #7fa6e0; --accent-soft: #1d2b40; --c-sponsor: #8d99a8; --c-base: #7fa6e0; --c-down: #d9a24a;
+    --c-stress: #e07a63; --c-custom: #b49ae0; --good: #5cc28b; --bad: #e07a63; --warn-bg: #3a2f17; --warn-fg: #f0cf8a; --changed: #3b3418;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #19202a; --sunk: #0d1217; --fg: #e4e9ef; --muted: #98a3b1; --line: #2b3542;
+  --accent: #7fa6e0; --accent-soft: #1d2b40; --c-sponsor: #8d99a8; --c-base: #7fa6e0; --c-down: #d9a24a;
+  --c-stress: #e07a63; --c-custom: #b49ae0; --good: #5cc28b; --bad: #e07a63; --warn-bg: #3a2f17; --warn-fg: #f0cf8a; --changed: #3b3418;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
+.wrap { max-width: 1320px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 48px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: 0.005em; }
+h1 { font-size: 28px; line-height: 1.1; }
+h2 { font-size: 18px; }
+h3 { font-size: 15px; }
+.num, td.n, th.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.muted { color: var(--muted); }
+small, .small { font-size: 12px; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; padding-bottom: 16px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+.facts { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); margin-top: 6px; }
+.facts b { color: var(--fg); font-weight: 500; }
+.status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; background: var(--surface); }
+.chip.changed { background: var(--changed); border-color: transparent; }
+
+.layout { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+aside.rail { position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); max-height: calc(100vh - 24px); overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+@media (max-width: 900px) { aside.rail { position: static; max-height: none; } }
+.rail section { padding: 14px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+.rail section:last-child { border-bottom: 0; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr) 118px; align-items: center; gap: 8px; }
+.field label { font-size: 13px; color: var(--fg); }
+.field label .src { display: block; font-size: 11px; color: var(--muted); }
+.field .in { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); overflow: hidden; }
+.field .in:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
+.field .in span { padding: 0 6px; color: var(--muted); font-size: 12px; font-family: var(--f-num); }
+.field input, .field select { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--fg); font: 13px var(--f-num); padding: 6px 6px; text-align: right; }
+.field select { text-align: left; font-family: var(--f-body); }
+.field input:focus, .field select:focus { outline: none; }
+.field.is-changed .in { background: var(--changed); }
+.field.check { grid-template-columns: minmax(0, 1fr) auto; }
+.field.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.oi-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.oi-grid .in { min-width: 0; display: flex; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); overflow: hidden; }
+.oi-grid .in:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
+.oi-grid .in input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--fg); font: 12px var(--f-num); text-align: center; padding: 6px 2px; -moz-appearance: textfield; }
+.oi-grid .in input:focus { outline: none; }
+.oi-grid .in input::-webkit-inner-spin-button, .oi-grid .in input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.oi-grid.labels { font-size: 10px; color: var(--muted); text-align: center; font-family: var(--f-num); }
+.oi-grid .in.is-changed { background: var(--changed); }
+.field.off .in { opacity: 0.45; }
+.field.off label { color: var(--muted); }
+.builder-from { display: grid; gap: 6px; }
+.readout { font-size: 12px; font-family: var(--f-num); color: var(--fg); background: var(--sunk); border-radius: 6px; padding: 8px 10px; line-height: 1.6; }
+.field.text, .field:has(select) { grid-template-columns: minmax(0, 1fr) 156px; }
+.field input[type="text"] { text-align: left; font-family: var(--f-body); }
+.card { border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: grid; gap: 8px; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: 600; color: var(--muted); }
+.sumline { font-size: 12px; color: var(--muted); }
+#whPersonTabs button { white-space: nowrap; padding: 6px 10px; }
+.sumline.warn { color: var(--warn-fg); background: var(--warn-bg); border-radius: 5px; padding: 4px 8px; }
+th.hl, td.hl { background: color-mix(in srgb, var(--c-custom) 9%, transparent); }
+th.hl { color: var(--c-custom); }
+.case.hl { box-shadow: 0 0 0 2px var(--c-custom); }
+tr.grp td { font-weight: 600; font-size: 12px; background: var(--sunk); color: var(--fg); white-space: normal; }
+tr.grp td span { font-weight: 400; color: var(--muted); }
+.cbp-controls { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1fr); gap: 10px 14px; align-items: center; margin-bottom: 10px; }
+@media (max-width: 1100px) { .cbp-controls { grid-template-columns: minmax(0, 1fr); } }
+.cbp-controls .seg button { white-space: nowrap; }
+.cbp-pick { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cbp-pick select { flex: 1; min-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: 13px var(--f-body); padding: 6px 8px; }
+.cbp-pick select:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.rail-tools { font-size: 12px; gap: 6px; }
+.rail section[id] > h3 { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; margin: -2px 0; }
+.rail section[id] > h3:focus-visible, .grp-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.rail section[id] > h3 .sec-title, .grp-title { flex: 1; min-width: 0; }
+.chev { width: 8px; height: 8px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); margin: -3px 4px 0 0; transition: transform .15s; flex: none; }
+.collapsed > h3 .chev, .grp.collapsed > .grp-head .chev { transform: rotate(-45deg); margin-top: 0; }
+.sec-badge { font: 600 10px var(--f-body); color: var(--warn-fg); background: var(--warn-bg); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+.sec-badge:empty { display: none; }
+.sec-sum, .grp-sum { font-size: 12px; color: var(--muted); margin-top: -6px; overflow-wrap: anywhere; }
+.rail section[id]:not(.collapsed) > .sec-sum, .grp:not(.collapsed) > .grp-sum { display: none; }
+.rail section.collapsed > :not(h3):not(.sec-sum) { display: none !important; }
+.rail section.collapsed { padding-bottom: 12px; }
+.grp { display: grid; gap: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.grp-head { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.grp-body { display: grid; gap: 10px; }
+.grp.collapsed > .grp-body { display: none; }
+.grp-sum { margin-top: -4px; }
+.subhead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; margin-top: 4px; }
+
+.seg { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { flex: 1; border: 0; background: transparent; color: var(--muted); font: 500 12px var(--f-body); padding: 6px 4px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--fg); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+button.btn { font: 500 13px var(--f-body); border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+button.btn:hover { border-color: var(--muted); }
+button.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+button.btn:disabled { opacity: 0.5; cursor: default; }
+button.btn:focus-visible, button.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.link { border: 0; background: none; color: var(--accent); font: inherit; padding: 0; cursor: pointer; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+input.text { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: 13px var(--f-body); padding: 7px 8px; }
+input.text:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.saved { display: grid; gap: 6px; }
+.saved .item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.saved .item.active { border-color: var(--accent); background: var(--accent-soft); }
+.saved .item .nm { font-weight: 500; overflow-wrap: anywhere; }
+.saved .item .meta { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
+.saved .acts { display: flex; gap: 10px; font-size: 12px; }
+.note { font-size: 12px; color: var(--muted); }
+.toast { font-size: 12px; color: var(--good); min-height: 1em; }
+.toast.err { color: var(--bad); }
+
+main { display: grid; gap: 24px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.panel > header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 16px; margin-bottom: 12px; }
+
+.cases { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; }
+@media (max-width: 460px) { .cases { grid-template-columns: minmax(0, 1fr); } }
+.case { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 14px 12px; display: grid; gap: 8px; position: relative; overflow: hidden; }
+.case::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--case-color); }
+.case .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.case .name { font-family: var(--f-display); font-weight: 600; font-size: 15px; }
+.case .irr { font-family: var(--f-num); font-size: 30px; line-height: 1; letter-spacing: -0.02em; }
+.case .irr small { font-size: 12px; color: var(--muted); letter-spacing: 0; margin-left: 4px; font-family: var(--f-body); }
+.case dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; margin: 0; font-size: 12.5px; }
+.case dt { color: var(--muted); }
+.case dd { margin: 0; text-align: right; font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+.case .delta { font-size: 11px; font-family: var(--f-num); }
+.pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.loss { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+.pill.under { background: var(--warn-bg); color: var(--warn-fg); }
+.pill.ok { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+
+.chart-wrap { overflow-x: auto; }
+svg text { fill: var(--muted); font-family: var(--f-num); font-size: 11px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-weight: 600; font-size: 12px; color: var(--muted); }
+td.n, th.n { text-align: right; }
+tr.sub td { color: var(--muted); }
+tr.total td { font-weight: 600; border-top: 1px solid var(--muted); }
+tr.gap td { border-bottom: 0; padding: 4px; }
+td.lbl { white-space: normal; min-width: 170px; }
+
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 1100px) { .two { grid-template-columns: minmax(0, 1fr); } }
+.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; text-align: right; font-family: var(--f-num); }
+.kv .big { font-size: 20px; }
+
+table.heat td { text-align: center; font-family: var(--f-num); font-size: 12px; padding: 7px 6px; border: 1px solid var(--surface); }
+table.heat th { text-align: center; }
+table.heat td.cur { outline: 2px solid var(--fg); outline-offset: -2px; font-weight: 600; }
+
+.callout { background: var(--warn-bg); color: var(--warn-fg); border-radius: 6px; padding: 10px 12px; font-size: 13px; }
+ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75ch; }
+.foot { color: var(--muted); font-size: 12px; max-width: 80ch; }
+@media (prefers-reduced-motion: no-preference) { .case, .panel { transition: border-color .15s; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow" id="eyebrow"></div>
+      <h1>__DEAL_NAME__</h1>
+      <div class="facts">
+        <span><b>81</b> units · Orem, UT</span>
+        <span>Price <b class="num">$19.1M</b></span>
+        <span id="factLoan"></span>
+        <span>LP equity <b class="num">$10.28M</b></span>
+        <span id="factWaterfall"></span>
+      </div>
+    </div>
+    <div class="status">
+      <span class="chip" id="scenarioChip">Defaults</span>
+      <span class="chip" id="changeChip" hidden></span>
+      <span class="chip muted" id="versionChip"></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail" aria-label="Assumptions">
+      <section>
+        <div class="row" style="justify-content:space-between"><h2>Assumptions</h2><button class="link" id="resetBtn" type="button">Reset to defaults</button></div>
+        <p class="note" style="margin:0">Changed fields turn yellow. Results update as you type. Click a heading to open or close it.</p>
+        <div class="row rail-tools"><button class="link" type="button" id="expandAll">Expand all</button><span class="muted">·</span><button class="link" type="button" id="collapseAll">Collapse all</button><span class="muted">·</span><button class="link" type="button" id="showChanged">Open only changed</button></div>
+      </section>
+      <section id="sec-investor"></section>
+      <section id="sec-timing"></section>
+      <section id="sec-redstone"></section>
+      <section id="sec-loan"></section>
+      <section id="sec-hold"></section>
+      <section id="sec-direct"></section>
+      <section id="sec-cases">
+        <h3>Operating cases</h3>
+        <div class="seg" id="caseTabs" role="group" aria-label="Case to edit"></div>
+        <div id="caseFields" style="display:grid;gap:10px"></div>
+      </section>
+      <section id="sec-wh"></section>
+      <section id="sec-saved">
+        <h3>Saved scenarios</h3>
+        <div class="row">
+          <input class="text" id="saveName" placeholder="Name this scenario" maxlength="80" aria-label="Scenario name">
+          <button class="btn primary" id="saveBtn" type="button">Save</button>
+        </div>
+        <div class="toast" id="saveToast" role="status"></div>
+        <div class="saved" id="savedList"><p class="note" style="margin:0">Loading saved scenarios…</p></div>
+      </section>
+      <section id="sec-repo">
+        <h3>Send changes to the repo</h3>
+        <p class="note" style="margin:0">The repo's <span class="num">deals/__DEAL_SLUG__/deal.json</span> is the source of truth. Copy these inputs and replace that file to make them the new defaults.</p>
+        <div class="row">
+          <button class="btn" id="copyBtn" type="button">Copy deal.json</button>
+          <button class="btn" id="dlBtn" type="button" hidden>Download</button>
+        </div>
+        <textarea id="copyFallback" hidden readonly style="width:100%;height:120px;font:11px var(--f-num);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px"></textarea>
+        <div class="toast" id="copyToast" role="status"></div>
+      </section>
+    </aside>
+
+    <main>
+      <section aria-label="Returns by case">
+        <div class="cases" id="caseCards"></div>
+      </section>
+
+      <section class="panel">
+        <header>
+          <div><h2>Cash back on the check</h2><span class="muted small" id="chartSub"></span></div>
+          <div class="legend" id="chartLegend"></div>
+        </header>
+        <div class="chart-wrap" id="chart"></div>
+      </section>
+
+      <section class="panel">
+        <header>
+          <h2>Case detail</h2>
+          <div class="seg" id="detailTabs" role="group" aria-label="Case to show" style="min-width:340px"></div>
+        </header>
+        <div class="tablewrap" id="detailTable"></div>
+      </section>
+
+      <section class="panel">
+        <header><h2 id="exitTitle">Exit &amp; sensitivity</h2><span class="muted small">Follows the case picked in Case detail above</span></header>
+        <div class="two">
+          <div style="display:grid;gap:12px;align-content:start">
+            <dl class="kv" id="exitKv"></dl>
+          </div>
+          <div style="min-width:0">
+            <div class="eyebrow" style="margin-bottom:6px" id="heatTitle"></div>
+            <div class="tablewrap" id="heat"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header><h2>Investors in Siena</h2><span class="muted small" id="dirSub"></span></header>
+        <div class="tablewrap" id="dirTable"></div>
+      </section>
+
+      <section class="panel">
+        <header><h2 id="whTitle"></h2><span class="muted small" id="whSub"></span></header>
+        <div class="tablewrap" id="whTable"></div>
+        <div style="margin-top:16px" class="two">
+          <div style="min-width:0">
+            <div class="row" style="justify-content:space-between;margin-bottom:6px"><div class="eyebrow" id="whSoldTitle"></div><div class="seg" id="whPersonTabs" role="group" aria-label="Person to show"></div></div>
+            <div class="tablewrap" id="whSold"></div>
+          </div>
+          <div class="callout" id="whCallout"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header>
+          <div style="min-width:0"><h2>Cash by person</h2><div class="muted small" id="cbpSummary"></div></div>
+        </header>
+        <div class="cbp-controls">
+          <label class="cbp-pick"><span class="eyebrow">Show</span><select id="cbpParty" aria-label="Person or investor"></select></label>
+          <div class="seg" id="cbpCases" role="group" aria-label="Case"></div>
+          <div class="seg" id="cbpFreq" role="group" aria-label="Period length"></div>
+        </div>
+        <div class="tablewrap" style="max-height:560px;overflow:auto" id="cbpTable"></div>
+        <p class="note" id="cbpNote"></p>
+      </section>
+
+      <section class="panel">
+        <header><h2>Open diligence</h2><span class="muted small">From project notes, Nov 4</span></header>
+        <ul class="plain">
+          <li>Written loan-assumption approval and its terms: fee, rate, maturity (2031 vs 2032), reserves, guarantor, covenants.</li>
+          <li>Whether LTEC signed a UPA and whether the Company accepted it (irrevocable on acceptance, UPA §1.3).</li>
+          <li>T-12 P&amp;L, rent roll with concessions, and a bridge from $161.6k to $294.5k other income.</li>
+          <li>Redstone personal cash: Exhibit B shows only the rolled acquisition fee ($382k).</li>
+          <li>Disposition and refi fee percentages; PM agreement; crystallization plans (§8.7).</li>
+          <li>Insurance quote; property-tax reassessment at $19.1M.</li>
+        </ul>
+      </section>
+
+      <p class="foot">Annual-period IRR on the partnership waterfall (the OA specifies actual-date XIRR). Warehouse figures use XIRR on dates. Ties to the v10 and SV26 workbooks to the cent at default inputs. Differences from v10: partnership cash is floored at zero each year, pref compounding is a switch (off = v10), and v10's Exit &amp; Disposition tab is now the Custom case, which flows through every section (in v10 it fed nothing downstream). Hold period is fixed at five years. Not legal, tax or investment advice.</p>
+    </main>
+  </div>
+</div>
+
+<script>
+/*__ENGINE__*/
+</script>
+<script>
+const DEFAULTS = /*__INPUTS__*/null;
+const E = window.DealEngine;
+const CASES = ["sponsor", "base", "downside", "stress", "custom"];
+const CASE_COLOR = { sponsor: "var(--c-sponsor)", base: "var(--c-base)", downside: "var(--c-down)", stress: "var(--c-stress)", custom: "var(--c-custom)" };
+
+let inputs = clone(DEFAULTS);
+let editCase = "base", detailCase = "base", activeScenario = null, scenarios = [], db = null, results = null;
+
+function clone(x) { return JSON.parse(JSON.stringify(x)); }
+function get(obj, path) { return path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj); }
+function set(obj, path, v) { const ks = path.split("."); const last = ks.pop(); ks.reduce((o, k) => o[k], obj)[last] = v; }
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+const fmt = {
+  pct: (x, d = 1) => (x == null || !isFinite(x) ? "n/a" : (x * 100).toFixed(d) + "%"),
+  usd: (x) => (x == null ? "n/a" : (x < 0 ? "−$" : "$") + Math.round(Math.abs(x)).toLocaleString("en-US")),
+  usdk: (x) => { if (x == null) return "n/a"; const a = Math.abs(x), s = x < 0 ? "−$" : "$";
+    return a >= 1e6 ? s + (a / 1e6).toFixed(2) + "M" : a >= 1e3 ? s + (a / 1e3).toFixed(0) + "k" : s + a.toFixed(0); },
+  signedk: (x) => (x >= 0 ? "+" : "") + fmt.usdk(x),
+  x: (x) => x.toFixed(2) + "×",
+};
+
+/* ------------------------------------------------------------ field specs */
+const F = (path, label, kind, src, opts) => ({ path, label, kind, src, opts });
+const EXIT_OPTS = [["cap_rate", "Cap rate"], ["sale_price", "Sale price"]];
+const SECTIONS = {
+  "sec-investor": ["Check & deal", [
+    F("investor.name", "Siena investor", "text", "Signs the side letter"),
+    F("investor.check", "Investor check", "usd", "Side letter commitment"),
+    F("deal.selling_cost_pct", "Selling costs", "pct"),
+    F("deal.disposition_fee_pct", "Disposition fee", "pct", "OA §9.8: “market” — not fixed"),
+    F("deal.annual_capex_reserves", "CapEx / reserves per year", "usd"),
+  ]],
+};
+function caseFields(k) {
+  const p = "cases." + k + ".";
+  if (k === "custom") return [
+    F(p + "rents", "Rents ($k)", "yrs"),
+    F(p + "other_income", "Other income ($k)", "yrs"),
+    F(p + "opex", "Operating expenses ($k)", "yrs"),
+    F(p + "capex", "CapEx / reserves ($k)", "yrs"),
+    F(p + "rent_growth_y6", "Rent growth into Y6", "pct", "Sets the Year-6 NOI; also used after Year 5 on longer holds"),
+    F(p + "other_income_growth_y6", "Other income growth into Y6", "pct"),
+    F(p + "opex_growth_y6", "Expense growth into Y6", "pct"),
+    F(p + "exit_method", "Price the sale by", "select", null, EXIT_OPTS),
+    F(p + "exit_cap", "Exit cap rate", "pct"),
+    F(p + "sale_price", "Gross sale price", "usd"),
+  ];
+  if (k === "sponsor") return [F(p + "net_sale_proceeds", "Net sale proceeds", "usd", "Deck figure; ops are deck rows")];
+  const list = [
+    F(p + "rent_growth_y2", "Rent growth Y2", "pct"),
+    F(p + "rent_growth_y3_plus", "Rent growth Y3+", "pct"),
+  ];
+  if (inputs.cases[k].other_income_explicit) list.push(F(p + "other_income_explicit", "Other income Y1–Y5 ($k)", "yrs"));
+  else list.push(F(p + "other_income_y1", "Other income Y1", "usd"), F(p + "other_income_growth", "Other income growth", "pct"));
+  list.push(F(p + "opex_growth", "Expense growth", "pct"), F(p + "exit_cap", "Exit cap rate", "pct"));
+  return list;
+}
+
+function fieldId(path, i) { return "f-" + path.replace(/\./g, "-") + (i == null ? "" : "-" + i); }
+function displayVal(kind, v) {
+  if (kind === "pct") return +(v * 100).toFixed(4);
+  if (kind === "usd") return Math.round(v);
+  return v;
+}
+function fieldHTML(f) {
+  const v = get(inputs, f.path);
+  const lab = `<label for="${fieldId(f.path, f.kind === "yrs" ? 0 : null)}">${esc(f.label)}${f.src ? `<span class="src">${esc(f.src)}</span>` : ""}</label>`;
+  if (f.kind === "bool") return `<div class="field check" data-path="${f.path}">${lab}<input type="checkbox" id="${fieldId(f.path)}" ${v ? "checked" : ""}></div>`;
+  if (f.kind === "select") return `<div class="field" data-path="${f.path}">${lab}<div class="in"><select id="${fieldId(f.path)}">${f.opts.map(([val, l]) =>
+    `<option value="${val}"${String(v) === String(val) ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></div></div>`;
+  if (f.kind === "text") return `<div class="field text" data-path="${f.path}">${lab}<div class="in"><input type="text" id="${fieldId(f.path)}" maxlength="40" value="${esc(v || "")}"${f.list ? ` list="${f.list}"` : ""}></div></div>`;
+  if (f.kind === "yrs") return `<div style="display:grid;gap:4px" data-path="${f.path}">${lab}<div class="oi-grid">${v.map((x, i) =>
+    `<div class="in"><input id="${fieldId(f.path, i)}" data-i="${i}" type="number" step="0.1" value="${+(x / 1000).toFixed(1)}" aria-label="${esc(f.label.replace(" ($k)", ""))}, year ${i + 1}, in thousands"></div>`).join("")}</div></div>`;
+  const pre = f.kind === "usd" ? "$" : "", post = f.kind === "pct" ? "%" : f.kind === "num" ? "×" : "";
+  const type = f.kind === "date" ? "date" : "number";
+  const step = f.kind === "pct" ? "0.05" : f.kind === "usd" ? "1000" : "0.01";
+  return `<div class="field" data-path="${f.path}">${lab}<div class="in">${pre ? `<span>${pre}</span>` : ""}<input id="${fieldId(f.path)}" type="${type}" step="${step}" value="${displayVal(f.kind, v)}">${post ? `<span>${post}</span>` : ""}</div></div>`;
+}
+function bindField(el, f) {
+  el.querySelectorAll("input,select").forEach((inp) => {
+    const ev = inp.type === "checkbox" || inp.tagName === "SELECT" || f.kind === "text" ? "change" : "input";
+    inp.addEventListener(ev, () => {
+      let v;
+      if (f.kind === "bool") v = inp.checked;
+      else if (f.kind === "select" || f.kind === "date") v = f.num ? Number(inp.value) : inp.value;
+      else if (f.kind === "text") { v = inp.value.trim(); if (!v && !f.list) { inp.value = get(inputs, f.path); return; } }
+      else if (f.kind === "yrs") { v = get(inputs, f.path).slice(); v[+inp.dataset.i] = (parseFloat(inp.value) || 0) * 1000; }
+      else { const n = parseFloat(inp.value); if (!isFinite(n)) return; v = f.kind === "pct" ? n / 100 : n; }
+      if (f.kind === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
+      const renamed = /^warehouse\.people\.\d+\.name$/.test(f.path) ? get(inputs, f.path) : null;
+      set(inputs, f.path, v);
+      if (renamed) {  // carry a person's new name into sales and buy-ins that named them
+        const same = (a) => (a || "").trim().toLowerCase() === renamed.trim().toLowerCase();
+        const w = inputs.warehouse;
+        w.selldown.tranches.forEach((t) => { if (same(t.buyer)) t.buyer = v; });
+        w.manager_transfers.forEach((x) => { if (same(x.buyer)) x.buyer = v; if (same(x.seller)) x.seller = v; });
+      }
+      // Typing a sale price or a cap rate means you want the sale priced that way.
+      if (f.path === "cases.custom.sale_price") inputs.cases.custom.exit_method = "sale_price";
+      if (f.path === "cases.custom.exit_cap") inputs.cases.custom.exit_method = "cap_rate";
+      syncExitMethod();
+      recompute();
+      if (f.kind === "text" || f.rerender) keepFocus(f.after || renderWarehouseInputs);
+    });
+  });
+}
+function renderSection(id) {
+  const [title, fields] = SECTIONS[id];
+  const sec = document.getElementById(id);
+  sec.innerHTML = `<h3>${title}</h3>` + fields.map(fieldHTML).join("");
+  fields.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
+}
+function renderCaseFields() {
+  document.getElementById("caseTabs").innerHTML = CASES.map((k) =>
+    `<button type="button" data-k="${k}" aria-pressed="${k === editCase}">${esc(shortLabel(k))}</button>`).join("");
+  const box = document.getElementById("caseFields");
+  const fields = caseFields(editCase);
+  if (editCase === "custom") {
+    const html = fields.map(fieldHTML);
+    box.innerHTML = `<div class="builder-from"><div class="subhead">Start from</div>
+        <div class="seg" id="fromTabs" role="group" aria-label="Copy another case into Custom">${CASES.filter((k) => k !== "custom").map((k) =>
+          `<button type="button" data-from="${k}" aria-pressed="${inputs.cases.custom.built_from === k}">${shortLabel(k)}</button>`).join("")}</div>
+        <p class="note" style="margin:0">Copies that case's years, Year-6 growth and exit into Custom, using the inputs as they stand now. Then edit anything.</p></div>
+      <div class="subhead">Years 1–5, in $ thousands</div><div class="oi-grid labels" aria-hidden="true"><span>Y1</span><span>Y2</span><span>Y3</span><span>Y4</span><span>Y5</span></div>${html.slice(0, 4).join("")}
+      <div class="subhead">Year-6 NOI</div>${html.slice(4, 7).join("")}
+      <div class="subhead">Year-5 sale</div>${html.slice(7).join("")}
+      <div class="readout" id="customReadout" aria-live="polite"></div>
+      <p class="note" style="margin:0">Debt service, asset-management fee and selling costs come from Check &amp; deal. Five-year hold.</p>`;
+  } else {
+    box.innerHTML = fields.map(fieldHTML).join("") + `<p class="note" style="margin:0">${esc(inputs.cases[editCase].note || "")}</p>`;
+  }
+  fields.forEach((f) => bindField(box.querySelector(`[data-path="${f.path}"]`), f));
+  syncExitMethod();
+  if (results) renderReadout();
+  markChanged();
+}
+function syncExitMethod() {
+  const m = inputs.cases.custom.exit_method;
+  const sel = document.getElementById(fieldId("cases.custom.exit_method"));
+  if (!sel) return;
+  sel.value = m;
+  const cap = document.querySelector('[data-path="cases.custom.exit_cap"]'), price = document.querySelector('[data-path="cases.custom.sale_price"]');
+  cap.classList.toggle("off", m !== "cap_rate"); price.classList.toggle("off", m !== "sale_price");
+}
+function renderReadout() {
+  const el = document.getElementById("customReadout");
+  if (!el) return;
+  const c = results.cases.custom, ex = c.exit;
+  el.innerHTML = `Year-${c.operations.hold_years + 1} NOI ${fmt.usd(ex.y6_noi)}<br>Gross ${fmt.usd(ex.gross_value)} · ${fmt.pct(ex.exit_cap, 2)} cap · ${fmt.usdk(ex.price_per_unit)}/unit<br>LP IRR <b>${fmt.pct(c.lp.irr)}</b> · ${fmt.x(c.lp.multiple)}`;
+}
+// Copy another case's computed years, Year-6 growth and exit into the Custom case.
+function startFrom(k) {
+  const src = inputs.cases[k], r = E.runCase(k, inputs), o = r.operations, cu = inputs.cases.custom;
+  ["rents", "other_income", "opex", "capex"].forEach((x) => { cu[x] = o[x].slice(); });
+  if (src.kind === "explicit") {
+    cu.rent_growth_y6 = cu.other_income_growth_y6 = cu.opex_growth_y6 = src.y6_noi_growth;
+    cu.exit_method = "sale_price";
+  } else {
+    cu.rent_growth_y6 = src.rent_growth_y3_plus;
+    cu.other_income_growth_y6 = src.other_income_explicit ? src.rent_growth_y3_plus : src.other_income_growth;
+    cu.opex_growth_y6 = src.opex_growth;
+    cu.exit_method = "cap_rate";
+  }
+  cu.exit_cap = r.exit.exit_cap; cu.sale_price = r.exit.gross_value;
+  cu.built_from = k; cu.note = "Started from " + src.label + ".";
+  renderCaseFields(); recompute();
+}
+// While the Custom case is being edited, its column is highlighted everywhere.
+function hl(k) { return k === "custom" && editCase === "custom" ? " hl" : ""; }
+function shortLabel(k) { return { sponsor: "Sponsor", base: "Base", downside: "Downside", stress: "Stress", custom: "Custom" }[k]; }
+function renderAllFields() { Object.keys(SECTIONS).forEach(renderSection); renderTimingInputs(); renderRedstoneInputs(); renderLoanInputs(); renderHoldInputs(); renderCaseFields(); renderDirectInputs(); renderWarehouseInputs(); }
+
+/* ------------------------------------------------------------ distribution timing inputs */
+/* ------------------------------------------------------------ hold period and refinance */
+function renderHoldInputs() {
+  const sec = document.getElementById("sec-hold"), d = inputs.deal, rf = d.refi, H = d.hold_years;
+  const after = () => { if (rf.year >= d.hold_years) rf.year = d.hold_years - 1; renderHoldInputs(); recompute(); };
+  const rr = (f) => Object.assign(f, { rerender: true, after });
+  const yearsOpt = (a, b, lbl) => Array.from({ length: b - a + 1 }, (_, i) => [a + i, lbl(a + i)]);
+  const fields = [
+    Object.assign(rr(F("deal.hold_years", "Sell at the end of", "select", "Deck: about five years (Oct 2031)", yearsOpt(3, 10, (y) => `Year ${y} (${2026 + y})`))), { num: true }),
+    rr(F("deal.refi.enabled", "Refinance before the sale", "bool", "Memo: Redstone may refinance in 2031 when the loan matures and keep holding")),
+    Object.assign(rr(F("deal.refi.year", "Refinance at the end of", "select", null, yearsOpt(1, Math.max(1, H - 1), (y) => `Year ${y} (${2026 + y})`))), { num: true }),
+    rr(F("deal.refi.sizing", "Size the new loan by", "select", null, [["ltv", "Loan-to-value"], ["amount", "A set amount"]])),
+    F("deal.refi.ltv", "Loan-to-value", "pct"),
+    F("deal.refi.amount", "New loan amount", "usd"),
+    F("deal.refi.appraisal_cap", "Appraisal cap rate", "pct", "0 = the case's own exit cap"),
+    F("deal.refi.dscr_min", "Minimum debt coverage", "num", "Caps the loan; 0 = no cap"),
+    F("deal.refi.rate", "New loan rate", "pct"),
+    Object.assign(F("deal.refi.io_years", "Interest-only years", "select", null, yearsOpt(0, 10, (y) => (y ? `${y} year${y > 1 ? "s" : ""}` : "None"))), { num: true }),
+    Object.assign(F("deal.refi.amort_years", "Then amortize over", "select", null, [[20, "20 years"], [25, "25 years"], [30, "30 years"], [35, "35 years"]]), { num: true }),
+    F("deal.refi.cost_pct", "Refinance costs", "pct", "% of the new loan"),
+    rr(F("deal.refi.crystallize", "Redstone crystallizes after it", "bool", "OA §8.7: one-time right to fix the split")),
+    F("deal.refi.side_letter_protects", "LTEC side letter applies", "bool", "No crystallizing LTEC's units before its capital + pref are back"),
+  ];
+  sec.innerHTML = `<h3>Hold &amp; refinance</h3>${fields.map(fieldHTML).join("")}<div class="readout" id="refiReadout"></div>
+    <p class="note" style="margin:0">Past Year 5, each case keeps growing at its long-run rates. Refinance cash goes through Siena's waterfall like sale cash (OA §8.2); the new loan is paid off at the sale.</p>`;
+  fields.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
+  const on = rf.enabled && H > 1;
+  fields.slice(2).forEach((f) => { sec.querySelector(`[data-path="${f.path}"]`).hidden = !on; });
+  if (on) {
+    sec.querySelector('[data-path="deal.refi.side_letter_protects"]').hidden = !rf.crystallize;
+    sec.querySelector('[data-path="deal.refi.ltv"]').hidden = rf.sizing !== "ltv";
+    sec.querySelector('[data-path="deal.refi.amount"]').hidden = rf.sizing !== "amount";
+  }
+  if (results) updateRefiReadout();
+  markChanged();
+}
+function updateRefiReadout() {
+  const el = document.getElementById("refiReadout");
+  if (!el) return;
+  const c = results.cases.base, rf = c.operations.refi, ex = c.exit, H = c.operations.hold_years;
+  el.innerHTML = (rf ? `Adjusted Base, end of Year ${rf.year}: appraised ${fmt.usdk(rf.appraised_value)} · new loan ${fmt.usdk(rf.loan)} (${fmt.pct(rf.ltv, 0)} LTV${rf.loan_dscr_limit != null && rf.loan_dscr_limit <= rf.loan + 0.5 ? ", coverage-limited" : ""}) · DSCR ${rf.dscr ? rf.dscr.toFixed(2) + "×" : "n/a"}<br>Cash out after payoff and costs: <b>${fmt.usdk(rf.net_proceeds)}</b><br>` : "") +
+    `Sale end of Year ${H}: ${fmt.usdk(ex.gross_value)} gross, ${fmt.usdk(ex.debt_payoff)} loan payoff · LP IRR ${fmt.pct(c.lp.irr)}` +
+    (c.crystallization ? (c.crystallization.applied
+      ? `<br>Crystallized: LPs ${fmt.pct(c.crystallization.lp_pct, 1)} / Redstone ${fmt.pct(1 - c.crystallization.lp_pct, 1)} from Year ${rf.year + 1} (equity value ${fmt.usdk(c.crystallization.net_equity_value)}). ${c.crystallization.ltec_protected ? `LTEC stays on the regular waterfall (side letter): ${fmt.pct(c.investor.irr)}.` : "Applies to LTEC too."}`
+      : `<br>Crystallizing would have no effect here: the equity value doesn't reach the promote tiers (§8.7(c)).`) : "");
+}
+
+/* ------------------------------------------------------------ Redstone terms and the assumed loan */
+function renderRedstoneInputs() {
+  const sec = document.getElementById("sec-redstone"), wf = inputs.waterfall;
+  const tierF = (i) => [F(`waterfall.tiers.${i}.lp_irr_hurdle`, `Tier ${i + 1}: up to LP IRR of`, "pct"),
+                        F(`waterfall.tiers.${i}.lp_share`, `Tier ${i + 1}: LP share`, "pct")];
+  const fields = [
+    F("waterfall.pref_rate", "Preferred return", "pct", "OA §8.1: 6%, cumulative"),
+    F("waterfall.pref_compounds", "Compound unpaid pref", "bool", "OA says compounded; v10 does not"),
+    ...wf.tiers.flatMap((_, i) => tierF(i)),
+    F("waterfall.residual_lp_share", "Above the last tier: LP share", "pct"),
+    F("deal.asset_mgmt_fee_pct_of_income", "Asset management fee", "pct", "OA §9.8: 1% of gross income"),
+  ];
+  sec.innerHTML = `<h3>Redstone terms</h3><p class="note" style="margin:0">The Siena LP waterfall and Redstone's fee. Changes apply to every case and flow through to ${esc(inputs.warehouse.names.vehicle)} and every investor.</p>${fields.map(fieldHTML).join("")}`;
+  fields.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
+}
+function renderLoanInputs() {
+  const sec = document.getElementById("sec-loan"), d = inputs.deal;
+  const fields = [
+    F("deal.loan_amount", "Assumed loan balance", "usd"),
+    F("deal.loan_rate", "Interest rate", "pct", "Deck: 4.79% fixed, interest-only"),
+    Object.assign(F("deal.debt_service_method", "Debt service", "select", null, [["fixed", "Deck figure"], ["interest_only", "Balance × rate"]]), { rerender: true, after: renderLoanInputs }),
+    F("deal.annual_debt_service", "Debt service per year", "usd", "Deck: $467,935"),
+    F("deal.assumption_fee_pct", "Assumption fee", "pct", "% of the balance, paid from Year-1 cash"),
+  ];
+  sec.innerHTML = `<h3>Assumed loan</h3><p class="note" style="margin:0">Assumption terms are still open diligence. Pick “Balance × rate” to test a different rate.</p>${fields.map(fieldHTML).join("")}<div class="readout" id="loanReadout"></div>`;
+  fields.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
+  sec.querySelector('[data-path="deal.annual_debt_service"]').hidden = d.debt_service_method === "interest_only";
+  if (results) updateLoanReadout();
+  markChanged();
+}
+function updateLoanReadout() {
+  const d = inputs.deal, el = document.getElementById("loanReadout");
+  const ds = results.cases.base.operations.debt_service[0], fee = (d.assumption_fee_pct || 0) * d.loan_amount;
+  if (el) el.innerHTML = `Debt service used: ${fmt.usd(ds)}/yr (${fmt.pct(ds / d.loan_amount, 2)} of the balance)${fee ? `<br>Assumption fee: ${fmt.usd(fee)} in Year 1` : ""}`;
+  document.getElementById("factLoan").innerHTML = `Assumed loan <b class="num">${fmt.usdk(d.loan_amount)}</b> @ ${fmt.pct(d.debt_service_method === "interest_only" ? d.loan_rate : ds / d.loan_amount, 2)} IO`;
+  const wf = inputs.waterfall, pc = (x) => `${Math.round(x * 100)}`;
+  const ps = (x) => { const v = Math.round(x * 1000) / 10; return (v % 1 ? v.toFixed(1) : v.toFixed(0)) + "%"; };
+  document.getElementById("factWaterfall").innerHTML = `Pref <b>${ps(wf.pref_rate)}</b> → ` +
+    wf.tiers.map((t) => `${pc(t.lp_share)}/${pc(1 - t.lp_share)} to ${ps(t.lp_irr_hurdle)}`).join(" → ") +
+    ` → ${pc(wf.residual_lp_share)}/${pc(1 - wf.residual_lp_share)}`;
+}
+
+function renderTimingInputs() {
+  const t = inputs.timing, v = inputs.warehouse.names.vehicle, sec = document.getElementById("sec-timing");
+  const rr = (f) => Object.assign(f, { rerender: true, after: renderTimingInputs });
+  const fields = [
+    rr(F("timing.mode", "Distribution timing", "select", null, [["annual", "Annual (workbook)"], ["schedule", "Redstone schedule"]])),
+    F("timing.first_distribution", "First Siena distribution", "date", "Deck: Apr 20, 2027"),
+    Object.assign(F("timing.siena_frequency", "Siena pays", "select", "OA §8.1: quarterly", [[4, "Quarterly"], [2, "Semiannually"], [1, "Annually"]]), { num: true }),
+    F("timing.sale_date", "Sale date", "date", "Deck: Oct 2031"),
+    Object.assign(rr(F("timing.vehicle_frequency", `${v} pays its members`, "select", "Memo (Nov 3): semiannual", [[0, "When Siena pays"], [2, "Semiannually"], [4, "Quarterly"], [1, "Annually"]])), { num: true }),
+    F("timing.vehicle_first_distribution", `${v} first distribution`, "date", "Memo: Aug 2027, then mid-Feb / mid-Aug"),
+    F("timing.vehicle_holdback", "Cash held back", "pct", "Memo: keep ≥ 50% of each distribution; released at the end"),
+    Object.assign(F("timing.vehicle_final_lag_months", "Final distribution after sale", "select", "Memo: no later than 6 months", [0, 1, 2, 3, 4, 5, 6].map((m) => [m, m ? `${m} month${m > 1 ? "s" : ""}` : "At the sale"])), { num: true }),
+    F("timing.acq_fee_after_first", "Acquisition fee after first distribution", "bool", `Memo: paid after the initial ${v} distribution`),
+  ];
+  sec.innerHTML = `<h3>Distribution timing</h3>${fields.map(fieldHTML).join("")}
+    <p class="note" style="margin:0">${t.mode === "schedule"
+      ? `Siena pays each year's cash in equal installments from its first distribution and the sale on the sale date. ${esc(v)} pays its members on its own dates, holding back cash and carrying any shortfall rather than calling capital, per the Nov 3 memo. IRRs use actual dates (as the OA does). Yearly amounts don't change.`
+      : `One distribution a year on the close anniversary, as in the v10 and SV26 workbooks. Switch to “Redstone schedule” to see quarterly Siena timing and edit the memo's ${esc(v)} terms: semiannual payouts, first payout date, cash held back, acquisition fee after the first payout, and the final-payout delay.`}</p>`;
+  fields.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
+  fields.slice(1).forEach((f) => { sec.querySelector(`[data-path="${f.path}"]`).hidden = t.mode !== "schedule"; });
+  if (t.mode === "schedule" && t.vehicle_frequency === 0) sec.querySelector('[data-path="timing.vehicle_first_distribution"]').hidden = true;
+  markChanged();
+}
+
+/* ------------------------------------------------------------ cash by person */
+let cbpParty = "p0", cbpCase = "base", cbpFreq = 12;
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monLabel = (iso) => { const [y, m] = iso.split("-"); return `${MON[+m - 1]} ${y.slice(2)}`; };
+function cbpParties() {
+  const w = inputs.warehouse, k = cbpCase, R = results.warehouse[k], C = results.cases[k];
+  const T = R.tranches.length, X = R.manager_transfers.length, distDates = R.dates.slice(1 + T + X);
+  const close = w.close_date, list = [];
+  w.people.forEach((p, i) => {
+    const fl = R.people[i].flows;
+    list.push({ id: "p" + i, name: p.name, group: `${w.names.vehicle} people`, irr: R.summary.people[i].irr,
+      flows: fl.map((a, j) => ({ date: R.dates[j], amount: a, kind: j === 0 ? "in" : j <= T + X ? (a >= 0 ? "back" : "in") : "dist" })) });
+  });
+  R.buyers.forEach((g, gi) => {
+    if (R.summary.buyers[gi].units < 1e-9) return;
+    const bd = R.tranches.map((t) => t.date).concat(distDates);
+    list.push({ id: "b" + gi, name: g.name, group: "Outside buyers", irr: R.summary.buyers[gi].irr,
+      flows: g.flows.map((a, j) => ({ date: bd[j], amount: a, kind: j < T ? "in" : "dist" })) });
+  });
+  const pd = C.payments.dates;
+  const ipd = C.investor.payment_dates;
+  list.push({ id: "v", name: `${inputs.investor.name} (via ${w.names.vehicle})`, group: "Siena check", irr: C.investor.irr,
+    flows: [{ date: close, amount: -inputs.investor.check, kind: "in" }].concat(C.investor.payments.map((a, j) => ({ date: ipd[j], amount: a, kind: "dist" }))) });
+  C.direct_investors.forEach((d, i) => list.push({ id: "d" + i, name: d.name, group: "Direct Siena investors", irr: d.irr,
+    flows: [{ date: close, amount: -d.check, kind: "in" }].concat(d.payments.map((a, j) => ({ date: pd[j], amount: a, kind: "dist" }))) }));
+  return list;
+}
+function renderCashByPerson() {
+  const parties = cbpParties();
+  let me = parties.find((p) => p.id === cbpParty);
+  if (!me) { me = parties[0]; cbpParty = me.id; }
+  const groups = [...new Set(parties.map((p) => p.group))];
+  const sel = document.getElementById("cbpParty");
+  sel.innerHTML = groups.map((g) => `<optgroup label="${esc(g)}">${parties.filter((p) => p.group === g).map((p) => `<option value="${p.id}"${p.id === cbpParty ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>`).join("");
+  sel.title = `${me.name} · ${me.group}`;
+  document.getElementById("cbpCases").innerHTML = CASES.map((k) => `<button type="button" data-cbp-case="${k}" aria-pressed="${k === cbpCase}">${shortLabel(k)}</button>`).join("");
+  document.getElementById("cbpFreq").innerHTML = [[12, "Year"], [6, "Half-year"], [3, "Quarter"], [1, "Month"]].map(([m, l]) => `<button type="button" data-cbp-freq="${m}" aria-pressed="${m === cbpFreq}">${l}</button>`).join("");
+  const close = inputs.warehouse.close_date, annual = inputs.timing.mode !== "schedule";
+  // period p covers (close + p*m months, close + (p+1)*m months]; flows on the close date get their own row
+  const lastDate = me.flows.reduce((a, f) => (f.date > a ? f.date : a), close);
+  const nP = Math.max(1, Math.ceil((E_monthsBetween(close, lastDate)) / cbpFreq));
+  const rows = Array.from({ length: nP }, (_, p) => ({ start: E.addMonths(close, p * cbpFreq), end: E.addMonths(close, (p + 1) * cbpFreq), in: 0, back: 0, dist: 0 }));
+  const at0 = { in: 0, back: 0, dist: 0 };
+  const put = (date, kind, amt) => {
+    if (date <= close) { at0[kind] += amt; return; }
+    const r = rows.find((x) => date > x.start && date <= x.end) || rows[rows.length - 1];
+    r[kind] += amt;
+  };
+  const lastDist = me.flows.filter((f) => f.kind === "dist").reduce((a, f) => (f.date > a ? f.date : a), "");
+  me.flows.forEach((f) => {
+    if (annual && f.kind === "dist" && cbpFreq < 12 && f.date !== lastDist) {
+      // annual timing: show finer periods as equivalents, spreading the year's distribution evenly over it
+      const start = E.addMonths(f.date, -12), n = 12 / cbpFreq;
+      for (let q = 0; q < n; q++) put(E.addMonths(start, (q + 1) * cbpFreq), "dist", f.amount / n);
+    } else put(f.date, f.kind, f.amount);
+  });
+  let cum = 0;
+  const fmtCell = (v) => (Math.abs(v) < 0.5 ? `<span class="muted">—</span>` : fmt.usd(v));
+  const line = (label, r, cls = "") => { const net = r.in + r.back + r.dist; cum += net;
+    return `<tr class="${cls}"><td class="lbl">${label}</td><td class="n">${fmtCell(r.in)}</td><td class="n">${fmtCell(r.back)}</td><td class="n">${fmtCell(r.dist)}</td><td class="n">${fmtCell(net)}</td><td class="n ${cum >= 0 ? "pos" : "neg"}">${fmt.usd(cum)}</td></tr>`; };
+  const label = (r, p) => cbpFreq === 12 ? `Year ${p + 1} · ${monLabel(r.start)}–${monLabel(r.end)}` : `${monLabel(r.start)}–${monLabel(r.end)}`;
+  const tot = { in: at0.in, back: at0.back, dist: at0.dist };
+  rows.forEach((r) => { tot.in += r.in; tot.back += r.back; tot.dist += r.dist; });
+  let body = line("At close · " + monLabel(close), at0);
+  rows.forEach((r, p) => { body += line(label(r, p), r); });
+  const totRow = `<tr class="total"><td class="lbl">Total</td><td class="n">${fmt.usd(tot.in)}</td><td class="n">${fmt.usd(tot.back)}</td><td class="n">${fmt.usd(tot.dist)}</td><td class="n">${fmt.usd(tot.in + tot.back + tot.dist)}</td><td></td></tr>`;
+  document.getElementById("cbpTable").innerHTML = `<table><thead><tr><th>Period</th><th class="n">Money in</th><th class="n">Sales &amp; buy-ins</th><th class="n">Distributions</th><th class="n">Net</th><th class="n">Cumulative</th></tr></thead><tbody>${body}${totRow}</tbody></table>`;
+  const y1 = rows.slice(0, 12 / cbpFreq).reduce((a, r) => a + r.dist, 0);
+  document.getElementById("cbpSummary").innerHTML = `<b>${esc(me.name)}</b> in ${esc(results.cases[cbpCase].label)}: profit <b class="${tot.in + tot.back + tot.dist >= 0 ? "pos" : "neg"}">${fmt.usd(tot.in + tot.back + tot.dist)}</b>, IRR <b>${fmt.pct(me.irr)}</b> · first-year distributions ${fmt.usd(y1)} ≈ ${fmt.usd(y1 / 12)}/month`;
+  document.getElementById("cbpNote").textContent = annual
+    ? (cbpFreq < 12 ? "Annual timing: each year's distribution is shown spread evenly across the year (equivalents, like the v10 Quarterly Cash Flow tab). The final distribution includes the sale and is shown in the period it's paid. Switch Distribution timing to the Redstone schedule for actual payment dates." : "Annual timing: one distribution a year on the close anniversary. The final year includes the sale.")
+    : `Redstone schedule: Siena pays ${({ 4: "quarterly", 2: "semiannually", 1: "annually" })[inputs.timing.siena_frequency]} from ${inputs.timing.first_distribution}; ${inputs.warehouse.names.vehicle} pays its members ${({ 0: "when Siena pays", 4: "quarterly", 2: "semiannually", 1: "annually" })[inputs.timing.vehicle_frequency]}${inputs.timing.vehicle_frequency ? ` from ${inputs.timing.vehicle_first_distribution}` : ""}, holding back ${fmt.pct(inputs.timing.vehicle_holdback, 0)} until the final distribution. Amounts are on their actual dates.`;
+}
+function E_monthsBetween(a, b) { const [y1, m1, d1] = a.split("-").map(Number), [y2, m2, d2] = b.split("-").map(Number); return (y2 - y1) * 12 + (m2 - m1) + (d2 > d1 ? 1 : 0); }
+
+
+
+/* ------------------------------------------------------------ warehouse inputs (people, sales, fees) */
+const MAX_PEOPLE = 6, MAX_SALES = 3;
+function keepFocus(fn) {
+  setTimeout(() => {
+    const id = document.activeElement && document.activeElement.id;
+    fn();
+    const el = id && document.getElementById(id);
+    if (el) el.focus();
+  }, 0);
+}
+const ROLE_LABEL = { member: "Keeps units", warehouse: "Warehouses to sell", loan: "Lends" };
+function whFields() {
+  const w = inputs.warehouse, n = w.names, P = "warehouse.";
+  const rr = (f) => Object.assign(f, { rerender: true });
+  return {
+    names: [F(P + "names.vehicle", "Investment vehicle", "text"), F(P + "names.manager", "Manager", "text"),
+            F(P + "names.buyers", "Default buyer name", "text", "Used when a sale names no buyer")],
+    vehicle: [F(P + "close_date", "Close date", "date"),
+              F(P + "manager_commitment", `${n.manager} into ${n.vehicle}`, "usd", `${n.manager}'s units in ${n.vehicle}`),
+              F(P + "manager_reserve", `${n.manager} reserve`, "usd", `Held in ${n.manager}, not invested; back in Year 5`),
+              F(P + "reserve", `${n.vehicle} reserve`, "usd", `Held in ${n.vehicle}, owned by all its members; back in Year 5`),
+              F(P + "unit_price", "Unit price", "usd")],
+    fees: [F(P + "acq_fee_pct", "Acquisition fee", "pct", "% of the Siena investment, Year 1"),
+           F(P + "mgmt_fee_pct", "Annual fee", "pct", "% of capital raised, every year"),
+           F(P + "member_hurdle_irr", "Member hurdle IRR", "pct"),
+           F(P + "promote", `${n.manager} promote above hurdle`, "pct"),
+           F(P + "warehouse_promote", "Promote on unsold warehouse units", "pct", "Same as above unless you set it"),
+           F(P + "hurdle_type", "Hurdle grows by", "select", "Memo: “10% per annum IRR”", [["compound", "Compounding (IRR)"], ["simple", "Simple interest"]]),
+           F(P + "hurdle_basis", "Hurdle measured", "select", "Memo: members “in aggregate”", [["pooled", "Whole fund"], ["per_member", "Each member"]]),
+           F(P + "promote_on_manager_units", `${n.manager}'s own units pay promote`, "bool", "Memo: 60% to members “including LTEC”"),
+           Object.assign(F(P + "admin_cost_method", `${n.vehicle} admin cost`, "select", null, [["fixed", "Fixed $ per year"], ["pct_raise", "% of the raise per year"]]), { rerender: true }),
+           F(P + "admin_cost_per_year", "Admin per year", "usd", "Assumption, not from docs"),
+           F(P + "admin_cost_pct", "Admin, % of raise per year", "pct", "Assumption; scales with the raise")],
+    person: (i) => [F(`${P}people.${i}.name`, "Name", "text"),
+                    F(`${P}people.${i}.amount`, "Puts in at close", "usd"),
+                    rr(F(`${P}people.${i}.role`, "Role", "select", null, [["member", "Keeps units"], ["warehouse", "Warehouses to sell"], ["loan", `Lends to ${n.manager}`]])),
+                    F(`${P}people.${i}.loan_rate`, "Loan rate", "pct", "Simple; unsold part converts to units"),
+                    F(`${P}people.${i}.manager_capital`, `Puts into ${n.manager} at close`, "usd", `Gets that share of ${n.manager}'s units and reserve`),
+                    F(`${P}people.${i}.manager_share`, `Share of ${n.manager} fees & promote`, "pct", "Can differ from their capital share")],
+    sale: (j) => [F(`${P}selldown.tranches.${j}.date`, "Sale date", "date"),
+                  F(`${P}selldown.tranches.${j}.share`, "Share of pool sold", "pct"),
+                  Object.assign(F(`${P}selldown.tranches.${j}.buyer`, "Buyer", "text", "A person's name, or any outside buyer"), { list: "buyerNames" }),
+                  rr(F(`${P}selldown.tranches.${j}.pricing`, "Price", "select", null, [["carry_simple", "Par + simple carry"], ["carry_compound", "Par + compound carry"], ["premium", "Par ± premium"]])),
+                  F(`${P}selldown.tranches.${j}.rate`, w.selldown.tranches[j].pricing === "premium" ? "Premium (− = discount)" : "Carry rate, annual", "pct")],
+    xfer: (q) => {
+      const x = w.manager_transfers[q], names = w.people.map((p) => [p.name, p.name]), Q = `${P}manager_transfers.${q}.`;
+      return [F(Q + "date", "Date", "date"),
+              F(Q + "buyer", "Buyer", "select", null, names),
+              F(Q + "seller", "Seller", "select", null, names),
+              rr(F(Q + "interest", "What", "select", null, [["both", "Capital + promote"], ["capital", "Capital only"], ["promote", "Fees & promote"]])),
+              rr(F(Q + "mode", "Buys", "select", null, [["share", "A share"], ["amount", "$ amount"]])),
+              F(Q + "share", x.interest === "promote" ? `Share of ${n.manager} fees & promote` : x.interest === "capital" ? `Share of ${n.manager} capital` : `Share of ${n.manager}`, "pct"),
+              F(Q + "amount", "Amount", "usd", "Buys as much as this covers"),
+              F(Q + "price", "Price paid", "usd", "No cost basis; 0 = granted"),
+              rr(F(Q + "pricing", "Price", "select", null, [["premium", "Cost ± premium"], ["carry_simple", "Cost + interest"], ["carry_compound", "Cost + compound"]])),
+              F(Q + "rate", x.pricing === "premium" ? "Premium (0 = at cost)" : "Interest rate, annual", "pct"),
+              F(Q + "credit_distributions", "Less cash the seller already got", "bool", `${n.manager} distributions, fees and promote on that share`)];
+    },
+    credit: [F(P + "selldown.credit_distributions", "Credit buyers for distributions already paid", "bool", "Subtracted from the price")],
+  };
+}
+function renderWarehouseInputs() {
+  const w = inputs.warehouse, n = w.names, fx = whFields(), sec = document.getElementById("sec-wh");
+  const all = [];
+  const block = (fields) => { all.push(...fields); return fields.map(fieldHTML).join(""); };
+  const grp = (id, title, body) => `<div class="grp" data-grp="${id}"><div class="grp-head" role="button" tabindex="0"><span class="grp-title">${title}</span><span class="sec-badge"></span><span class="chev" aria-hidden="true"></span></div><div class="grp-sum"></div><div class="grp-body">${body}</div></div>`;
+  sec.innerHTML = `<h3>${esc(n.vehicle)}</h3>
+    ${grp("wh-names", "Names", block(fx.names))}
+    ${grp("wh-raise", "The raise", block(fx.vehicle) + `<div class="readout" id="whRaised"></div>`)}
+    ${grp("wh-fees", `${esc(n.manager)} fees &amp; promote`, block(fx.fees))}
+    ${grp("wh-people", `People in ${esc(n.vehicle)}`, `
+    <p class="note" style="margin:0">Fully subscribed? Make everyone “Keeps units”. Covering a shortfall to resell? “Warehouses to sell” or “Lends”.</p>
+    ${w.people.map((p, i) => `<div class="card"><div class="card-head"><span>Person ${i + 1}</span>${w.people.length > 1 ? `<button class="link" type="button" data-remove-person="${i}">Remove</button>` : ""}</div>${block(fx.person(i))}</div>`).join("")}
+    <div class="sumline" id="peopleSums"></div>
+    ${w.people.length < MAX_PEOPLE ? `<div class="row"><button class="btn" type="button" id="addPerson">+ Add person</button></div>` : ""}`)}
+    ${grp("wh-buyins", `${esc(n.manager)} buy-ins after close`, `
+    <p class="note" style="margin:0">Someone buys part of ${esc(n.manager)} from an owner later, e.g. when a commission comes in. The buyer pays the seller; ${esc(n.manager)}'s cash follows the new ownership from that date. Price is based on cost: the share of ${esc(n.manager)}'s ${fmt.usd(w.manager_commitment + (w.manager_reserve || 0))} of capital.</p>
+    ${w.manager_transfers.map((x, q) => `<div class="card"><div class="card-head"><span>Buy-in ${q + 1}</span><button class="link" type="button" data-remove-xfer="${q}">Remove</button></div>${block(fx.xfer(q))}</div>`).join("")}
+    <div class="sumline" id="xferSums"></div>
+    ${w.manager_transfers.length < 3 && w.people.length > 1 ? `<div class="row"><button class="btn" type="button" id="addXfer">+ Add buy-in</button></div>` : ""}`)}
+    ${grp("wh-sales", "Sell-down of the warehouse pool", block(fx.credit) + `
+    ${w.selldown.tranches.map((t, j) => `<div class="card"><div class="card-head"><span>Sale ${j + 1}</span><button class="link" type="button" data-remove-sale="${j}">Remove</button></div>${block(fx.sale(j))}</div>`).join("")}
+    <div class="sumline" id="saleSums"></div>
+    ${w.selldown.tranches.length < MAX_SALES ? `<div class="row"><button class="btn" type="button" id="addSale">+ Add sale</button></div>` : ""}`)}
+    <datalist id="buyerNames">${[n.buyers].concat(w.people.map((p) => p.name)).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>`;
+  all.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
+  w.people.forEach((p, i) => { const el = sec.querySelector(`[data-path="warehouse.people.${i}.loan_rate"]`); el.hidden = p.role !== "loan"; });
+  sec.querySelector('[data-path="warehouse.admin_cost_per_year"]').hidden = w.admin_cost_method === "pct_raise";
+  sec.querySelector('[data-path="warehouse.admin_cost_pct"]').hidden = w.admin_cost_method !== "pct_raise";
+  w.manager_transfers.forEach((x, q) => {
+    const f = (k) => sec.querySelector(`[data-path="warehouse.manager_transfers.${q}.${k}"]`);
+    const promo = x.interest === "promote";
+    f("mode").hidden = promo; f("pricing").hidden = promo; f("rate").hidden = promo; f("credit_distributions").hidden = promo;
+    f("price").hidden = !promo;
+    f("share").hidden = !promo && x.mode !== "share";
+    f("amount").hidden = promo || x.mode !== "amount";
+  });
+  if (results) updateWhSums();
+  markChanged();
+}
+function updateWhSums() {
+  const w = inputs.warehouse, n = w.names;
+  const raised = inputs.investor.check + w.reserve;
+  const el = (id) => document.getElementById(id);
+  if (!el("whRaised")) return;
+  const put = sum(w.people.map((p) => p.amount)), gap = raised - w.manager_commitment - put;
+  const pool = sum(w.people.filter((p) => p.role !== "member").map((p) => p.amount));
+  const mr = w.manager_reserve || 0;
+  el("whRaised").innerHTML = `${esc(n.vehicle)} raise ${fmt.usd(raised)} = ${fmt.usd(inputs.investor.check)} into Siena + ${fmt.usd(w.reserve)} reserve<br>` +
+    (mr ? `${esc(n.manager)} capital ${fmt.usd(w.manager_commitment + mr)} = ${fmt.usd(w.manager_commitment)} into ${esc(n.vehicle)} + ${fmt.usd(mr)} held<br>` : "") +
+    `${esc(n.manager)} ${fmt.usd(w.manager_commitment)} + people ${fmt.usd(put)} → ` +
+    (Math.abs(gap) < 0.5 ? `<b>fully funded</b>` : gap > 0 ? `<b style="color:var(--warn-fg)">${fmt.usd(gap)} short</b>` : `<b style="color:var(--warn-fg)">${fmt.usd(-gap)} over</b>`) +
+    `<br>Warehouse pool to sell: ${fmt.usd(pool)}` +
+    `<br>Admin: ${fmt.usd(results.warehouse.base.summary.admin_per_year)}/yr = ${fmt.pct(results.warehouse.base.summary.admin_per_year / raised, 2)} of the raise`;
+  const sM = sum(w.people.map((p) => p.manager_share)), mcap = w.manager_commitment + mr, sC = sum(w.people.map((p) => p.manager_capital));
+  const off = Math.abs(gap) >= 0.5 || Math.abs(sM - 1) > 1e-6 || Math.abs(sC - mcap) >= 0.5;
+  el("peopleSums").className = "sumline" + (off ? " warn" : "");
+  el("peopleSums").textContent = `Into ${n.vehicle}: ${fmt.usd(put)} of ${fmt.usd(raised - w.manager_commitment)} · into ${n.manager}: ${fmt.usd(sC)} of ${fmt.usd(mcap)} · ${n.manager} fees & promote: ${fmt.pct(sM)}` +
+    (off ? " — these should match, and fees & promote should total 100%, or some cash goes unassigned." : "");
+  const xs = results.warehouse.base.manager_transfers, sp = results.warehouse.base.summary.people;
+  el("xferSums").className = "sumline";
+  el("xferSums").innerHTML = xs.length ? `${esc(n.manager)} after buy-ins (Base case), capital / fees &amp; promote: ` + w.people.map((p, i) => `${esc(p.name)} ${fmt.pct(sp[i].manager_capital_share_end, 1)} / ${fmt.pct(sp[i].manager_share_end, 1)}`).join(" · ") +
+    xs.filter((x) => x.share < 1e-9).map(() => `<br><span style="color:var(--warn-fg)">A buy-in moves nothing: check the buyer, seller and the seller's stake.</span>`).slice(0, 1).join("") : "";
+  const sold = sum(w.selldown.tranches.map((t) => t.share));
+  el("saleSums").className = "sumline" + (sold > 1 + 1e-9 ? " warn" : "");
+  el("saleSums").textContent = pool < 0.5 ? "Nobody is warehousing or lending, so sales have nothing to sell." :
+    !w.selldown.tranches.length ? "No sales: the warehouse pool is held for the whole hold." :
+    `Total sold ${fmt.pct(sold)} of the pool` + (sold > 1 + 1e-9 ? " — over 100%, so each sale is scaled down to fit." : sold < 1 - 1e-9 ? ` · ${fmt.pct(1 - sold)} kept` : "");
+}
+function sum(a) { return a.reduce((x, y) => x + y, 0); }
+
+/* ------------------------------------------------------------ collapsible rail */
+const RAIL_KEY = "siena.rail.collapsed.v1";
+const RAIL_DEFAULT_CLOSED = ["sec-timing", "sec-redstone", "sec-loan", "sec-hold", "sec-direct", "sec-repo",
+                             "wh-names", "wh-raise", "wh-fees", "wh-buyins", "wh-sales"];
+let railClosed;
+try { railClosed = new Set(JSON.parse(localStorage.getItem(RAIL_KEY)) || RAIL_DEFAULT_CLOSED); } catch (_) { railClosed = new Set(RAIL_DEFAULT_CLOSED); }
+function saveRail() { try { localStorage.setItem(RAIL_KEY, JSON.stringify([...railClosed])); } catch (_) {} }
+function toggleRail(id, open) {
+  if (open == null) open = railClosed.has(id);
+  if (open) railClosed.delete(id); else railClosed.add(id);
+  saveRail(); decorateRail();
+}
+// Which section / SV26 group a changed input path belongs to (for the "changed" badges).
+function railHome(path) {
+  const d = (k) => path === "deal." + k || path.startsWith("deal." + k + ".");
+  if (path.startsWith("investor.") || d("selling_cost_pct") || d("disposition_fee_pct") || d("annual_capex_reserves")) return ["sec-investor"];
+  if (path.startsWith("timing")) return ["sec-timing"];
+  if (path.startsWith("waterfall") || d("asset_mgmt_fee_pct_of_income")) return ["sec-redstone"];
+  if (["loan_amount", "loan_rate", "debt_service_method", "annual_debt_service", "assumption_fee_pct"].some(d)) return ["sec-loan"];
+  if (d("hold_years") || d("refi")) return ["sec-hold"];
+  if (path.startsWith("direct_investors")) return ["sec-direct"];
+  if (path.startsWith("cases")) return ["sec-cases"];
+  if (path.startsWith("warehouse")) {
+    const k = path.split(".")[1];
+    const g = k === "names" ? "wh-names" : k === "people" ? "wh-people" : k === "manager_transfers" ? "wh-buyins" : k === "selldown" ? "wh-sales"
+      : ["close_date", "manager_commitment", "manager_reserve", "reserve", "unit_price"].includes(k) ? "wh-raise" : "wh-fees";
+    return ["sec-wh", g];
+  }
+  return [];
+}
+function railSummaries() {
+  const w = inputs.warehouse, n = w.names, d = inputs.deal, t = inputs.timing, rf = d.refi, ps = (x) => fmt.pct(x, (Math.round(x * 1000) / 10) % 1 ? 1 : 0);
+  const freq = { 0: "when Siena pays", 1: "annually", 2: "semiannually", 4: "quarterly" };
+  const raised = inputs.investor.check + w.reserve, pool = sum(w.people.filter((p) => p.role !== "member").map((p) => p.amount));
+  const sold = sum(w.selldown.tranches.map((x) => x.share)), di = inputs.direct_investors;
+  const wf = inputs.waterfall;
+  return {
+    "sec-investor": `${fmt.usdk(inputs.investor.check)} check · ${ps(d.selling_cost_pct)} selling costs${d.disposition_fee_pct ? ` · ${ps(d.disposition_fee_pct)} dispo` : ""}`,
+    "sec-timing": t.mode === "schedule" ? `Redstone schedule · Siena ${freq[t.siena_frequency]} · ${n.vehicle} ${freq[t.vehicle_frequency]}` : "Annual (workbook convention)",
+    "sec-redstone": `${ps(wf.pref_rate)} pref → ${wf.tiers.map((x) => `${Math.round(x.lp_share * 100)}/${100 - Math.round(x.lp_share * 100)} to ${ps(x.lp_irr_hurdle)}`).join(" → ")} → ${Math.round(wf.residual_lp_share * 100)}/${100 - Math.round(wf.residual_lp_share * 100)} · ${ps(d.asset_mgmt_fee_pct_of_income)} AM fee`,
+    "sec-loan": `${fmt.usdk(d.loan_amount)} @ ${fmt.pct(d.loan_rate, 2)} · ${d.debt_service_method === "interest_only" ? "balance × rate" : "deck debt service"}${d.assumption_fee_pct ? ` · ${ps(d.assumption_fee_pct)} assumption fee` : ""}`,
+    "sec-hold": `Sell end of Year ${d.hold_years} (${2026 + d.hold_years})` + (rf.enabled && d.hold_years > 1 ? ` · refinance Year ${rf.year}${rf.crystallize ? " + crystallize" : ""}` : " · no refinance"),
+    "sec-direct": di.length ? `${di.length} investor${di.length > 1 ? "s" : ""} · ${fmt.usdk(sum(di.map((x) => x.check)))}` : "None",
+    "sec-cases": `Editing ${inputs.cases[editCase].label}`,
+    "sec-wh": `${w.people.map((p) => p.name).join(", ")} · ${pool > 0.5 ? `${fmt.usdk(pool)} warehoused` : "fully subscribed"} · ${w.selldown.tranches.length} sale${w.selldown.tranches.length === 1 ? "" : "s"} · ${w.manager_transfers.length} buy-in${w.manager_transfers.length === 1 ? "" : "s"}`,
+    "sec-saved": db ? `${scenarios.length} saved` : "",
+    "sec-repo": "Copy or download deal.json",
+    "wh-names": `${n.vehicle} · ${n.manager} · ${n.buyers}`,
+    "wh-raise": `${fmt.usdk(raised)} raise · ${n.manager} ${fmt.usdk(w.manager_commitment)} in${w.manager_reserve ? ` + ${fmt.usdk(w.manager_reserve)} held` : ""}${w.reserve ? ` · ${fmt.usdk(w.reserve)} reserve` : ""}`,
+    "wh-fees": `${ps(w.acq_fee_pct)} acquisition · ${ps(w.member_hurdle_irr)} hurdle · ${ps(w.promote)} promote · admin ${w.admin_cost_method === "pct_raise" ? ps(w.admin_cost_pct) + " of raise" : fmt.usdk(w.admin_cost_per_year) + "/yr"}`,
+    "wh-people": w.people.map((p) => `${p.name} ${fmt.usdk(p.amount)}`).join(" · "),
+    "wh-buyins": w.manager_transfers.length ? w.manager_transfers.map((x) => `${x.buyer} ← ${x.seller}`).join(" · ") : "None",
+    "wh-sales": w.selldown.tranches.length ? `${w.selldown.tranches.length} sale${w.selldown.tranches.length > 1 ? "s" : ""} · ${ps(Math.min(1, sold))} of pool` : "None",
+  };
+}
+function decorateRail(changedPaths) {
+  if (changedPaths) decorateRail.counts = changedPaths.reduce((acc, p) => { railHome(p).forEach((id) => { acc[id] = (acc[id] || 0) + 1; }); return acc; }, {});
+  const counts = decorateRail.counts || {}, sums = railSummaries();
+  const badge = (id) => (counts[id] ? `${counts[id]} changed` : "");
+  document.querySelectorAll(".rail section[id]").forEach((sec) => {
+    const h = sec.querySelector(":scope > h3");
+    if (!h) return;
+    if (!h.dataset.dec) {
+      h.dataset.dec = "1";
+      h.innerHTML = `<span class="sec-title">${h.innerHTML}</span><span class="sec-badge"></span><span class="chev" aria-hidden="true"></span>`;
+      h.setAttribute("role", "button"); h.tabIndex = 0;
+      h.insertAdjacentHTML("afterend", `<div class="sec-sum"></div>`);
+    }
+    const closed = railClosed.has(sec.id);
+    sec.classList.toggle("collapsed", closed);
+    h.setAttribute("aria-expanded", String(!closed));
+    h.querySelector(".sec-badge").textContent = badge(sec.id);
+    const sm = sec.querySelector(":scope > .sec-sum");
+    if (sm) sm.textContent = sums[sec.id] || "";
+  });
+  document.querySelectorAll(".rail .grp").forEach((g) => {
+    const id = g.dataset.grp, closed = railClosed.has(id);
+    g.classList.toggle("collapsed", closed);
+    g.querySelector(".grp-head").setAttribute("aria-expanded", String(!closed));
+    g.querySelector(".grp-head .sec-badge").textContent = badge(id);
+    g.querySelector(".grp-sum").textContent = sums[id] || "";
+  });
+}
+const railIds = () => [...document.querySelectorAll(".rail section[id]")].map((s) => s.id).concat([...document.querySelectorAll(".rail .grp")].map((g) => g.dataset.grp));
+document.addEventListener("click", (e) => {
+  const h = e.target.closest(".rail section[id] > h3");
+  if (h) { toggleRail(h.parentElement.id); return; }
+  const g = e.target.closest(".grp-head");
+  if (g) { toggleRail(g.parentElement.dataset.grp); return; }
+  if (e.target.closest("#expandAll")) { railClosed.clear(); saveRail(); decorateRail(); }
+  if (e.target.closest("#collapseAll")) { railIds().forEach((id) => railClosed.add(id)); saveRail(); decorateRail(); }
+  if (e.target.closest("#showChanged")) {
+    const c = decorateRail.counts || {};
+    railIds().forEach((id) => { if (c[id]) railClosed.delete(id); else railClosed.add(id); });
+    saveRail(); decorateRail();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const h = e.target.closest(".rail section[id] > h3, .grp-head");
+  if (!h) return;
+  e.preventDefault();
+  if (h.classList.contains("grp-head")) toggleRail(h.parentElement.dataset.grp); else toggleRail(h.parentElement.id);
+});
+
+/* ------------------------------------------------------------ change tracking */
+function diffPaths(a, b, pre = "", out = []) {
+  if (Array.isArray(a)) {
+    if (a.length && a[0] && typeof a[0] === "object" && Array.isArray(b) && b.length === a.length) { a.forEach((x, i) => diffPaths(x, b[i], pre + "." + i, out)); return out; }
+    if (JSON.stringify(a) !== JSON.stringify(b)) out.push(pre);
+    return out;
+  }
+  if (a && typeof a === "object") { for (const k of Object.keys(a)) if (!k.startsWith("_")) diffPaths(a[k], b ? b[k] : undefined, pre ? pre + "." + k : k, out); return out; }
+  if (a !== b && !(typeof a === "number" && typeof b === "number" && Math.abs(a - b) < 1e-12)) out.push(pre);
+  return out;
+}
+function markChanged() {
+  const changed = new Set(diffPaths(inputs, DEFAULTS));
+  document.querySelectorAll("[data-path]").forEach((el) => {
+    const p = el.dataset.path;
+    if (el.classList.contains("field")) el.classList.toggle("is-changed", changed.has(p));
+    else el.querySelectorAll(".in").forEach((box, i) => box.classList.toggle("is-changed", get(inputs, p)[i] !== get(DEFAULTS, p)[i]));
+  });
+  const chip = document.getElementById("changeChip");
+  chip.hidden = changed.size === 0;
+  chip.className = "chip changed";
+  chip.textContent = changed.size + (changed.size === 1 ? " change from defaults" : " changes from defaults");
+  decorateRail([...changed]);
+}
+
+/* ------------------------------------------------------------ outputs */
+function irrPill(irr) {
+  if (irr == null || irr < 0) return `<span class="pill loss">Loses money</span>`;
+  if (irr < inputs.waterfall.pref_rate) return `<span class="pill under">Below 6% pref</span>`;
+  return `<span class="pill ok">Clears pref</span>`;
+}
+function renderCards() {
+  const base = DEFAULT_RESULTS;
+  document.getElementById("caseCards").innerHTML = CASES.map((k) => {
+    const c = results.cases[k], d = base.cases[k];
+    const dIrr = c.lp.irr - d.lp.irr;
+    const delta = Math.abs(dIrr) > 5e-5 ? `<span class="delta ${dIrr > 0 ? "pos" : "neg"}">${dIrr > 0 ? "+" : "−"}${(Math.abs(dIrr) * 100).toFixed(1)} pts vs defaults</span>` : "";
+    return `<article class="case${hl(k)}" style="--case-color:${CASE_COLOR[k]}">
+      <div class="head"><span class="name">${esc(c.label)}</span>${irrPill(c.lp.irr)}</div>
+      <div class="irr">${fmt.pct(c.lp.irr)}<small>LP IRR</small></div>${delta}
+      <dl>
+        <dt>Multiple</dt><dd>${fmt.x(c.lp.multiple)}</dd>
+        <dt>Profit on ${fmt.usdk(inputs.investor.check)}</dt><dd class="${c.investor.profit >= 0 ? "pos" : "neg"}">${fmt.signedk(c.investor.profit)}</dd>
+        <dt>Avg cash yield Y1–4</dt><dd>${fmt.pct(c.lp.avg_cash_yield_y1_4)}</dd>
+        <dt>Gross exit value</dt><dd>${fmt.usdk(c.exit.gross_value)}</dd>
+        <dt>Exit cap</dt><dd>${fmt.pct(c.exit.exit_cap, 2)}</dd>
+      </dl></article>`;
+  }).join("");
+}
+
+function renderChart() {
+  const check = inputs.investor.check;
+  const series = CASES.map((k) => {
+    let cum = -check; const pts = [cum];
+    results.cases[k].investor.distributions.forEach((d) => { cum += d; pts.push(cum); });
+    return { k, pts };
+  });
+  const all = series.flatMap((s) => s.pts);
+  let lo = Math.min(...all), hi = Math.max(...all, 0);
+  const step = niceStep((hi - lo) / 5);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const W = 760, H = 280, L = 64, R = 70, T = 12, B = 30;
+  const HY = results.cases.base.operations.hold_years;
+  const x = (i) => L + (i / HY) * (W - L - R);
+  const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  let g = "";
+  for (let v = lo; v <= hi + 1e-6; v += step) {
+    g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="${Math.abs(v) < 1e-6 ? 1.5 : 1}" ${Math.abs(v) < 1e-6 ? "" : 'stroke-dasharray="2 4"'}/>`;
+    g += `<text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${fmt.usdk(v)}</text>`;
+  }
+  for (let i = 0; i <= HY; i++) g += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${i === 0 ? "Close" : "Y" + i}</text>`;
+  g += `<text x="${L + 6}" y="${y(0) - 6}" style="fill:var(--fg)">break-even</text>`;
+  // label collision: sort endpoints and nudge
+  const ends = series.map((s) => ({ k: s.k, v: s.pts[HY], yy: y(s.pts[HY]) })).sort((a, b) => a.yy - b.yy);
+  for (let i = 1; i < ends.length; i++) if (ends[i].yy - ends[i - 1].yy < 14) ends[i].yy = ends[i - 1].yy + 14;
+  series.forEach((s) => {
+    const d = s.pts.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+    const w = s.k === detailCase ? 2.75 : 1.75;
+    g += `<path d="${d}" fill="none" stroke="${CASE_COLOR[s.k]}" stroke-width="${w}" stroke-linejoin="round"/>`;
+    s.pts.forEach((v, i) => { g += `<circle cx="${x(i)}" cy="${y(v)}" r="${i === HY ? 4 : 2.5}" fill="${CASE_COLOR[s.k]}"><title>${esc(results.cases[s.k].label)} ${i === 0 ? "at close" : "after Y" + i}: ${fmt.usd(v)}</title></circle>`; });
+  });
+  ends.forEach((e) => { g += `<text x="${W - R + 8}" y="${e.yy + 4}" style="fill:${CASE_COLOR[e.k]}">${fmt.signedk(e.v)}</text>`; });
+  document.getElementById("chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:520px;display:block" role="img" aria-label="Cumulative cash to the investor by case">${g}</svg>`;
+  document.getElementById("chartSub").textContent = `Cumulative net cash on a ${fmt.usd(check)} check; Year ${HY} includes the sale${results.cases.base.operations.refi ? `, Year ${results.cases.base.operations.refi.year} the refinance` : ""}.`;
+  document.getElementById("chartLegend").innerHTML = CASES.map((k) => `<span><i style="background:${CASE_COLOR[k]}"></i>${esc(results.cases[k].label)}</span>`).join("");
+}
+function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const m = raw / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p; }
+
+function renderDetail() {
+  document.getElementById("detailTabs").innerHTML = CASES.map((k) =>
+    `<button type="button" data-k="${k}" aria-pressed="${k === detailCase}">${shortLabel(k)}</button>`).join("");
+  const c = results.cases[detailCase], o = c.operations, w = c.waterfall, ex = c.exit;
+  const share = inputs.investor.check / inputs.deal.lp_equity;
+  const H = o.hold_years, yrs = Array.from({ length: H }, (_, i) => i + 1);
+  const row = (label, arr, cls = "", f = fmt.usd) => `<tr class="${cls}"><td class="lbl">${label}</td>${arr.map((v) => `<td class="n">${f(v)}</td>`).join("")}</tr>`;
+  const neg = (a) => a.map((v) => -v);
+  const nt = w.tier_splits[0].length, tierCol = (j) => w.tier_splits.map((s) => s[j]);
+  const wfT = inputs.waterfall.tiers, pc = (x) => Math.round(x * 100);
+  const tierLabel = (j) => j < nt - 1 ? `${pc(wfT[j].lp_share)}/${100 - pc(wfT[j].lp_share)} tier (total)` : `${pc(inputs.waterfall.residual_lp_share)}/${100 - pc(inputs.waterfall.residual_lp_share)} residual (total)`;
+  const saleRow = yrs.map((y) => (y === H ? ex.net_sale_proceeds : 0));
+  const rf = o.refi, cols = H + 1;
+  document.getElementById("detailTable").innerHTML = `<table>
+    <thead><tr><th></th>${yrs.map((y) => `<th class="n">Year ${y}</th>`).join("")}</tr></thead><tbody>
+    ${row("Rents", o.rents)}${row("Other income", o.other_income)}${row("Operating expenses", neg(o.opex), "sub")}
+    ${row("Net operating income", o.noi, "total")}
+    ${row("CapEx / reserves", neg(o.capex), "sub")}${row("Debt service", neg(o.debt_service), "sub")}${row("Asset management fee", neg(o.asset_mgmt_fee), "sub")}${o.assumption_fee && o.assumption_fee[0] ? row("Loan assumption fee", neg(o.assumption_fee), "sub") : ""}
+    ${row("Operating cash flow", o.operating_cash_flow, "total")}
+    ${rf ? row(`Refinance proceeds (net)`, o.refi_proceeds) : ""}
+    ${row("Net sale proceeds", saleRow)}
+    ${row("Loan balance, end", o.loan_balance_end, "sub")}
+    <tr class="gap"><td colspan="${cols}"></td></tr>
+    ${row("Pref due", w.pref_due, "sub")}${row("To pref", w.to_pref)}${row("Return of capital", w.return_of_capital)}
+    ${Array.from({ length: nt }, (_, j) => row(tierLabel(j), tierCol(j), "sub")).join("")}
+    ${w.lp_regular ? row("LP distributions, regular waterfall", w.lp_regular, "sub") + row("Sponsor promote, regular waterfall", w.gp_regular, "sub") : ""}
+    ${row(w.lp_regular ? "LP distributions, after crystallization" : "LP distributions", w.lp, "total")}${row(w.lp_regular ? "Sponsor share, after crystallization" : "Sponsor promote", w.gp)}
+    ${row("Unreturned capital, end", w.unreturned_end, "sub")}${row("Unpaid pref, end", w.unpaid_pref_end, "sub")}
+    <tr class="gap"><td colspan="${cols}"></td></tr>
+    ${row(`Your check (${fmt.usdk(inputs.investor.check)}, ${(share * 100).toFixed(2)}% of LP)`, c.investor.distributions, "total")}
+    </tbody></table>
+    <p class="note">${(detailCase === "custom" && inputs.cases.custom.exit_method === "sale_price") || detailCase === "sponsor"
+      ? `Sale at the end of Year ${H}: gross ${fmt.usd(ex.gross_value)} (${fmt.usd(ex.price_per_unit)}/unit) on Year-${H + 1} NOI ${fmt.usd(ex.y6_noi)}, an implied ${fmt.pct(ex.exit_cap, 2)} cap;`
+      : `Sale at the end of Year ${H}: Year-${H + 1} NOI ${fmt.usd(ex.y6_noi)} at ${fmt.pct(ex.exit_cap, 2)} cap → gross ${fmt.usd(ex.gross_value)} (${fmt.usd(ex.price_per_unit)}/unit);`} less selling costs ${fmt.usd(ex.selling_costs)}${ex.disposition_fee ? ", dispo fee " + fmt.usd(ex.disposition_fee) : ""} and loan payoff ${fmt.usd(ex.debt_payoff)}. Sponsor promote over the hold: ${fmt.usd(c.gp_promote_total)}.${rf ? ` Refinance at the end of Year ${rf.year}: appraised ${fmt.usd(rf.appraised_value)} (Year-${rf.year + 1} NOI at ${fmt.pct(rf.appraisal_cap, 2)}), new loan ${fmt.usd(rf.loan)} = ${fmt.pct(rf.ltv, 1)} LTV, DSCR ${rf.dscr ? rf.dscr.toFixed(2) + "×" : "n/a"}, at ${fmt.pct(rf.rate, 2)}; ${fmt.usd(rf.costs)} costs and ${fmt.usd(rf.payoff_old)} payoff leave ${fmt.usd(rf.net_proceeds)}, paid out through the waterfall (OA §8.2).` : ""}${c.crystallization && c.crystallization.applied ? ` Redstone crystallizes (OA §8.7): equity value ${fmt.usd(c.crystallization.net_equity_value)} run through the waterfall fixes the split at ${fmt.pct(c.crystallization.lp_pct, 1)} LP / ${fmt.pct(1 - c.crystallization.lp_pct, 1)} sponsor; afterwards LPs get pref accrued to that date, capital back from the sale, then that split. The tier rows above show the regular waterfall.${c.crystallization.ltec_protected ? " LTEC's check stays on the regular waterfall (side letter)." : ""}` : ""}</p>`;
+}
+
+function heatColor(v) {
+  if (v == null) return "transparent";
+  const pref = 0.06;
+  if (v < 0) return `color-mix(in srgb, var(--bad) ${Math.min(45, 12 + -v * 400)}%, transparent)`;
+  if (v < pref) return `color-mix(in srgb, var(--c-down) ${10 + (pref - v) / pref * 25}%, transparent)`;
+  return `color-mix(in srgb, var(--good) ${Math.min(45, 10 + (v - pref) * 300)}%, transparent)`;
+}
+function renderExit() {
+  const k = detailCase, c = results.cases[k], ex = c.exit, ci = inputs.cases[k];
+  const how = k === "sponsor" ? "Deck net sale proceeds" : k === "custom" && ci.exit_method === "sale_price" ? "Gross sale price" : "Exit cap rate";
+  const implied = how !== "Exit cap rate";
+  document.getElementById("exitTitle").innerHTML = `Exit &amp; sensitivity · ${esc(c.label)}`;
+  const HN = c.operations.hold_years + 1;
+  document.getElementById("heatTitle").textContent = `LP IRR by exit cap and Year-${HN} NOI (${c.label} operations)`;
+  document.getElementById("exitKv").innerHTML = `
+    <dt>LP IRR</dt><dd class="big">${fmt.pct(c.lp.irr)}</dd>
+    <dt>LP multiple</dt><dd>${fmt.x(c.lp.multiple)}</dd>
+    <dt>Your total distributions</dt><dd>${fmt.usd(c.investor.total)}</dd>
+    <dt>Your profit</dt><dd class="${c.investor.profit >= 0 ? "pos" : "neg"}">${fmt.signedk(c.investor.profit)}</dd>
+    <dt>Sale priced by</dt><dd>${how}</dd>
+    <dt>Sale at end of</dt><dd>Year ${HN - 1}</dd>
+    <dt>Year-${HN} NOI</dt><dd>${fmt.usd(ex.y6_noi)}</dd>
+    <dt>Gross sale value</dt><dd>${fmt.usd(ex.gross_value)}</dd>
+    <dt>${implied ? "Implied cap" : "Exit cap"} / per unit</dt><dd>${fmt.pct(ex.exit_cap, 2)} · ${fmt.usdk(ex.price_per_unit)}</dd>
+    <dt>Net proceeds after loan</dt><dd>${fmt.usd(ex.net_sale_proceeds)}</dd>
+    ${c.operations.refi ? `<dt>Refinance, end of Year ${c.operations.refi.year}</dt><dd>${fmt.usd(c.operations.refi.net_proceeds)} out</dd>` : ""}
+    <dt>Loan payoff at sale</dt><dd>${fmt.usd(ex.debt_payoff)}</dd>
+    ${c.crystallization && c.crystallization.applied ? `<dt>Crystallized split</dt><dd>LP ${fmt.pct(c.crystallization.lp_pct, 1)} / sponsor ${fmt.pct(1 - c.crystallization.lp_pct, 1)}</dd>` : ""}
+    <dt>Sponsor promote, ${HN - 1} yrs</dt><dd>${fmt.usd(c.gp_promote_total)}</dd>`;
+  const s = results.sensitivity_by_case[k];
+  const onGrid = inputs.sensitivity.exit_caps.some((x) => Math.abs(x - s.own_cap) < 1e-9);
+  document.getElementById("heat").innerHTML = `<table class="heat"><thead><tr><th>Cap ↓ · NOI →</th>${s.noi_factors.map((f) => `<th class="n">${Math.round(f * 100)}%</th>`).join("")}</tr></thead><tbody>
+    ${s.exit_caps.map((cap, i) => { const mine = Math.abs(cap - s.own_cap) < 1e-9;
+      return `<tr><th class="n"${mine && !onGrid ? ' style="color:var(--fg)"' : ""}>${fmt.pct(cap, 2)}${mine && !onGrid ? " ◂" : ""}</th>${s.lp_irr[i].map((v, j) => {
+        const cur = mine && Math.abs(s.noi_factors[j] - 1) < 1e-9;
+        return `<td class="${cur ? "cur" : ""}" style="background:${heatColor(v)}" title="Gross value ${fmt.usd(s.gross_value[i][j])}">${fmt.pct(v)}</td>`;
+      }).join("")}</tr>`; }).join("")}</tbody></table>
+    <p class="note">Red loses money, amber is below the 6% pref, green clears it. The outlined cell is ${esc(c.label)} as modeled${onGrid ? "" : ` (its ${implied ? "implied " : ""}${fmt.pct(s.own_cap, 2)} cap, marked ◂, is added to the grid)`}. NOI percentages scale its Year-${HN} NOI; every cell prices the sale by cap rate${c.operations.refi ? " and keeps the refinance as modeled" : ""}.</p>`;
+}
+
+let whPerson = 0;
+function renderWarehouse() {
+  const w = inputs.warehouse, n = w.names, people = w.people;
+  if (whPerson >= people.length) whPerson = 0;
+  const R = (k) => results.warehouse[k];
+  const sb = R("base").summary, pool = sb.pool, sold = sb.share_sold, nSales = w.selldown.tranches.length;
+  document.getElementById("eyebrow").textContent = `${inputs.investor.name} · Preferred investment`;
+  document.getElementById("whTitle").textContent = pool > 0.5 ? `${n.vehicle} warehouse & sell-down` : `${n.vehicle} members`;
+  document.getElementById("whSub").textContent = pool < 0.5 ? `Fully subscribed at close; no warehouse` : nSales
+    ? `${fmt.pct(sold, 0)} of the ${fmt.usd(pool)} warehouse pool sold in ${nSales} sale${nSales > 1 ? "s" : ""}`
+    : `${fmt.usd(pool)} warehouse pool held for the whole hold`;
+  const cols = CASES.length + 1;
+  const cells = (f) => CASES.map((k) => `<td class="n${hl(k)}">${f(k)}</td>`).join("");
+  const money = (v) => `<span class="${v >= 0 ? "pos" : "neg"}">${fmt.usd(v)}</span>`;
+  const anyLoan = people.some((p) => p.role === "loan" && p.amount > 0);
+  const anyXfer = CASES.some((k) => R(k).manager_transfers.some((x) => x.share > 1e-9));
+  const buysFrom = (name) => w.selldown.tranches.filter((t) => (t.buyer || "").trim().toLowerCase() === name.trim().toLowerCase()).length;
+  let body = "";
+  people.forEach((p, i) => {
+    const how = p.amount > 0 ? `puts in ${fmt.usd(p.amount)}, ${p.role === "member" ? "keeps the units" : p.role === "warehouse" ? "warehouses them to sell" : `lends it to ${n.manager} at ${fmt.pct(p.loan_rate)}`}` : "puts in nothing directly";
+    const buys = buysFrom(p.name) ? ` · buys in ${buysFrom(p.name)} sale${buysFrom(p.name) > 1 ? "s" : ""}` : "";
+    const mcapT = w.manager_commitment + (w.manager_reserve || 0);
+    const cap0 = mcapT > 0 ? p.manager_capital / mcapT : 0, capE = sb.people[i].manager_capital_share_end, proE = sb.people[i].manager_share_end;
+    const pair = (c, pr) => Math.abs(c - pr) < 1e-9 ? `${fmt.pct(c, c * 100 % 1 ? 1 : 0)} of ${esc(n.manager)}` : `${fmt.pct(c, c * 100 % 1 ? 1 : 0)} of ${esc(n.manager)} capital, ${fmt.pct(pr, pr * 100 % 1 ? 1 : 0)} of its fees &amp; promote`;
+    const moved = Math.abs(capE - cap0) > 1e-9 || Math.abs(proE - p.manager_share) > 1e-9;
+    const ownTxt = `${p.manager_capital > 0 ? `puts ${fmt.usd(p.manager_capital)} into ${esc(n.manager)}; ` : ""}owns ${pair(cap0, p.manager_share)}${moved ? ` → ${pair(capE, proE)} after buy-ins` : ""}`;
+    body += `<tr class="grp"><td colspan="${cols}">${esc(p.name)} <span>· ${how}; ${ownTxt}${buys}</span></td></tr>`;
+    const S = (k) => R(k).summary.people[i];
+    body += `<tr><td class="lbl">Cash in at close</td>${cells((k) => fmt.usd(S(k).cash_in))}</tr>`;
+    if (pool > 0.5) {
+      body += `<tr><td class="lbl">Net cash at sales</td>${cells((k) => fmt.usd(S(k).returned_at_selldown))}</tr>`;
+      body += `<tr class="sub"><td class="lbl">Still at risk</td>${cells((k) => (S(k).at_risk > 0.5 ? fmt.usd(S(k).at_risk) : "None"))}</tr>`;
+    }
+    if (anyXfer) body += `<tr><td class="lbl">Net cash at ${esc(n.manager)} buy-ins</td>${cells((k) => fmt.usd(S(k).at_buyins))}</tr>`;
+    if (anyXfer && pool < 0.5) body += `<tr class="sub"><td class="lbl">Still at risk</td>${cells((k) => (S(k).at_risk > 0.5 ? fmt.usd(S(k).at_risk) : "None"))}</tr>`;
+    body += `<tr class="total"><td class="lbl">Total profit</td>${cells((k) => money(S(k).profit))}</tr>`;
+    body += `<tr><td class="lbl">IRR</td>${cells((k) => (S(k).irr == null ? `<span class="muted" title="No money in, so no return to measure">—</span>` : fmt.pct(S(k).irr)))}</tr>`;
+  });
+  sb.buyers.forEach((g, gi) => {
+    if (g.units < 1e-9) return;
+    body += `<tr class="grp"><td colspan="${cols}">${esc(R("base").buyers[gi].name)} <span>· outside buyer, ${fmt.usd(g.cost)} for ${Math.round(g.units)} units in the Base case</span></td></tr>`;
+    body += `<tr class="total"><td class="lbl">Total profit</td>${cells((k) => money(R(k).summary.buyers[gi].profit))}</tr>`;
+    body += `<tr><td class="lbl">IRR from purchase</td>${cells((k) => fmt.pct(R(k).summary.buyers[gi].irr))}</tr>`;
+  });
+  if (pool > 0.5 && nSales) body += `<tr class="grp"><td colspan="${cols}">Sale prices <span>· per ${fmt.usd(w.unit_price)} unit${nSales > 1 ? ", by sale" : ""}</span></td></tr>
+    <tr><td class="lbl">${R("base").tranches.map((t) => esc(t.buyer)).join(" / ")}</td>${cells((k) => R(k).tranches.map((t) => fmt.usd(t.price)).join(" / "))}</tr>`;
+  if (anyXfer) {
+    body += `<tr class="grp"><td colspan="${cols}">${esc(n.manager)} buy-ins <span>· price paid and share bought; can differ by case when it subtracts cash already received</span></td></tr>`;
+    R("base").manager_transfers.forEach((x, q) => {
+      if (x.share < 1e-9) return;
+      const what = x.interest === "promote" ? "fees & promote" : x.interest === "capital" ? "capital" : "capital + promote";
+      body += `<tr><td class="lbl">${esc(x.date)} · ${esc(x.buyer)} buys ${what} from ${esc(x.seller)}</td>${cells((k) => { const y = R(k).manager_transfers[q]; return `${fmt.usd(y.paid)}<br><span class="muted small">${fmt.pct(y.share, 1)}</span>`; })}</tr>`;
+    });
+  }
+  body += `<tr class="grp"><td colspan="${cols}">${esc(n.manager)} <span>· shared by its owners, following any buy-ins</span></td></tr>`;
+  body += `<tr><td class="lbl">Promote earned</td>${cells((k) => fmt.usd(R(k).summary.manager_promote_total))}</tr>`;
+  body += `<tr><td class="lbl">Fees earned</td>${cells((k) => fmt.usd(R(k).summary.manager_fees_total))}</tr>`;
+  if (anyLoan) body += `<tr><td class="lbl">Interest owed to lenders</td>${cells((k) => fmt.usd(-R(k).summary.loan_interest_total))}</tr>`;
+  const bad = CASES.some((k) => R(k).summary.check > 0.05);
+  document.getElementById("whTable").innerHTML = `<table><thead><tr><th></th>${CASES.map((k) => `<th class="n${hl(k)}">${esc(results.cases[k].label)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>` +
+    (bad ? `<p class="note" style="color:var(--warn-fg)">Money put in doesn't match the ${esc(n.vehicle)} raise or ${esc(n.manager)}'s capital, or ${esc(n.manager)} fees &amp; promote don't total 100%, so some cash isn't assigned to anyone.</p>` : "");
+
+  const me = people[whPerson];
+  document.getElementById("whPersonTabs").innerHTML = people.length > 1 ? people.map((p, i) =>
+    `<button type="button" data-person="${i}" aria-pressed="${i === whPerson}">${esc(p.name)}</button>`).join("") : "";
+  document.getElementById("whSoldTitle").textContent = `${me.name} total profit by share of pool sold`;
+  const pcts = ["0", "0.25", "0.5", "0.75", "1.0"];
+  document.getElementById("whSold").innerHTML = pool < 0.5 ? `<p class="note">No warehouse pool, so there's nothing to sell. Set someone to “Warehouses to sell” or “Lends” to see this.</p>` :
+    `<table><thead><tr><th>Sold</th>${CASES.map((k) => `<th class="n${hl(k)}">${shortLabel(k)}</th>`).join("")}</tr></thead><tbody>
+    ${pcts.map((p) => `<tr><td class="num">${Math.round(+p * 100)}%</td>${CASES.map((k) => { const v = R(k).by_pct_sold[p][whPerson].profit; return `<td class="n ${v >= 0 ? "pos" : "neg"}${hl(k)}">${fmt.usdk(v)}</td>`; }).join("")}</tr>`).join("")}</tbody></table>
+    ${nSales ? "" : `<p class="note">No sale is scheduled, so every row is the same. Add a sale to see the effect of selling.</p>`}`;
+  const b = R("base"), bp = b.by_pct_sold, mine = sb.people[whPerson];
+  const raisedAmt = inputs.investor.check + w.reserve, adm = sb.admin_per_year;
+  const adminNote = ` Admin of ${fmt.usd(adm)}/yr (${fmt.pct(adm / raisedAmt, 1)} of the raise) is an assumption${adm / raisedAmt > 0.025 ? ` and is a big drag at this size; try “% of the raise”` : ""}.`;
+  if (pool < 0.5) {
+    document.getElementById("whCallout").innerHTML = `<strong>Fully subscribed:</strong> everyone keeps their units, so each person's return is the ${esc(n.vehicle)} member return on their cash (${fmt.pct(mine.irr)} for ${esc(me.name)} in the Adjusted Base case) plus their share of ${esc(n.manager)}'s fees and promote. ${adminNote}`;
+    return;
+  }
+  const swing = bp["1.0"][whPerson].profit - bp["0"][whPerson].profit;
+  document.getElementById("whCallout").innerHTML = `<strong>What drives ${esc(me.name)}'s result:</strong> in the Adjusted Base case, ${esc(me.name)} makes ${fmt.usd(mine.profit)}${mine.at_risk > 0.5 ? ` with ${fmt.usd(mine.at_risk)} still at risk after the sales` : mine.cash_in > 0 ? ", with all of their money back by the last sale" : ""}. Selling all of the pool instead of none changes that by ${fmt.signedk(swing)}. Buyers expect ${fmt.pct(sb.buyers_irr)} from their purchase date, so a full sell-down isn't assured.${anyLoan ? ` ${esc(n.manager)} owes ${fmt.usd(sb.loan_interest_total)} of interest to lenders, which its owners bear.` : ""} ${adminNote}`;
+}
+
+/* ------------------------------------------------------------ direct Siena investors */
+function renderDirectInputs() {
+  const list = inputs.direct_investors, sec = document.getElementById("sec-direct"), all = [];
+  sec.innerHTML = `<h3>Other Siena investors</h3>
+    <p class="note" style="margin:0">People investing in Siena directly, outside ${esc(inputs.warehouse.names.vehicle)}. Every LP gets the same Preferred terms, so results scale with the check.</p>
+    ${list.map((d, i) => { const fs = [F(`direct_investors.${i}.name`, "Name", "text"), F(`direct_investors.${i}.check`, "Check", "usd")]; all.push(...fs);
+      return `<div class="card"><div class="card-head"><span>Investor ${i + 1}</span><button class="link" type="button" data-remove-direct="${i}">Remove</button></div>${fs.map(fieldHTML).join("")}</div>`; }).join("")}
+    ${list.length < 8 ? `<div class="row"><button class="btn" type="button" id="addDirect">+ Add investor</button></div>` : ""}`;
+  all.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
+}
+function renderDirect() {
+  const list = inputs.direct_investors, cols = CASES.length + 1;
+  const rows = [{ name: `${inputs.investor.name} (via ${inputs.warehouse.names.vehicle})`, check: inputs.investor.check, get: (k) => results.cases[k].investor }]
+    .concat(list.map((d, i) => ({ name: d.name, check: d.check, get: (k) => results.cases[k].direct_investors[i] })));
+  const tot = sum(rows.map((r) => r.check));
+  document.getElementById("dirSub").textContent = `${fmt.usd(tot)} of the ${fmt.usd(inputs.deal.lp_equity)} LP raise modeled` + (tot > inputs.deal.lp_equity + 0.5 ? " — more than the whole raise" : "");
+  document.getElementById("dirTable").innerHTML = `<table><thead><tr><th>Investor</th><th class="n">Check</th>${CASES.map((k) => `<th class="n${hl(k)}">${esc(results.cases[k].label)}</th>`).join("")}</tr></thead><tbody>
+    ${rows.map((r) => `<tr><td class="lbl">${esc(r.name)}</td><td class="n">${fmt.usd(r.check)}</td>${CASES.map((k) => { const x = r.get(k); return `<td class="n${hl(k)}"><span class="${x.profit >= 0 ? "pos" : "neg"}">${fmt.signedk(x.profit)}</span><br><span class="muted small">${fmt.pct(x.irr)}</span></td>`; }).join("")}</tr>`).join("")}
+    </tbody></table><p class="note">Profit over the hold, with the LP IRR beneath. ${list.length ? "" : "Add direct investors on the left."}</p>`;
+}
+
+function recompute() {
+  results = E.runAll(inputs);
+  renderCards(); renderChart(); renderDetail(); renderExit(); renderWarehouse(); renderDirect(); renderCashByPerson(); renderReadout(); updateWhSums(); updateLoanReadout(); updateRefiReadout(); markChanged();
+}
+
+/* ------------------------------------------------------------ events */
+document.addEventListener("click", (e) => {
+  const cc = e.target.closest("button[data-cbp-case]");
+  if (cc) { cbpCase = cc.dataset.cbpCase; renderCashByPerson(); return; }
+  const cf = e.target.closest("button[data-cbp-freq]");
+  if (cf) { cbpFreq = +cf.dataset.cbpFreq; renderCashByPerson(); return; }
+  const from = e.target.closest("button[data-from]");
+  if (from) { startFrom(from.dataset.from); return; }
+  const w = inputs.warehouse;
+  const per = e.target.closest("button[data-person]");
+  if (per) { whPerson = +per.dataset.person; renderWarehouse(); return; }
+  const rp = e.target.closest("button[data-remove-person]");
+  if (rp) { w.people.splice(+rp.dataset.removePerson, 1); renderWarehouseInputs(); recompute(); return; }
+  const rs = e.target.closest("button[data-remove-sale]");
+  if (rs) { w.selldown.tranches.splice(+rs.dataset.removeSale, 1); renderWarehouseInputs(); recompute(); return; }
+  if (e.target.closest("#addPerson")) {
+    w.people.push({ name: "Person " + (w.people.length + 1), amount: 0, role: "member", manager_capital: 0, manager_share: 0, loan_rate: 0.08 });
+    renderWarehouseInputs(); recompute(); document.getElementById(fieldId(`warehouse.people.${w.people.length - 1}.name`)).focus(); return;
+  }
+  const rd = e.target.closest("button[data-remove-direct]");
+  if (rd) { inputs.direct_investors.splice(+rd.dataset.removeDirect, 1); renderDirectInputs(); recompute(); return; }
+  if (e.target.closest("#addDirect")) {
+    inputs.direct_investors.push({ name: "Investor " + (inputs.direct_investors.length + 1), check: 100000 });
+    renderDirectInputs(); recompute(); document.getElementById(fieldId(`direct_investors.${inputs.direct_investors.length - 1}.name`)).focus(); return;
+  }
+  const rx = e.target.closest("button[data-remove-xfer]");
+  if (rx) { w.manager_transfers.splice(+rx.dataset.removeXfer, 1); renderWarehouseInputs(); recompute(); return; }
+  if (e.target.closest("#addXfer")) {
+    const byOwn = w.people.map((p, i) => i).sort((a, b) => (w.people[b].manager_capital - w.people[a].manager_capital) || (w.people[b].manager_share - w.people[a].manager_share));
+    const seller = w.people[byOwn[0]].name, buyer = w.people[byOwn[byOwn.length - 1]].name;
+    w.manager_transfers.push({ date: E.addMonths(w.close_date, 8), buyer, seller, interest: "both", mode: "share", share: 0.25, amount: 100000, price: 0,
+                               pricing: "premium", rate: 0, credit_distributions: false });
+    renderWarehouseInputs(); recompute(); return;
+  }
+  if (e.target.closest("#addSale")) {
+    const t = w.selldown.tranches, lastDate = t.length ? t[t.length - 1].date : w.close_date;
+    t.push({ date: E.addMonths(lastDate, 6), share: 0, pricing: "carry_simple", rate: 0.06, buyer: w.names.buyers });
+    renderWarehouseInputs(); recompute(); return;
+  }
+  const t = e.target.closest("button[data-k]");
+  if (!t) return;
+  const group = t.parentElement.id;
+  if (group === "caseTabs") { editCase = t.dataset.k; renderCaseFields(); recompute(); }
+  if (group === "detailTabs") { detailCase = t.dataset.k; renderDetail(); renderChart(); renderExit(); }
+});
+document.getElementById("cbpParty").addEventListener("change", (e) => { cbpParty = e.target.value; renderCashByPerson(); });
+document.getElementById("resetBtn").addEventListener("click", () => { inputs = clone(DEFAULTS); activeScenario = null; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); });
+
+function inputsText() { const o = clone(inputs); o.as_of = new Date().toISOString().slice(0, 10); return JSON.stringify(o, null, 2) + "\n"; }
+document.getElementById("copyBtn").addEventListener("click", () => {
+  const txt = inputsText(), toast = document.getElementById("copyToast"), fb = document.getElementById("copyFallback");
+  const fallback = () => { fb.hidden = false; fb.value = txt; fb.focus(); fb.select(); toast.className = "toast"; toast.textContent = "Selected — press Ctrl/Cmd+C to copy."; };
+  try {
+    navigator.clipboard.writeText(txt).then(() => { toast.className = "toast"; toast.textContent = "Copied. Paste over deals/__DEAL_SLUG__/deal.json in the repo."; }, fallback);
+  } catch (_) { fallback(); }
+});
+
+/* ------------------------------------------------------------ saved scenarios (shared db) */
+function updateScenarioChip() {
+  const chip = document.getElementById("scenarioChip");
+  const s = scenarios.find((x) => x.id === activeScenario);
+  chip.textContent = s ? "Scenario: " + s.name : "Defaults";
+}
+function renderSaved() {
+  const box = document.getElementById("savedList");
+  if (!db) { box.innerHTML = `<p class="note" style="margin:0">Saving needs a signed-in claude.ai view. You can still change inputs and copy them to the repo.</p>`; return; }
+  if (!scenarios.length) { box.innerHTML = `<p class="note" style="margin:0">No saved scenarios yet. Change some inputs, name them above and press Save. Everyone with access to this page sees saved scenarios.</p>`; return; }
+  box.innerHTML = "";
+  scenarios.forEach((s) => {
+    const el = document.createElement("div");
+    el.className = "item" + (s.id === activeScenario ? " active" : "");
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = s.name;
+    const acts = document.createElement("span"); acts.className = "acts";
+    const load = document.createElement("button"); load.className = "link"; load.type = "button"; load.textContent = "Load";
+    load.onclick = () => { try { inputs = upgradeInputs(JSON.parse(s.inputs)); } catch (_) { return; } activeScenario = s.id; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); };
+    const del = document.createElement("button"); del.className = "link"; del.type = "button"; del.textContent = "Delete";
+    del.onclick = () => {
+      if (del.dataset.confirm) { db.collection("scenarios").doc(s.id).delete().catch((e) => toast("Couldn't delete: " + (e.message || e.code), true)); if (activeScenario === s.id) activeScenario = null; return; }
+      del.dataset.confirm = "1"; del.textContent = "Confirm delete"; del.style.color = "var(--bad)";
+      setTimeout(() => { if (del.isConnected) { delete del.dataset.confirm; del.textContent = "Delete"; del.style.color = ""; } }, 4000);
+    };
+    acts.append(load, del);
+    const meta = document.createElement("span"); meta.className = "meta";
+    const n = s.changes != null ? s.changes + (s.changes === 1 ? " change" : " changes") : "";
+    meta.textContent = [s.created_at ? new Date(s.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "", n, s.summary || ""].filter(Boolean).join(" · ");
+    el.append(nm, acts, meta);
+    box.append(el);
+  });
+  decorateRail();
+}
+// Older saved scenarios: before the Custom case (custom_exit block) or before the generalized warehouse.
+function upgradeInputs(saved) {
+  const o = Object.assign(clone(DEFAULTS), saved);
+  o.investor = Object.assign(clone(DEFAULTS.investor), saved.investor || {});
+  o.cases = Object.assign(clone(DEFAULTS.cases), saved.cases || {});
+  if (!(saved.cases && saved.cases.custom)) {
+    const r = E.runCase("base", o), b = o.cases.base, cu = o.cases.custom;
+    ["rents", "other_income", "opex", "capex"].forEach((x) => { cu[x] = r.operations[x].slice(); });
+    cu.rent_growth_y6 = cu.other_income_growth_y6 = b.rent_growth_y3_plus; cu.opex_growth_y6 = b.opex_growth;
+    const ce = saved.custom_exit;
+    if (ce) { cu.exit_method = ce.method; cu.exit_cap = ce.exit_cap; cu.sale_price = ce.sale_price; }
+  }
+  delete o.custom_exit;
+  const ow = saved.warehouse;
+  if (ow && !ow.people) {  // saved before people / sales / names existed
+    const nw = clone(DEFAULTS.warehouse);
+    ["close_date", "admin_cost_per_year", "member_hurdle_irr"].forEach((k) => { if (k in ow) nw[k] = ow[k]; });
+    if ("sv26_unit_price" in ow) nw.unit_price = ow.sv26_unit_price;
+    if ("sv26_reserve" in ow) nw.reserve = ow.sv26_reserve;
+    if ("ltec_commitment" in ow) nw.manager_commitment = ow.ltec_commitment;
+    if ("ltec_acq_fee_pct" in ow) nw.acq_fee_pct = ow.ltec_acq_fee_pct;
+    if ("ltec_promote" in ow) nw.promote = ow.ltec_promote;
+    const a = ow.levi_share_of_warehouse ?? 1, b = ow.levi_share_of_ltec ?? 0.5;
+    nw.people = [{ name: "Levi", shortfall_share: a, manager_share: b, funding: "equity", loan_rate: 0.08 },
+                 { name: "Thaxter", shortfall_share: 1 - a, manager_share: 1 - b, funding: "equity", loan_rate: 0.08 }];
+    nw.selldown.tranches = [{ date: ow.selldown_date || nw.selldown.tranches[0].date, share: ow.pct_sold ?? 1, pricing: "carry_simple", rate: ow.carry_rate ?? 0.06 }];
+    o.warehouse = nw;
+  }
+  const w2 = o.warehouse;  // saved with shares of the shortfall instead of amounts and roles
+  if (w2.people && w2.people.length && "shortfall_share" in w2.people[0]) {
+    const short = o.investor.check + w2.reserve - w2.manager_commitment;
+    w2.people = w2.people.map((p) => ({ name: p.name, amount: p.shortfall_share * short,
+      role: p.shortfall_share > 0 ? (p.funding === "loan" ? "loan" : "warehouse") : "member",
+      manager_share: p.manager_share, loan_rate: p.loan_rate }));
+  }
+  if (w2.warehouse_promote == null) w2.warehouse_promote = w2.promote;
+  if (w2.admin_cost_method == null) { w2.admin_cost_method = "fixed"; w2.admin_cost_pct = DEFAULTS.warehouse.admin_cost_pct; }
+  w2.selldown.tranches.forEach((t) => { if (t.buyer == null) t.buyer = w2.names.buyers; });
+  if (!o.direct_investors) o.direct_investors = [];
+  o.timing = Object.assign(clone(DEFAULTS.timing), saved.timing || {});
+  o.deal = Object.assign(clone(DEFAULTS.deal), saved.deal || {});
+  o.deal.refi = Object.assign(clone(DEFAULTS.deal.refi), (saved.deal || {}).refi || {});
+  ["hurdle_type", "hurdle_basis", "promote_on_manager_units"].forEach((k) => { if (w2[k] == null) w2[k] = DEFAULTS.warehouse[k]; });
+  if (!w2.manager_transfers) w2.manager_transfers = [];
+  if (w2.manager_reserve == null) w2.manager_reserve = 0;
+  w2.people.forEach((p) => { if (p.manager_capital == null) p.manager_capital = p.manager_share * (w2.manager_commitment + w2.manager_reserve); });
+  w2.manager_transfers.forEach((x) => { if (x.interest == null) x.interest = "both"; if (x.price == null) x.price = 0; });
+  return o;
+}
+function toast(msg, err) { const t = document.getElementById("saveToast"); t.className = "toast" + (err ? " err" : ""); t.textContent = msg; }
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  if (!db) { toast("Saving isn't available in this view.", true); return; }
+  const name = document.getElementById("saveName").value.trim();
+  if (!name) { toast("Give the scenario a name first.", true); document.getElementById("saveName").focus(); return; }
+  const b = results.cases.base, wh = results.warehouse.base.summary;
+  const doc = {
+    name, inputs: JSON.stringify(inputs), created_at: new Date().toISOString(),
+    changes: diffPaths(inputs, DEFAULTS).length, model_version: DEFAULTS.version,
+    summary: `Base ${fmt.pct(b.lp.irr)} · Custom ${fmt.pct(results.cases.custom.lp.irr)} · ${inputs.warehouse.people[0].name} ${fmt.signedk(wh.people[0].profit)}`,
+  };
+  try {
+    const u = await claude.use("user"); if (u) doc.created_by = await u.id();
+  } catch (_) {}
+  const btn = document.getElementById("saveBtn"); btn.disabled = true;
+  try {
+    const ref = await db.collection("scenarios").add(doc);
+    activeScenario = ref.id; document.getElementById("saveName").value = ""; toast("Saved “" + name + "”.");
+  } catch (e) { toast(e && e.code === "permission_denied" ? "You have view-only access, so you can't save here." : "Couldn't save: " + ((e && (e.message || e.code)) || "unknown error"), true); }
+  btn.disabled = false;
+});
+
+async function connect() {
+  if (!window.claude || !claude.use) { renderSaved(); return; }
+  claude.use("downloads").then((dl) => {
+    if (!dl) return;
+    const b = document.getElementById("dlBtn"); b.hidden = false;
+    b.onclick = () => dl.save({ filename: "deal.json", data: inputsText() }).catch(() => {});
+  });
+  db = await claude.use("db");
+  if (!db) { renderSaved(); return; }
+  const timer = setTimeout(() => { document.getElementById("savedList").innerHTML = `<p class="note" style="margin:0">Saved scenarios didn't load. Reopen the page to try again.</p>`; }, 10000);
+  db.collection("scenarios").orderBy("created_at", "desc").onSnapshot((snap) => {
+    clearTimeout(timer);
+    scenarios = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+    renderSaved(); updateScenarioChip();
+  }, (e) => { clearTimeout(timer); document.getElementById("savedList").innerHTML = `<p class="note" style="margin:0">Couldn't load saved scenarios (${esc(e.code || "error")}).</p>`; });
+}
+
+/* ------------------------------------------------------------ boot */
+const DEFAULT_RESULTS = E.runAll(DEFAULTS);
+document.getElementById("versionChip").textContent = "Model " + DEFAULTS.version + " · inputs " + DEFAULTS.as_of;
+renderAllFields();
+recompute();
+connect();
+</script>

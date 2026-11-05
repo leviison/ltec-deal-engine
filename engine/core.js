@@ -1,0 +1,662 @@
+/* LTEC deal engine — JavaScript engine.
+ * Line-for-line port of engine/core.py. Keep the two in sync; tests/test_parity.py
+ * runs both on every deal's defaults and randomized inputs and fails on any difference.
+ * Works in the browser (window.DealEngine) and in Node (module.exports).
+ */
+(function (root) {
+  "use strict";
+  // The hold the sponsor underwrote (the year its sale and explicit rows end on).
+  const uwYears = (deal) => Math.trunc(deal.underwritten_hold_years);
+
+  // ------------------------------------------------------------ math helpers
+  function npv(rate, flows) {
+    let s = 0;
+    for (let t = 0; t < flows.length; t++) s += flows[t] / Math.pow(1 + rate, t);
+    return s;
+  }
+  function bisect(f) {
+    let lo = -0.9999, hi = 10.0, fLo = f(lo), fHi = f(hi);
+    if (fLo * fHi > 0) return null;
+    for (let i = 0; i < 300; i++) {
+      const mid = (lo + hi) / 2, fMid = f(mid);
+      if (Math.abs(fMid) < 1e-9) return mid;
+      if (fLo * fMid < 0) { hi = mid; fHi = fMid; } else { lo = mid; fLo = fMid; }
+    }
+    return (lo + hi) / 2;
+  }
+  function irr(flows) { return bisect((r) => npv(r, flows)); }
+
+  // dates are ISO strings "YYYY-MM-DD"; day counts in UTC to avoid DST drift
+  function toDay(iso) { const [y, m, d] = iso.split("-").map(Number); return Date.UTC(y, m - 1, d) / 86400000; }
+  function fromDay(n) { return new Date(n * 86400000).toISOString().slice(0, 10); }
+  function xirr(flows, dates) {
+    if (!flows.some((cf) => cf < -1e-9) || !flows.some((cf) => cf > 1e-9)) return null;
+    const d0 = toDay(dates[0]);
+    const yrs = dates.map((d) => (toDay(d) - d0) / 365);
+    return bisect((r) => flows.reduce((s, cf, i) => s + cf / Math.pow(1 + r, yrs[i]), 0));
+  }
+  function addMonths(iso, months) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const total = m - 1 + months;
+    const ny = y + Math.floor(total / 12), nm = (total % 12 + 12) % 12;
+    const lastDay = new Date(Date.UTC(ny, nm + 1, 0)).getUTCDate();
+    return fromDay(Date.UTC(ny, nm, Math.min(d, lastDay)) / 86400000);
+  }
+  const sum = (a) => a.reduce((s, x) => s + x, 0);
+
+  // ------------------------------------------------------------ operations
+  // ------------------------------------------------------------ hold period, refinance (see core.py)
+  const holdYears = (deal) => Math.trunc(deal.hold_years);
+  function grow(series, n, rate) {
+    const out = series.slice();
+    while (out.length < n) { const g = typeof rate === "function" ? rate(out.length) : rate; out.push(out[out.length - 1] * (1 + g)); }
+    return out;
+  }
+  function caseCapBasis(c, deal, nxt5) {
+    if (c.kind === "explicit") return nxt5 / ((c.net_sale_proceeds + deal.loan_amount) / (1 - deal.selling_cost_pct));
+    return c.exit_cap;
+  }
+
+  function caseOperations(c, deal) {
+    const H = holdYears(deal), Y = uwYears(deal), n = Math.max(H + 1, Y + 1);
+    let rAll, oAll, xAll;
+    if (c.kind === "explicit" || c.kind === "custom") {
+      const gr = c.kind === "explicit" ? c.y6_noi_growth : c.rent_growth_y6;
+      const go = c.kind === "explicit" ? c.y6_noi_growth : c.other_income_growth_y6;
+      const gx = c.kind === "explicit" ? c.y6_noi_growth : c.opex_growth_y6;
+      rAll = grow(c.rents, n, gr); oAll = grow(c.other_income, n, go); xAll = grow(c.opex, n, gx);
+    } else {
+      const g3 = c.rent_growth_y3_plus;
+      rAll = grow([c.rent_y1], n, (i) => (i === 1 ? c.rent_growth_y2 : g3));
+      oAll = c.other_income_explicit ? grow(c.other_income_explicit, n, g3) : grow([c.other_income_y1], n, c.other_income_growth);
+      xAll = grow([c.opex_y1], n, c.opex_growth);
+    }
+    const noiAll = rAll.map((r, i) => r + oAll[i] - xAll[i]);
+    const rents = rAll.slice(0, H), oi = oAll.slice(0, H), opex = xAll.slice(0, H);
+    const income = rents.map((r, i) => r + oi[i]);
+    const noi = income.map((x, i) => x - opex[i]);
+    const capexIn = c.capex ? c.capex.slice() : [deal.annual_capex_reserves];
+    const capex = capexIn.concat(Array(n).fill(capexIn[capexIn.length - 1])).slice(0, H);
+    const am = income.map((x) => x * deal.asset_mgmt_fee_pct_of_income);
+    const assume = [(deal.assumption_fee_pct || 0) * deal.loan_amount].concat(Array(H - 1).fill(0));
+
+    // ---- debt: the assumed interest-only loan, optionally refinanced at the end of year R
+    const loan0 = deal.loan_amount;
+    const ds0 = deal.debt_service_method === "interest_only" ? loan0 * deal.loan_rate : deal.annual_debt_service;
+    const ds = [], balEnd = [], refiNet = Array(H).fill(0);
+    const rf = deal.refi || {};
+    const R = rf.enabled ? Math.trunc(rf.year || 0) : 0;
+    let refi = null, rate = 0, io = 0, factor = 0;
+    if (R >= 1 && R < H) {
+      const cap = rf.appraisal_cap || caseCapBasis(c, deal, noiAll[Y]);
+      const value = noiAll[R] / cap;
+      rate = rf.rate; io = Math.trunc(rf.io_years); const amort = Math.trunc(rf.amort_years);
+      factor = rate > 0 ? rate / (1 - Math.pow(1 + rate, -amort)) : 1 / amort;
+      let loan = rf.sizing === "ltv" ? rf.ltv * value : rf.amount, loanDscr = null;
+      const payRate = io > 0 ? rate : factor;
+      if ((rf.dscr_min || 0) > 0 && payRate > 0) { loanDscr = noiAll[R] / rf.dscr_min / payRate; loan = Math.min(loan, loanDscr); }
+      const costs = loan * rf.cost_pct;
+      refiNet[R - 1] = loan - loan0 - costs;
+      refi = { year: R, appraisal_cap: cap, appraised_value: value, noi_basis: noiAll[R], loan, loan_dscr_limit: loanDscr,
+               ltv: loan / value, costs, payoff_old: loan0, net_proceeds: refiNet[R - 1], rate };
+    }
+    let bal = loan0;
+    const amortPay = refi ? refi.loan * factor : 0;  // level payment once amortization starts
+    for (let y = 1; y <= H; y++) {
+      let pay;
+      if (refi && y > R) {
+        if (y - R <= io) pay = bal * rate;
+        else { pay = amortPay; bal -= pay - bal * rate; }
+      } else pay = ds0;
+      if (refi && y === R) bal = refi.loan;
+      ds.push(pay); balEnd.push(bal);
+    }
+    if (refi) { refi.first_year_debt_service = ds[R]; refi.dscr = ds[R] ? noiAll[R] / ds[R] : null; }
+    const ocf = noi.map((x, i) => x - capex[i] - ds[i] - am[i] - assume[i]);
+    return { rents, other_income: oi, total_income: income, opex, noi, capex, debt_service: ds,
+             asset_mgmt_fee: am, assumption_fee: assume, operating_cash_flow: ocf, y6_noi: noiAll[H],
+             next_year_noi: noiAll[H], hold_years: H, refi_proceeds: refiNet, loan_balance_end: balEnd, refi,
+             _noi_year6: noiAll[Y] };
+  }
+
+  function caseExit(c, ops, deal) {
+    const H = ops.hold_years, debt = ops.loan_balance_end[H - 1], sell = deal.selling_cost_pct, dispo = deal.disposition_fee_pct;
+    const nxt = ops.next_year_noi;
+    let nsp, gross, cap;
+    if (c.kind === "explicit") {
+      if (H === uwYears(deal) && !ops.refi) { nsp = c.net_sale_proceeds; gross = (nsp + debt) / (1 - sell); }
+      else { gross = nxt / caseCapBasis(c, deal, ops._noi_year6); nsp = gross - gross * sell - debt; }
+      cap = nxt / gross;
+    } else if (c.kind === "custom" && c.exit_method === "sale_price") {
+      gross = c.sale_price; cap = nxt / gross; nsp = gross - gross * sell - debt - gross * dispo;
+    } else {
+      cap = c.exit_cap; gross = nxt / cap; nsp = gross - gross * sell - debt - gross * dispo;
+    }
+    return { y6_noi: nxt, exit_cap: cap, gross_value: gross, selling_costs: gross * sell,
+             disposition_fee: c.kind === "explicit" ? 0 : gross * dispo, debt_payoff: debt,
+             net_sale_proceeds: nsp, price_per_unit: gross / deal.units };
+  }
+
+  // ------------------------------------------------------------ waterfall
+  function runWaterfall(cash, equity, wf) {
+    const pref = wf.pref_rate;
+    let unreturned = equity, unpaid = 0;
+    const rows = { cash: [], pref_due: [], to_pref: [], return_of_capital: [], unreturned_end: [],
+                   unpaid_pref_end: [], tier_splits: [], lp: [], gp: [], deficit_end: [] };
+    const lpHist = [];
+    let deficit = 0;  // shortfalls carry forward (see core.py)
+    for (let t = 1; t <= cash.length; t++) {
+      let c = cash[t - 1] + deficit;
+      deficit = Math.min(0, c);
+      c = Math.max(0, c);
+      const carried = wf.pref_compounds ? unpaid * (1 + pref) : unpaid;
+      const due = unreturned * pref + carried;
+      const toPref = Math.min(c, due);
+      const roc = Math.min(Math.max(0, c - toPref), unreturned);
+      let remaining = c - toPref - roc, lp = toPref + roc, gp = 0;
+      const splits = [];
+      for (const tier of wf.tiers) {
+        const h = tier.lp_irr_hurdle, s = tier.lp_share;
+        let fvPrior = 0;
+        lpHist.forEach((d, i) => { fvPrior += d * Math.pow(1 + h, t - 1 - i); });
+        const lpNeeded = Math.max(0, equity * Math.pow(1 + h, t) - fvPrior - lp);
+        const amt = Math.min(remaining, lpNeeded / s);
+        lp += amt * s; gp += amt * (1 - s); remaining -= amt; splits.push(amt);
+      }
+      lp += remaining * wf.residual_lp_share;
+      gp += remaining * (1 - wf.residual_lp_share);
+      splits.push(remaining);
+      unreturned -= roc;
+      unpaid = due - toPref;
+      lpHist.push(lp);
+      rows.cash.push(c); rows.pref_due.push(due); rows.to_pref.push(toPref); rows.return_of_capital.push(roc);
+      rows.unreturned_end.push(unreturned); rows.unpaid_pref_end.push(unpaid); rows.tier_splits.push(splits);
+      rows.lp.push(lp); rows.gp.push(gp); rows.deficit_end.push(deficit);
+    }
+    return rows;
+  }
+
+  // irr is the annual-period IRR, or XIRR on actual payment dates when a dated schedule is given.
+  function lpMetrics(lp, equity, pay, close) {
+    const annual = irr([-equity].concat(lp));
+    const dated = pay ? xirr([-equity].concat(pay[1]), [close].concat(pay[0])) : null;
+    return { irr: pay ? dated : annual, irr_annual: annual, multiple: sum(lp) / equity,
+             avg_cash_yield_y1_4: sum(lp.slice(0, Math.min(4, lp.length - 1))) / Math.max(1, Math.min(4, lp.length - 1)) / equity };
+  }
+
+  // ------------------------------------------------------------ distribution timing (see core.py)
+  const scheduled = (inp) => ((inp.timing || {}).mode || "annual") === "schedule";
+  const eventDate = (inp, year) => addMonths(inp.timing.sale_date, 12 * (year - uwYears(inp.deal)));
+  const saleDate = (inp) => eventDate(inp, holdYears(inp.deal));
+  function dealPayments(lp, opsPart, inp) {
+    const close = inp.warehouse.close_date, H = lp.length;
+    if (!scheduled(inp)) { const ds = []; for (let k = 1; k <= H; k++) ds.push(addMonths(close, 12 * k)); return [ds, lp.slice()]; }
+    const t = inp.timing, f = t.siena_frequency, step = 12 / f, sale = saleDate(inp);
+    const ops = lp.map((x, y) => (y in opsPart ? opsPart[y] : x));
+    const flows = {};
+    for (let y = 0; y < H; y++) for (let k = 0; k < f; k++) {
+      let d = addMonths(t.first_distribution, step * (y * f + k));
+      if (d > sale) d = sale;
+      flows[d] = (flows[d] || 0) + ops[y] / f;
+    }
+    Object.keys(opsPart).map(Number).sort((a, b) => a - b).forEach((y) => {
+      const d = y === H - 1 ? sale : eventDate(inp, y + 1);
+      flows[d] = (flows[d] || 0) + (lp[y] - opsPart[y]);
+    });
+    const ds = Object.keys(flows).sort();
+    return [ds, ds.map((d) => flows[d])];
+  }
+  function vehiclePeriods(payDates, payAmts, inp) {
+    if (!scheduled(inp)) return [payDates.slice(), payAmts.slice(), payDates.map(() => 1)];
+    const t = inp.timing, close = inp.warehouse.close_date, sale = saleDate(inp), vf = t.vehicle_frequency;
+    const final = addMonths(sale, t.vehicle_final_lag_months || 0);
+    let vdates;
+    if (vf === 0) vdates = Array.from(new Set(payDates)).sort().filter((d) => d < sale);
+    else {
+      vdates = [];
+      const first = t.vehicle_first_distribution || t.first_distribution;
+      for (let k = 0; ; k++) { const d = addMonths(first, (12 / vf) * k); if (d >= sale) break; vdates.push(d); }
+    }
+    vdates.push(final);
+    const rec = [], yfs = []; let prev = close;
+    vdates.forEach((d) => {
+      let r = 0; payDates.forEach((pd, i) => { if (pd > prev && pd <= d) r += payAmts[i]; });
+      rec.push(r); yfs.push((toDay(d) - toDay(prev)) / 365); prev = d;
+    });
+    return [vdates, rec, yfs];
+  }
+
+  // ------------------------------------------------------------ top level
+  function runCase(key, inp) {
+    const c = inp.cases[key];
+    const ops = caseOperations(c, inp.deal);
+    const ex = caseExit(c, ops, inp.deal);
+    return Object.assign({ key, label: c.label, note: c.note || "", operations: ops, exit: ex },
+                         returnsFor(ops, ex.net_sale_proceeds, inp));
+  }
+
+  // Year-5 sale added to operating cash, run through the waterfall.
+  // OA 8.7 crystallization (see core.py)
+  function tierLpGp(rows, t, wf) {
+    let lp = 0, gp = 0;
+    rows.tier_splits[t].forEach((amt, j) => { const s = j < wf.tiers.length ? wf.tiers[j].lp_share : wf.residual_lp_share; lp += amt * s; gp += amt * (1 - s); });
+    return [lp, gp];
+  }
+  function crystallize(cash, sale, w, refi, inp) {
+    const deal = inp.deal, wf = inp.waterfall, eq = deal.lp_equity, R = refi.year, H = cash.length;
+    const nev = refi.appraised_value - refi.loan - inp.deal.refi.crystallize_cost_pct * refi.appraised_value;
+    const out = { applied: false, net_equity_value: nev, lp_pct: null, year: R };
+    if (nev <= 0) return out;
+    const hyp = runWaterfall(cash.slice(0, R - 1).concat([cash[R - 1] + nev]), eq, wf);
+    const [lp2, gp2] = tierLpGp(hyp, R - 1, wf), [lp1, gp1] = tierLpGp(w, R - 1, wf);
+    const dLp = lp2 - lp1, dGp = gp2 - gp1;
+    if (dLp + dGp <= 1e-6) return out;
+    const pct = dLp / (dLp + dGp);
+    const accrued0 = w.unpaid_pref_end[R - 1], unret0 = w.unreturned_end[R - 1];
+    const run = (lastCash, lastSale) => {
+      let accrued = accrued0, unret = unret0, deficit = w.deficit_end[R - 1];
+      const lp = w.lp.slice(0, R), gp = w.gp.slice(0, R);
+      for (let t = R; t < H; t++) {
+        let c = (t === H - 1 ? lastCash : cash[t]) + deficit;
+        deficit = Math.min(0, c); c = Math.max(0, c);
+        const capital = t === H - 1 ? Math.min(Math.max(0, lastSale), c) : 0;
+        const op = c - capital;
+        const p1 = Math.min(op, accrued); accrued -= p1;
+        const p2 = Math.min(capital, accrued); accrued -= p2;
+        const rc = Math.min(capital - p2, unret); unret -= rc;
+        const rest = op - p1 + capital - p2 - rc;
+        lp.push(p1 + p2 + rc + pct * rest); gp.push((1 - pct) * rest);
+      }
+      return [lp, gp];
+    };
+    const [lp, gp] = run(cash[H - 1], sale);
+    return Object.assign(out, { applied: true, lp_pct: pct, accrued_pref: accrued0, unreturned_capital: unret0,
+      hypothetical_lp_tiers: dLp, hypothetical_sponsor_tiers: dGp, lp, gp, lp_ops_only_last: run(cash[H - 1] - sale, 0)[0][H - 1] });
+  }
+
+  function returnsFor(ops, nsp, inp) {
+    const deal = inp.deal;
+    const ocf = ops.operating_cash_flow;
+    // Refinance proceeds (OA 8.2: same order as 8.1) and the sale added to operating cash
+    const cash = ocf.map((o, i) => o + ops.refi_proceeds[i]);
+    cash[cash.length - 1] += nsp;
+    let w = runWaterfall(cash, deal.lp_equity, inp.waterfall);
+    const sched = scheduled(inp), close = inp.warehouse.close_date;
+    // LP cash from operations alone in each capital-event year, so the event can be dated separately
+    const opsPart = {};
+    if (sched) {
+      const events = [ocf.length - 1].concat(ops.refi ? [ops.refi.year - 1] : []);
+      events.forEach((y) => { opsPart[y] = Math.min(runWaterfall(cash.slice(0, y).concat([ocf[y]]), deal.lp_equity, inp.waterfall).lp[y], w.lp[y]); });
+    }
+    const payReg = dealPayments(w.lp, opsPart, inp);
+    const mReg = lpMetrics(w.lp, deal.lp_equity, sched ? payReg : null, close);
+    // OA 8.7 crystallization; the LTEC side letter keeps LTEC on the regular waterfall until capital + pref are back
+    let cr = null, payC = payReg, m = mReg, prot = false;
+    const rf = deal.refi || {};
+    if (ops.refi && rf.crystallize) cr = crystallize(cash, nsp, w, ops.refi, inp);
+    if (cr && cr.applied) {
+      const partC = Object.assign({}, opsPart);
+      if (sched) partC[ocf.length - 1] = Math.min(cr.lp_ops_only_last, cr.lp[cr.lp.length - 1]);
+      payC = dealPayments(cr.lp, partC, inp);
+      m = lpMetrics(cr.lp, deal.lp_equity, sched ? payC : null, close);
+      prot = rf.side_letter_protects !== false && (cr.unreturned_capital > 0.5 || cr.accrued_pref > 0.5);
+      cr.ltec_protected = prot;
+      w = Object.assign({}, w, { lp_regular: w.lp, gp_regular: w.gp, lp: cr.lp, gp: cr.gp });
+    }
+    const invLp = prot ? w.lp_regular : w.lp, invPay = prot ? payReg : payC, invM = prot ? mReg : m;
+    const share = inp.investor.check / deal.lp_equity;
+    const inv = invLp.map((d) => d * share);
+    return { waterfall: w, lp: m, crystallization: cr,
+             payments: { dates: payC[0], amounts: payC[1] },
+             investor: { distributions: inv, total: sum(inv), profit: sum(inv) - inp.investor.check,
+                         irr: invM.irr, multiple: invM.multiple, payment_dates: invPay[0], payments: invPay[1].map((a) => a * share) },
+             gp_promote_total: sum(w.gp),
+             direct_investors: (inp.direct_investors || []).map((d) => directInvestor(d, w.lp, m, deal.lp_equity, payC[1])) };
+  }
+
+  // An LP who invests in Siena directly: same Preferred terms, so cash scales with the check.
+  function directInvestor(d, lp, m, equity, payAmts) {
+    const dist = lp.map((x) => x * d.check / equity);
+    return { name: d.name, check: d.check, distributions: dist, total: sum(dist),
+             profit: sum(dist) - d.check, irr: m.irr, multiple: m.multiple,
+             payments: payAmts.map((a) => a * d.check / equity) };
+  }
+
+  // LP IRR on one case's operations across exit caps and Year-6 NOI factors. includeOwn adds the case's
+  // own exit cap as a row when it isn't already on the grid.
+  function sensitivity(inp, kase, includeOwn) {
+    kase = kase || runCase("custom", inp);
+    const deal = inp.deal, s = inp.sensitivity;
+    const ops = kase.operations, y6 = ops.y6_noi, own = kase.exit.exit_cap;
+    let caps = s.exit_caps.slice();
+    if (includeOwn && !caps.some((c) => Math.abs(c - own) < 1e-9)) caps = caps.concat([own]).sort((a, b) => a - b);
+    const keep = 1 - deal.selling_cost_pct - deal.disposition_fee_pct;
+    return {
+      exit_caps: caps, noi_factors: s.noi_factors,
+      lp_irr: caps.map((c) => s.noi_factors.map((f) =>
+        returnsFor(ops, y6 * f / c * keep - kase.exit.debt_payoff, inp).lp.irr)),
+      gross_value: caps.map((c) => s.noi_factors.map((f) => y6 * f / c)),
+      own_cap: own,
+    };
+  }
+
+  // ------------------------------------------------------------ vehicle (SV26) warehouse
+  // See engine/core.py for the full description. People put `amount` in at close as a member (keeps
+  // units), warehouse (sells in the sell-down) or loan (to the manager; repaid as units sell, unsold
+  // principal converts at par on the last sale date). Each sale names a buyer: a person or an outside
+  // group. Unsold pool units pay warehouse_promote; other units pay promote. Hurdle is pooled.
+  // Hurdle state: compound = balance grows at (1 + h)^a (an IRR hurdle); simple = h x a on unreturned capital,
+  // paid to accrued return first, then capital.
+  const hurdleNew = (capital) => ({ bal: capital, cap: capital, acc: 0 });
+  function hurdlePay(st, cash, a, h, simple) {
+    const c = Math.max(0, cash);
+    if (simple) {
+      st.acc += st.cap * h * a;
+      const paid = Math.min(c, st.cap + st.acc), toAcc = Math.min(paid, st.acc);
+      st.acc -= toAcc; st.cap -= paid - toAcc;
+      return paid;
+    }
+    st.bal *= Math.pow(1 + h, a);
+    const paid = Math.min(c, st.bal);
+    st.bal -= paid;
+    return paid;
+  }
+  // Per-unit net cash for units bought at `basis` on `start`, with their own hurdle (member-by-member mode).
+  function unitSeries(grossPu, dates, yfs, close, start, basis, rate, h, simple) {
+    const st = hurdleNew(basis), sDay = toDay(start);
+    return dates.map((d, t) => {
+      const dd = toDay(d);
+      if (dd <= sDay) return 0;
+      const prev = toDay(t > 0 ? dates[t - 1] : close);
+      const a = sDay > prev ? (dd - sDay) / 365 : yfs[t];
+      const paid = hurdlePay(st, grossPu[t], a, h, simple);
+      return grossPu[t] - rate * Math.max(0, grossPu[t] - paid);
+    });
+  }
+
+  function salePrice(tr, par, days, credit) {
+    let base;
+    if (tr.pricing === "carry_compound") base = par * Math.pow(1 + tr.rate, days / 365);
+    else if (tr.pricing === "premium") base = par * (1 + tr.rate);
+    else base = par * (1 + tr.rate * days / 365);
+    return base - credit;
+  }
+  const nameKey = (s) => s.trim().toLowerCase();
+
+  function warehouseCase(dists, inp, pctSold, dates, yfs) {
+    const w = inp.warehouse, invest = inp.investor.check, par = w.unit_price, close = w.close_date;
+    const raised = invest + w.reserve, mc = w.manager_commitment;
+    const mr = w.manager_reserve || 0;  // cash the manager keeps outside the vehicle; back to its owners in Year 5
+    const U = raised / par, mgrUnits = mc / par;
+    if (!dates) { dates = []; for (let t = 1; t <= dists.length; t++) dates.push(addMonths(close, 12 * t)); yfs = dates.map(() => 1); }
+    const N = dates.length;
+    const dDays = dates.map(toDay), closeDay = toDay(close);
+
+    const people = w.people, amt = people.map((p) => p.amount), role = people.map((p) => p.role);
+    let pool = 0; amt.forEach((a, i) => { if (role[i] === "warehouse" || role[i] === "loan") pool += a; });
+    const wTot = pool / par;
+
+    // ---- sales
+    const trs = w.selldown.tranches;
+    let shares = trs.map((tr) => tr.share);
+    if (pctSold != null) {
+      const tot = sum(shares);
+      shares = tot > 0 ? shares.map((s) => s * pctSold / tot) : trs.map((_, j) => (j === 0 ? pctSold : 0));
+    }
+    const tot = sum(shares);
+    if (tot > 1) shares = shares.map((s) => s / tot);
+    const tDay = trs.map((tr) => toDay(tr.date));
+    const tDays = tDay.map((d) => d - closeDay);
+    const soldBefore = dDays.map((dd) => { let s = 0; shares.forEach((x, j) => { if (tDay[j] < dd) s += x; }); return s; });
+    const unsold = Math.max(0, 1 - sum(shares));
+    const jLast = trs.length ? tDay.indexOf(Math.max(...tDay)) : null;
+    const last = trs.length ? tDay[jLast] : closeDay;
+    const lastDays = last - closeDay;
+    const afterLast = dDays.map((dd) => (dd > last ? 1 : 0));
+    const whHeld = soldBefore.map((sb) => wTot * (1 - sb));
+
+    // ---- vehicle cash, pooled hurdle, promote by unit class
+    const admin = w.admin_cost_method === "pct_raise" ? w.admin_cost_pct * raised : w.admin_cost_per_year;
+    const distCash = [], promote = [], members = [], puS = [], puW = [], fee = [];
+    const pStd = w.promote, pWh = w.warehouse_promote;
+    // Schedule mode (Nov 3 memo): holdback, shortfalls carried forward, acquisition fee after first distribution.
+    const sched = scheduled(inp), tm = inp.timing || {};
+    const hold = sched ? (tm.vehicle_holdback || 0) : 0;
+    const acqT = sched && tm.acq_fee_after_first && N > 1 ? 1 : 0;
+    let carry = 0;
+    for (let t = 0; t < N; t++) {
+      const yf = yfs[t];
+      const f = (t === acqT ? -w.acq_fee_pct * invest : 0) - w.mgmt_fee_pct * raised * yf;
+      const reserve = t === N - 1 ? w.reserve : 0;
+      let cash = dists[t] - admin * yf + f + reserve;
+      if (sched) {
+        const avail = cash + carry;
+        cash = t === N - 1 ? avail : Math.max(0, avail) / (1 + hold);
+        carry = avail - cash;
+      }
+      distCash.push(cash); fee.push(f);
+    }
+
+    // ---- hurdle and promote (see core.py): whole fund by default; per_member, simple and manager-unit switches
+    const h = w.member_hurdle_irr, simple = (w.hurdle_type || "compound") === "simple";
+    const perMember = (w.hurdle_basis || "pooled") === "per_member";
+    const pMgr = w.promote_on_manager_units === false ? 0 : pStd;
+    let puM = [], grossPu = null;
+    if (!perMember) {
+      const st = hurdleNew(raised);
+      for (let t = 0; t < N; t++) {
+        const cash = distCash[t];
+        const paid = hurdlePay(st, cash, yfs[t], h, simple);
+        const excess = Math.max(0, cash - paid);
+        const base = (cash - excess) / U, xpu = excess / U;
+        const pr = xpu * (pStd * (U - whHeld[t] - mgrUnits) + pWh * whHeld[t] + pMgr * mgrUnits);
+        promote.push(pr); members.push(cash - pr);
+        puS.push(base + xpu * (1 - pStd)); puW.push(base + xpu * (1 - pWh)); puM.push(base + xpu * (1 - pMgr));
+      }
+    } else {
+      grossPu = distCash.map((c) => c / U);
+      unitSeries(grossPu, dates, yfs, close, close, par, pStd, h, simple).forEach((x) => puS.push(x));
+      unitSeries(grossPu, dates, yfs, close, close, par, pWh, h, simple).forEach((x) => puW.push(x));
+      puM = unitSeries(grossPu, dates, yfs, close, close, par, pMgr, h, simple);
+    }
+
+    const creditOn = w.selldown.credit_distributions;
+    const prices = trs.map((tr, j) => {
+      let credit = 0;
+      if (creditOn) puW.forEach((pu, t) => { if (dDays[t] <= tDay[j]) credit += pu; });
+      return salePrice(tr, par, tDays[j], credit);
+    });
+    const unitsSold = shares.map((s) => s * wTot);
+
+    const pidx = {}; people.forEach((p, i) => { pidx[nameKey(p.name)] = i; });
+    const buyerNames = trs.map((tr) => ((tr.buyer || "").trim() || w.names.buyers));
+    const buyerPerson = buyerNames.map((b) => (nameKey(b) in pidx ? pidx[nameKey(b)] : null));
+    // per-unit cash on bought units (their own hurdle in member-by-member mode) and on lender-converted units
+    const lastIso = trs.length ? trs[jLast].date : close;
+    const puB = perMember ? trs.map((tr, j) => unitSeries(grossPu, dates, yfs, close, tr.date, prices[j], pStd, h, simple)) : trs.map(() => puS);
+    const puC = perMember ? unitSeries(grossPu, dates, yfs, close, lastIso, par, pWh, h, simple) : puW;
+    const boughtCash = (match, t) => { let s = 0; unitsSold.forEach((u, j) => { if (match[j] && tDay[j] < dDays[t]) s += u * puB[j][t]; }); return s; };
+    if (perMember) {  // promote = gross cash on every block of units held, less what its holder keeps
+      let memU = 0, eqU = 0, lnU = 0;
+      amt.forEach((a, i) => { const x = a / par; if (role[i] === "member") memU += x; else if (role[i] === "warehouse") eqU += x; else lnU += x; });
+      for (let t = 0; t < N; t++) {
+        const g = grossPu[t], heldWh = (eqU + lnU * (1 - afterLast[t])) * (1 - soldBefore[t]), conv = lnU * unsold * afterLast[t];
+        let pr = memU * (g - puS[t]) + heldWh * (g - puW[t]) + mgrUnits * (g - puM[t]) + conv * (g - puC[t]);
+        unitsSold.forEach((u, j) => { if (tDay[j] < dDays[t]) pr += u * (g - puB[j][t]); });
+        promote.push(pr); members.push(distCash[t] - pr);
+      }
+    }
+    const mgrCash = promote.map((p, t) => p - fee[t]);
+
+    // ---- manager's loan book
+    const P = amt, W = amt.map((a) => a / par), loan = role.map((r) => r === "loan");
+    let L = 0; W.forEach((x, i) => { if (loan[i]) L += x; });
+    let interestTotal = 0;
+    const mgrTr = trs.map((_, j) => {
+      let v = shares[j] * L * prices[j];
+      people.forEach((p, i) => {
+        if (loan[i]) {
+          v -= shares[j] * P[i] * (1 + p.loan_rate * tDays[j] / 365);
+          interestTotal += shares[j] * P[i] * p.loan_rate * tDays[j] / 365;
+        }
+      });
+      if (j === jLast) people.forEach((p, i) => {
+        if (loan[i]) {
+          v -= unsold * P[i] * p.loan_rate * lastDays / 365;
+          interestTotal += unsold * P[i] * p.loan_rate * lastDays / 365;
+        }
+      });
+      return v;
+    });
+    // Manager cash in two kinds, owned separately: capital side (its own units, loan book, reserve)
+    // and fees & promote side.
+    const mcap = mc + mr;
+    const capDist = puM.map((pu, t) => pu * mgrUnits + puW[t] * L * (1 - soldBefore[t]) * (1 - afterLast[t]) + (t === N - 1 ? mr : 0));
+    const proDist = mgrCash;
+
+    // ---- manager buy-ins (see core.py): capital, fees & promote, or both
+    const cap0 = people.map((p) => (mcap > 0 ? p.manager_capital / mcap : 0));
+    const pro0 = people.map((p) => p.manager_share);
+    const xsIn = w.manager_transfers || [];
+    const cap = cap0.slice(), pro = pro0.slice(), snaps = [], xfers = [];
+    const order = xsIn.map((_, q) => q).sort((a, b) => (xsIn[a].date < xsIn[b].date ? -1 : xsIn[a].date > xsIn[b].date ? 1 : a - b));
+    order.forEach((q) => {
+      const x = xsIn[q], kind = x.interest || "both", d = toDay(x.date);
+      const b = nameKey(x.buyer) in pidx ? pidx[nameKey(x.buyer)] : null;
+      const s = nameKey(x.seller) in pidx ? pidx[nameKey(x.seller)] : null;
+      const ok = b !== null && s !== null && b !== s;
+      let sh = 0, paid = 0, pps = 0;
+      if (kind === "promote") {
+        pps = x.share > 0 ? x.price / x.share : 0;
+        if (ok && x.share > 0) { sh = Math.max(0, Math.min(x.share, pro[s])); paid = x.price * sh / x.share; }
+      } else {
+        let credit = 0;
+        if (x.credit_distributions) {
+          mgrTr.forEach((v, j) => { if (tDay[j] <= d) credit += v; });
+          capDist.forEach((v, t) => { if (dDays[t] <= d) credit += v; });
+          if (kind === "both") proDist.forEach((v, t) => { if (dDays[t] <= d) credit += v; });
+        }
+        pps = salePrice(x, mcap, d - closeDay, credit);
+        if (ok && pps > 0) {
+          const want = x.mode === "share" ? x.share : x.amount / pps;
+          const avail = kind === "capital" ? cap[s] : Math.min(cap[s], pro[s]);
+          sh = Math.max(0, Math.min(want, avail));
+          paid = sh * pps;
+        }
+      }
+      if (sh > 0) {
+        if (kind === "capital" || kind === "both") { cap[s] -= sh; cap[b] += sh; }
+        if (kind === "promote" || kind === "both") { pro[s] -= sh; pro[b] += sh; }
+      }
+      xfers.push({ date: x.date, day: d, buyer: b, seller: s, interest: kind, share: sh, paid, price_100: pps, index: q });
+      snaps.push([d, cap.slice(), pro.slice()]);
+    });
+    const ownAt = (d) => { let c = cap0, pr = pro0; snaps.forEach(([sd, sc, sp]) => { if (sd < d) { c = sc; pr = sp; } }); return [c, pr]; };
+
+    // ---- people
+    const allDates = [close].concat(trs.map((tr) => tr.date), xfers.map((x) => x.date), dates);
+    const outPeople = people.map((p, i) => {
+      const c0 = -(P[i] + p.manager_capital);
+      const mine = buyerPerson.map((bp) => bp === i);
+      const trFlows = trs.map((_, j) => {
+        let v;
+        if (role[i] === "loan") {
+          v = shares[j] * P[i] * (1 + p.loan_rate * tDays[j] / 365);
+          if (j === jLast) v += unsold * P[i] * p.loan_rate * lastDays / 365;
+        } else if (role[i] === "warehouse") v = shares[j] * W[i] * prices[j];
+        else v = 0;
+        if (mine[j]) v -= unitsSold[j] * prices[j];
+        return v + ownAt(tDay[j])[0][i] * mgrTr[j];
+      });
+      const dist = puS.map((ps, t) => {
+        let v;
+        if (role[i] === "loan") v = puC[t] * W[i] * unsold * afterLast[t];
+        else if (role[i] === "warehouse") v = puW[t] * W[i] * (1 - soldBefore[t]);
+        else v = ps * W[i];
+        const [oc, op] = ownAt(dDays[t]);
+        return v + boughtCash(mine, t) + oc[i] * capDist[t] + op[i] * proDist[t];
+      });
+      const xFlows = xfers.map((x) => (x.seller === i ? x.paid : 0) - (x.buyer === i ? x.paid : 0));
+      const flows = [c0].concat(trFlows, xFlows, dist);
+      const cashIn = -c0, atSales = sum(trFlows), atBuyins = sum(xFlows), atRisk = cashIn - atSales - atBuyins;
+      return { name: p.name, flows,
+        summary: { cash_in: cashIn, returned_at_selldown: atSales, at_buyins: atBuyins,
+                   at_risk: atRisk, manager_share_end: pro[i], manager_capital_share_end: cap[i], profit: sum(flows),
+                   irr: xirr(flows, allDates), multiple_at_risk: atRisk > 0 ? sum(dist) / atRisk : null } };
+    });
+
+    // ---- outside buyer groups
+    const bDates = trs.map((tr) => tr.date).concat(dates);
+    const groupNames = [];
+    buyerNames.forEach((b, j) => { if (buyerPerson[j] === null && !groupNames.includes(b)) groupNames.push(b); });
+    const groups = groupNames.map((name) => {
+      const mine = buyerNames.map((b, j) => buyerPerson[j] === null && nameKey(b) === nameKey(name));
+      const flows = unitsSold.map((u, j) => (mine[j] ? -u * prices[j] : 0)).concat(puS.map((_, t) => boughtCash(mine, t)));
+      let units = 0; unitsSold.forEach((u, j) => { if (mine[j]) units += u; });
+      const cost = -sum(flows.slice(0, trs.length));
+      return { name, flows, summary: { units, cost, profit: sum(flows), irr: units > 0 ? xirr(flows, bDates) : null } };
+    });
+    const allBuy = unitsSold.map((u, j) => -u * prices[j]).concat(puS.map((_, t) => boughtCash(trs.map(() => true), t)));
+    const totalSold = sum(unitsSold);
+
+    const r2 = (x) => Math.round(x * 100) / 100;
+    let check = Math.abs(r2(-raised - mr - sum(outPeople.map((x) => x.flows[0]))));
+    xfers.forEach((_, q) => { check += Math.abs(r2(sum(outPeople.map((x) => x.flows[1 + trs.length + q])))); });
+    trs.forEach((_, j) => { check += Math.abs(r2(sum(outPeople.map((x) => x.flows[1 + j])) + sum(groups.map((g) => g.flows[j])))); });
+    for (let t = 0; t < N; t++) {
+      const k = 1 + trs.length + xfers.length + t;
+      check += Math.abs(r2(sum(outPeople.map((x) => x.flows[k])) + sum(groups.map((g) => g.flows[trs.length + t])) - (distCash[t] - fee[t]) - (t === N - 1 ? mr : 0)));
+    }
+
+    return {
+      dates: allDates, sv26_distributable: distCash, manager_promote: promote, manager_fees: fee.map((f) => -f),
+      member_distributions: members, per_unit: puS, per_unit_warehouse: puW,
+      tranches: trs.map((tr, j) => ({ date: tr.date, share: shares[j], units: unitsSold[j], price: prices[j], buyer: buyerNames[j] })),
+      people: outPeople,
+      buyers: groups,
+      manager_transfers: xfers.map((x) => ({ date: x.date, index: x.index,
+        buyer: x.buyer !== null ? people[x.buyer].name : null, seller: x.seller !== null ? people[x.seller].name : null,
+        interest: x.interest, share: x.share, paid: x.paid, price_100: x.price_100 })),
+      summary: {
+        people: outPeople.map((x) => x.summary),
+        buyers: groups.map((g) => g.summary),
+        buyers_units: totalSold, buyers_cost: sum(unitsSold.map((u, j) => u * prices[j])),
+        buyers_irr: totalSold > 0 ? xirr(allBuy, bDates) : null,
+        share_sold: sum(shares), pool, unfunded: raised - mc - sum(amt),
+        manager_unfunded: mcap - sum(people.map((p) => p.manager_capital)),
+        manager_promote_total: sum(promote), manager_fees_total: -sum(fee),
+        loan_interest_total: interestTotal, admin_per_year: admin,
+        check,
+      },
+    };
+  }
+
+  function warehouse(inp, cases) {
+    const share = inp.investor.check / inp.deal.lp_equity;
+    const out = {};
+    for (const k of Object.keys(cases)) {
+      const [vdates, rec, yfs] = vehiclePeriods(cases[k].investor.payment_dates, cases[k].investor.payments, inp);
+      const res = warehouseCase(rec, inp, null, vdates, yfs);
+      res.by_pct_sold = {};
+      for (const p of [0, 0.25, 0.5, 0.75, 1.0]) {
+        res.by_pct_sold[String(p === 1 ? "1.0" : p)] = warehouseCase(rec, inp, p, vdates, yfs).summary.people
+          .map((s) => ({ at_risk: s.at_risk, profit: s.profit, irr: s.irr }));
+      }
+      out[k] = res;
+    }
+    return out;
+  }
+
+  function runAll(inp) {
+    const cases = {};
+    for (const k of Object.keys(inp.cases)) cases[k] = runCase(k, inp);
+    return { inputs_version: inp.version, cases,
+             sensitivity: sensitivity(inp, cases.custom),
+             sensitivity_by_case: Object.fromEntries(Object.keys(cases).map((k) => [k, sensitivity(inp, cases[k], true)])),
+             warehouse: warehouse(inp, cases) };
+  }
+
+  const api = { runAll, runCase, caseOperations, sensitivity, warehouseCase, runWaterfall, irr, xirr, addMonths };
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  else root.DealEngine = api;
+})(typeof window !== "undefined" ? window : this);

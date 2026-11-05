@@ -1,0 +1,365 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "slug": "siena-villas",
+    "name": "Siena Villas",
+    "sponsor": "Redstone",
+    "vehicle": "SV26 (LTEC SPV)",
+    "units": 81,
+    "status": "active",
+    "summary": "81-unit multifamily; LTEC invests $1.0M in the Preferred class through SV26, warehouse / sell-down to new members.",
+    "documents": [
+      {
+        "key": "deck",
+        "title": "Redstone offering deck"
+      },
+      {
+        "key": "oa",
+        "title": "Siena operating agreement (OA §8.1 waterfall, §8.2 refinance, §8.7 crystallization)"
+      },
+      {
+        "key": "side_letter",
+        "title": "LTEC side letter"
+      },
+      {
+        "key": "v10",
+        "title": "Siena_Villas_Investment_Model_v10.xlsx",
+        "path": "reference/Siena_Villas_Investment_Model_v10.xlsx"
+      },
+      {
+        "key": "sv26",
+        "title": "Siena_Villas_SV26_Warehouse_Model.xlsx",
+        "path": "reference/Siena_Villas_SV26_Warehouse_Model.xlsx"
+      },
+      {
+        "key": "memo",
+        "title": "LTEC SV26 memo, Nov 3, 2026"
+      }
+    ],
+    "legacy": {
+      "repo": "leviison/siena-villas-model",
+      "branch": "siena-v1.0",
+      "commit": "2ee8ccde3826d00cbb16a6ec90ae99eed802014e",
+      "dashboard": "https://claude.ai/artifact/XXaQnEbg8T1by6PYY17osj"
+    },
+    "context_doc": "claude.ai Project 'Siena Villas', doc claude/siena-villas-context.md"
+  },
+  "sources": {
+    "deal.purchase_price": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.units": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.loan_amount": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.loan_rate": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.annual_debt_service": "Deck: $467,935 annual debt service on the assumed loan",
+    "deal.debt_service_method": "Switch; 'fixed' reproduces the deck",
+    "deal.assumption_fee_pct": "Assumption (0 = v10); loan terms are open diligence item #1",
+    "deal.annual_capex_reserves": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.lp_equity": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.legal_preferred_capital": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.unit_price": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.preferred_units": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.sponsor_common_units": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.asset_mgmt_fee_pct_of_income": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.selling_cost_pct": "TODO: carried from Siena v1 inputs.json; document page not itemized yet",
+    "deal.disposition_fee_pct": "v10 (0)",
+    "deal.hold_years": "Deck / v10: 5-year hold",
+    "deal.underwritten_hold_years": "Deck / v10: sale at the end of Year 5",
+    "deal.refi": "Memo: Redstone expects to evaluate a refinance in 2031 when the loan matures; option, off by default (v10 has none)",
+    "deal.refi.crystallize": "OA §8.7 (Manager's one-time election); off by default",
+    "deal.refi.crystallize_cost_pct": "OA §8.7: Net Equity Value deducts 2% hypothetical costs",
+    "deal.refi.side_letter_protects": "LTEC side letter",
+    "timing.mode": "'annual' = v10 / SV26 workbook convention",
+    "timing.siena_frequency": "OA §8.1: quarterly distributions",
+    "timing.first_distribution": "Deck: first distribution Apr 20, 2027",
+    "timing.sale_date": "Deck: sale Oct 2031",
+    "timing.vehicle_frequency": "Memo (Nov 3): semiannual, mid-Feb and mid-Aug",
+    "timing.vehicle_first_distribution": "Memo (Nov 3): first payout Aug 2027",
+    "timing.vehicle_holdback": "Memo (Nov 3): retain roughly at least 50% of the most recent distribution",
+    "timing.vehicle_final_lag_months": "Memo (Nov 3): final distribution no later than six months after Redstone's",
+    "timing.acq_fee_after_first": "Memo (Nov 3): acquisition fee payable after the initial SV26 distribution",
+    "waterfall": "OA §8.1: 6% cumulative pref -> return of capital -> 80/20 to 12% LP IRR -> 70/30 to 14% -> 60/40",
+    "waterfall.pref_compounds": "OA §8.1 says compounded annually; default false = v10",
+    "investor": "SV26 invests LTEC's $1.0M check in the Preferred class",
+    "cases.sponsor": "Deck annual cash flows and $16.291M net sale proceeds",
+    "cases.base": "v10 Scenario Model, Adjusted Base",
+    "cases.downside": "v10 Scenario Model, Downside",
+    "cases.stress": "v10 Scenario Model, Stress (other income at T-12)",
+    "cases.custom": "v10 Exit & Disposition tab (as a full case)",
+    "sensitivity": "v10 Exit & Disposition sensitivity grid",
+    "warehouse": "SV26 warehouse workbook (Nov 4) and Nov 3 memo",
+    "warehouse.admin_cost_per_year": "ASSUMPTION - not from any document",
+    "warehouse.member_hurdle_irr": "Memo (Nov 3): 10% per annum IRR, in aggregate",
+    "warehouse.promote": "Memo (Nov 3): 40/60 with no catch-up",
+    "direct_investors": "None by default"
+  },
+  "version": "v24-code",
+  "as_of": "2026-11-04",
+  "deal": {
+    "purchase_price": 19100000,
+    "units": 81,
+    "loan_amount": 9769000,
+    "loan_rate": 0.0479,
+    "annual_debt_service": 467935,
+    "debt_service_method": "fixed",
+    "assumption_fee_pct": 0.0,
+    "_loan_note": "debt_service_method 'fixed' uses annual_debt_service (deck, $467,935); 'interest_only' = loan_amount x loan_rate, so a different assumed rate flows through. assumption_fee_pct of loan_amount is paid from Year-1 cash. Terms are open diligence item #1.",
+    "annual_capex_reserves": 40500,
+    "lp_equity": 10275652,
+    "legal_preferred_capital": 10300000,
+    "unit_price": 1000,
+    "preferred_units": 10300,
+    "sponsor_common_units": 2575,
+    "asset_mgmt_fee_pct_of_income": 0.01,
+    "selling_cost_pct": 0.02,
+    "disposition_fee_pct": 0.0,
+    "hold_years": 5,
+    "refi": {
+      "enabled": false,
+      "year": 5,
+      "sizing": "ltv",
+      "ltv": 0.65,
+      "amount": 12000000,
+      "appraisal_cap": 0,
+      "dscr_min": 1.25,
+      "rate": 0.06,
+      "io_years": 0,
+      "amort_years": 30,
+      "cost_pct": 0.01,
+      "crystallize": false,
+      "side_letter_protects": true,
+      "crystallize_cost_pct": 0.02
+    },
+    "_hold_refi_note": "hold_years: sale at the end of this year (3-10; 5 = v10/deck). Past Year 5 each line grows at the case's long-run rate; the Sponsor case sells at its deck-implied cap. refi: at the end of `year` (< hold_years) the loan is replaced: appraised value = next year's NOI / appraisal_cap (0 = the case's exit cap); loan = ltv x value or a set amount, capped so next year's debt service is covered dscr_min times (0 = no cap); interest-only for io_years, then level payments over amort_years; cost_pct of the new loan. Net proceeds (new loan - old balance - costs) go through the 8.1 order (OA 8.2); the new balance is paid off at the sale. Memo: Redstone expects to evaluate a refinance in 2031 when the current mortgage matures. crystallize: Redstone elects OA 8.7 after the refinance (fixed percentages from a hypothetical distribution of appraised value - new loan - 2% costs). side_letter_protects: LTEC's units stay on the regular waterfall unless LTEC has its unreturned capital and accrued pref back by then (LTEC side letter).",
+    "underwritten_hold_years": 5
+  },
+  "timing": {
+    "mode": "annual",
+    "first_distribution": "2027-04-20",
+    "siena_frequency": 4,
+    "sale_date": "2031-10-30",
+    "vehicle_frequency": 2,
+    "_note": "mode 'annual' = v10/SV26 workbook convention (one distribution per year on the close anniversary); every tie-out uses it. 'schedule' = Redstone's timing (OA 8.1 quarterly, siena_frequency 4; deck: first distribution Apr 20 2027, sale Oct 2031) plus the Nov 3 2026 LTEC SV26 memo for the vehicle: semiannual member distributions mid-Feb and mid-Aug (vehicle_frequency 2, vehicle_first_distribution Aug 15 2027); LTEC retains roughly at least 50% of the most recent distribution as a cash reserve (vehicle_holdback 0.5 = keep half as much as is paid out, all released at the final distribution); acquisition fee payable after the initial SV26 distribution (acq_fee_after_first); final distribution no later than six months after Redstone's final distribution (vehicle_final_lag_months, 0-6). In schedule mode the vehicle carries any shortfall forward rather than calling capital. Each year's Siena cash is split evenly across its installments; IRRs use actual dates.",
+    "vehicle_first_distribution": "2027-08-15",
+    "vehicle_holdback": 0.5,
+    "vehicle_final_lag_months": 0,
+    "acq_fee_after_first": true
+  },
+  "waterfall": {
+    "_source": "OA §8.1: 6% cumulative pref -> return of capital -> 80/20 to 12% LP IRR -> 70/30 to 14% -> 60/40",
+    "pref_rate": 0.06,
+    "pref_compounds": false,
+    "_pref_compounds_note": "false = v10 behavior (unpaid pref carried forward without earning pref). OA says compounded annually; flip to true to test.",
+    "tiers": [
+      {
+        "lp_irr_hurdle": 0.12,
+        "lp_share": 0.8
+      },
+      {
+        "lp_irr_hurdle": 0.14,
+        "lp_share": 0.7
+      }
+    ],
+    "residual_lp_share": 0.6
+  },
+  "investor": {
+    "name": "LTEC Holdings, LLC",
+    "check": 1000000
+  },
+  "cases": {
+    "sponsor": {
+      "label": "Sponsor (deck)",
+      "kind": "explicit",
+      "rents": [
+        1303942,
+        1412351,
+        1494268,
+        1563378,
+        1618096
+      ],
+      "other_income": [
+        294472,
+        304778,
+        315446,
+        326486,
+        337913
+      ],
+      "opex": [
+        574670,
+        588333,
+        604961,
+        620695,
+        636361
+      ],
+      "net_sale_proceeds": 16291058,
+      "y6_noi_growth": 0.035,
+      "note": "Deck annual cash flows and the deck's $16.291M net sale proceeds."
+    },
+    "base": {
+      "label": "Adjusted Base",
+      "kind": "growth",
+      "rent_y1": 1303942,
+      "rent_growth_y2": 0.045,
+      "rent_growth_y3_plus": 0.025,
+      "other_income_explicit": [
+        220000,
+        260000,
+        295000,
+        304000,
+        313000
+      ],
+      "opex_y1": 574670,
+      "opex_growth": 0.03,
+      "exit_cap": 0.0529,
+      "note": "4.5% Y2 catch-up, 2.5% rent growth after, slower other-income ramp, 3.0% expense growth, 5.29% exit cap."
+    },
+    "downside": {
+      "label": "Downside",
+      "kind": "growth",
+      "rent_y1": 1303942,
+      "rent_growth_y2": 0.01,
+      "rent_growth_y3_plus": 0.01,
+      "other_income_y1": 200000,
+      "other_income_growth": 0.02,
+      "opex_y1": 574670,
+      "opex_growth": 0.035,
+      "exit_cap": 0.0579,
+      "note": "1% rent growth, partial other-income capture, 3.5% expense growth, 5.79% exit cap."
+    },
+    "stress": {
+      "label": "Stress",
+      "kind": "growth",
+      "rent_y1": 1303942,
+      "rent_growth_y2": 0.0,
+      "rent_growth_y3_plus": 0.0,
+      "other_income_y1": 161551,
+      "other_income_growth": 0.0,
+      "opex_y1": 574670,
+      "opex_growth": 0.04,
+      "exit_cap": 0.0629,
+      "note": "Flat rents, other income at T-12 ($161.6k), 4% expense growth, 6.29% exit cap."
+    },
+    "custom": {
+      "label": "Custom",
+      "kind": "custom",
+      "built_from": "base",
+      "_about": "Scenario builder: year-by-year operations, Year-6 growth for the exit NOI, and a Year-5 sale by cap rate or gross price. Replaces v10's 'Exit & Disposition' side calculation, which never flowed into the case results.",
+      "rents": [
+        1303942,
+        1362619.39,
+        1396684.8747499997,
+        1431601.9966187496,
+        1467392.0465342181
+      ],
+      "other_income": [
+        220000,
+        260000,
+        295000,
+        304000,
+        313000
+      ],
+      "opex": [
+        574670,
+        591910.1,
+        609667.403,
+        627957.42509,
+        646796.1478427
+      ],
+      "capex": [
+        40500,
+        40500,
+        40500,
+        40500,
+        40500
+      ],
+      "rent_growth_y6": 0.025,
+      "other_income_growth_y6": 0.025,
+      "opex_growth_y6": 0.03,
+      "exit_method": "cap_rate",
+      "exit_cap": 0.0529,
+      "sale_price": 22000000,
+      "note": "Starts as Adjusted Base. Edit any year, or start from another case."
+    }
+  },
+  "sensitivity": {
+    "exit_caps": [
+      0.0475,
+      0.05,
+      0.0525,
+      0.055,
+      0.0575,
+      0.06,
+      0.0625
+    ],
+    "noi_factors": [
+      0.8,
+      0.9,
+      1.0,
+      1.1,
+      1.2
+    ]
+  },
+  "warehouse": {
+    "_about": "Vehicle warehouse & sell-down (SV26 v1 workbook, Nov 4, generalized). The vehicle invests investor.check in Siena; its Siena distributions are each case's LP distributions scaled to investor.check. Names are labels only.",
+    "names": {
+      "vehicle": "SV26",
+      "manager": "LTEC",
+      "buyers": "New members"
+    },
+    "close_date": "2026-11-05",
+    "unit_price": 1000,
+    "reserve": 50000,
+    "manager_commitment": 350000,
+    "manager_reserve": 0,
+    "_manager_reserve_note": "Cash the manager keeps outside the vehicle (e.g. LTEC holds the $50k reserve itself). Funded by the manager's owners at close in proportion to manager_share, returned to the owners at that time in Year 5, and part of the cost basis in manager buy-ins. Not invested in Siena.",
+    "admin_cost_per_year": 15000,
+    "admin_cost_method": "fixed",
+    "admin_cost_pct": 0.014286,
+    "_admin_note": "ASSUMPTION - not from any document. admin_cost_method 'fixed' uses admin_cost_per_year ($); 'pct_raise' uses admin_cost_pct x capital raised, so it scales with the raise ($15k on $1.05M = 1.43%).",
+    "acq_fee_pct": 0.01,
+    "mgmt_fee_pct": 0.0,
+    "_fees_note": "acq_fee_pct of investor.check in Year 1; mgmt_fee_pct of capital raised, every year; both paid to the manager before the hurdle.",
+    "member_hurdle_irr": 0.1,
+    "hurdle_type": "compound",
+    "hurdle_basis": "pooled",
+    "promote": 0.4,
+    "people": [
+      {
+        "name": "Levi",
+        "amount": 700000.0,
+        "role": "warehouse",
+        "manager_capital": 175000.0,
+        "manager_share": 0.5,
+        "loan_rate": 0.08
+      },
+      {
+        "name": "Thaxter",
+        "amount": 0.0,
+        "role": "member",
+        "manager_capital": 175000.0,
+        "manager_share": 0.5,
+        "loan_rate": 0.08
+      }
+    ],
+    "_people_note": "amount = cash the person puts into the vehicle at close (besides their share of the manager's commitment). role: 'member' keeps units for the whole hold; 'warehouse' holds units and sells them in the sell-down; 'loan' lends to the manager at loan_rate (simple), repaid as units sell, unsold principal converting to units at par on the last sale date. Warehouse + loan amounts are the pool sales draw from. Amounts + manager_commitment should equal investor.check + reserve. manager_capital = $ the person puts into the manager at close (its capital = manager_commitment + manager_reserve; their share of it gets the manager's unit distributions, loan book and reserve). manager_share = their share of the manager's fees & promote (can differ from their capital share). Each should total the manager's capital / 100%.",
+    "selldown": {
+      "credit_distributions": true,
+      "_note": "pricing: carry_simple = par x (1 + rate x years); carry_compound = par x (1 + rate)^years; premium = par x (1 + rate), negative for a discount. credit_distributions subtracts per-unit distributions paid before the sale. buyer: a person's name (their purchase is added to their results) or any other name (an outside buyer group).",
+      "tranches": [
+        {
+          "date": "2027-03-31",
+          "share": 1.0,
+          "pricing": "carry_simple",
+          "rate": 0.06,
+          "buyer": "New members"
+        }
+      ]
+    },
+    "warehouse_promote": 0.4,
+    "promote_on_manager_units": true,
+    "_hurdle_note": "Defaults follow the Nov 3 memo: members 'in aggregate' get capital plus a 10% per annum IRR (hurdle_basis 'pooled', hurdle_type 'compound'), then 40/60 with no catch-up; promote applies to all units including LTEC's. 'per_member' gives each block of units its own hurdle from its purchase price and date; 'simple' accrues 10% simple interest on unreturned capital; promote_on_manager_units false exempts LTEC's own units.",
+    "_promote_note": "promote applies to all units; warehouse_promote replaces it on pool units not yet sold.",
+    "manager_transfers": [],
+    "_manager_transfers_note": "Buy-ins to the manager after close: {date, buyer, seller, interest: 'both'|'capital'|'promote', mode: 'share'|'amount', share, amount, price, pricing, rate, credit_distributions}. 'both' buys the same % of capital and of fees & promote; 'capital' or 'both' are priced from cost (manager_commitment + manager_reserve) grown at rate (carry_simple / carry_compound) or x (1 + rate) (premium), less cash already paid on that interest if credit_distributions; 'amount' buys as much as that $ covers. 'promote' (fees & promote only) is bought for a set price ($, 0 = granted) for share. The buyer pays the seller directly."
+  },
+  "direct_investors": [],
+  "_direct_investors_note": "Other LPs investing in Siena directly, e.g. {\"name\": \"Levi (direct)\", \"check\": 250000}. Same Preferred terms as everyone, so their cash scales with the check."
+}
