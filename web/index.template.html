@@ -204,6 +204,8 @@ td.lbl { white-space: normal; min-width: 170px; }
 .view-seg button { padding: 7px 12px; font-size: 13px; }
 #compareView { display: grid; gap: 24px; }
 table.cmp th.deal { text-align: right; vertical-align: bottom; width: 22%; }
+table.cmp .cmp-sel { display: block; width: 100%; max-width: 220px; margin: 0 0 4px auto; font: 600 12.5px var(--f-body); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 3px 4px; }
+table.cmp .cmp-sel + .cmp-sel { font-weight: 400; }
 table.cmp th.deal button { font: 600 13px var(--f-body); color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-align: right; }
 table.cmp th.deal button:hover { text-decoration: underline; }
 table.cmp th.deal .muted { display: block; font-weight: 400; }
@@ -269,6 +271,11 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
     </div>
     <div class="status">
       <div class="seg view-seg" id="viewSeg" role="group" aria-label="View" hidden><button type="button" data-view="deal" aria-pressed="true">This deal</button><button type="button" data-view="compare" aria-pressed="false">Compare deals</button></div>
+      <div class="row" id="exportBtns" style="gap:6px" hidden>
+        <button class="btn" type="button" id="expPdf" title="A summary to share: cases, chart, assumptions, diligence">Export PDF</button>
+        <button class="btn" type="button" id="expXlsx" title="Every case year by year, the waterfall, inputs with sources">Export Excel</button>
+        <span class="toast" id="expToast" aria-live="polite"></span>
+      </div>
       <label class="deal-pick deal-only" id="dealPickWrap" hidden><span class="eyebrow">Deal</span><select id="dealPick" aria-label="Deal"></select></label>
       <span class="chip deal-only" id="scenarioChip">Defaults</span>
       <span class="chip deal-only" id="changeChip" hidden></span>
@@ -1630,6 +1637,7 @@ async function connect() {
   if (!window.claude || !claude.use) { renderSaved(); return; }
   claude.use("downloads").then((dl) => {
     if (!dl) return;
+    downloadsApi = dl; document.getElementById("exportBtns").hidden = false;
     const b = document.getElementById("dlBtn"); b.hidden = false;
     b.onclick = () => dl.save({ filename: "deal.json", data: inputsText() }).catch(() => {});
   });
@@ -1640,6 +1648,7 @@ async function connect() {
     clearTimeout(timer);
     scenarios = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
     renderSaved(); updateScenarioChip();
+    if (view === "compare") renderCompare();
   }, (e) => { clearTimeout(timer); document.getElementById("savedList").innerHTML = `<p class="note" style="margin:0">Couldn't load saved scenarios (${esc(e.code || "error")}).</p>`; });
 }
 
@@ -1653,27 +1662,51 @@ try { cmpShown = new Set(JSON.parse(localStorage.getItem("deal-engine.cmp.cases"
 const DEAL_COLORS = ["var(--c-base)", "var(--c-down)", "var(--c-custom)", "var(--c-stress)", "var(--c-sponsor)"];
 const cmpCache = {};
 let cmpRole = "base";
+// Columns of the comparison: each is a deal and a version - "current" (as on the dashboard now, with your edits),
+// "defaults" (the deal file as underwritten) or a saved scenario's id. Remembered per viewer.
+let cmpCols;
+try { cmpCols = JSON.parse(localStorage.getItem("deal-engine.cmp.cols")); } catch (_) { cmpCols = null; }
+if (!Array.isArray(cmpCols) || !cmpCols.length || cmpCols.some((c) => !c || !DEALS[c.slug])) cmpCols = SLUGS.map((slug) => ({ slug, src: "current" }));
+function saveCols() { try { localStorage.setItem("deal-engine.cmp.cols", JSON.stringify(cmpCols)); } catch (_) {} }
+const scenariosFor = (slug) => scenarios.filter((x) => (x.deal || SLUGS[0]) === slug);
+function columnInputs(col) {
+  if (col.src === "defaults") return { inp: DEALS[col.slug], version: "As underwritten", edited: false };
+  if (col.src !== "current") {
+    const sc = scenarios.find((x) => x.id === col.src && (x.deal || SLUGS[0]) === col.slug);
+    if (sc) { try { return { inp: mergeDeep(DEALS[col.slug], JSON.parse(sc.inputs)), version: sc.name, edited: false, scenario: sc }; } catch (_) {} }
+  }
+  const edited = isEdited(col.slug);
+  return { inp: dealInputs(col.slug), version: edited ? "Current (your edits)" : "Current", edited };
+}
 function compareData() {
-  return SLUGS.map((slug, i) => {
-    const edited = isEdited(slug);
-    const inp = dealInputs(slug);
+  return cmpCols.map((col, i) => {
+    const { inp, version, edited, scenario } = columnInputs(col);
+    const key = `${col.slug}|${scenario ? col.src : edited ? "" : "defaults"}`;
     let cases;
-    if (!edited && cmpCache[slug]) cases = cmpCache[slug];
+    if (!edited && cmpCache[key]) cases = cmpCache[key];
     else {
       cases = {};
       CMP_ROLES.forEach(([k]) => { if (inp.cases[k]) cases[k] = E.runCase(k, inp); });  // all five, so toggles are instant
-      if (!edited) cmpCache[slug] = cases;
+      if (!edited) cmpCache[key] = cases;
     }
-    return { slug, inp, edited, cases, color: DEAL_COLORS[i % DEAL_COLORS.length], meta: DEALS[slug].meta };
+    const meta = DEALS[col.slug].meta;
+    return { col: i, slug: col.slug, src: col.src, version, inp, edited, cases, color: DEAL_COLORS[i % DEAL_COLORS.length], meta,
+             name: meta.name + (cmpCols.filter((c) => c.slug === col.slug).length > 1 ? ` · ${version}` : "") };
   });
 }
 function renderCompare() {
   const data = compareData();
   const per = (c, inp) => 1e6 / inp.investor.check;
   document.getElementById("cmpEyebrow").textContent = `${data.length} deals · LTEC Holdings`;
-  document.getElementById("cmpFacts").textContent = data.map((d) => `${d.meta.name} (${d.meta.status})`).join(" · ");
-  document.getElementById("cmpSub").textContent = "Click a deal to open it";
-  const head = `<thead><tr><th></th>${data.map((d) => `<th class="deal"><button type="button" data-open="${esc(d.slug)}">${esc(d.meta.name)}</button>${d.edited ? '<span class="edited">your edits</span>' : ""}<span class="muted">${esc(d.meta.sponsor)}</span></th>`).join("")}</tr></thead>`;
+  document.getElementById("cmpFacts").textContent = data.map((d) => `${d.meta.name} (${d.version})`).join(" · ");
+  document.getElementById("cmpSub").textContent = "Each column is a deal and a version: current, as underwritten, or a saved scenario";
+  const verOpts = (d) => [["current", isEdited(d.slug) ? "Current (your edits)" : "Current"], ["defaults", "As underwritten"]]
+    .concat(scenariosFor(d.slug).map((x) => [x.id, "Saved: " + x.name]))
+    .map(([v, l]) => `<option value="${esc(v)}"${v === (d.src === "defaults" || scenariosFor(d.slug).some((x) => x.id === d.src) ? d.src : "current") ? " selected" : ""}>${esc(l)}</option>`).join("");
+  const head = `<thead><tr><th class="muted" style="vertical-align:bottom">${cmpCols.length < 6 ? `<button class="link" type="button" id="cmpAddCol">+ Add column</button>` : ""}</th>${data.map((d) => `<th class="deal">
+      <select class="cmp-sel" data-col="${d.col}" data-what="slug" aria-label="Deal in column ${d.col + 1}">${SLUGS.map((k) => `<option value="${esc(k)}"${k === d.slug ? " selected" : ""}>${esc(DEALS[k].meta.name)}</option>`).join("")}</select>
+      <select class="cmp-sel" data-col="${d.col}" data-what="src" aria-label="Version in column ${d.col + 1}">${verOpts(d)}</select>
+      <span class="muted">${d.edited ? '<span class="edited">your edits</span> ' : ""}<button type="button" class="link small" data-open="${d.col}">Open</button>${cmpCols.length > 1 ? ` · <button type="button" class="link small" data-remove="${d.col}">Remove</button>` : ""}</span></th>`).join("")}</tr></thead>`;
   // a row of one metric across deals; the best value (higher, or lower when lowerBetter) is bold
   const row = (label, vals, f, lowerBetter) => {
     const ok = vals.filter((v) => v != null && isFinite(v));
@@ -1693,6 +1726,7 @@ function renderCompare() {
     const from = k === "custom" ? data.map((d) => d.inp.cases.custom ? `${d.meta.name}: from ${(d.inp.cases[d.inp.cases.custom.built_from] || {}).label || "—"}` : "").filter(Boolean).join(" · ") : "";
     body += `<tr class="cgrp"><td colspan="${data.length + 1}">${name}${from ? ` <span class="muted" style="font-weight:400">· ${esc(from)}</span>` : ""}</td></tr>`;
     body += row("LP IRR", cs.map((c) => c && c.lp.irr), (v) => fmt.pct(v));
+    if (cs.some((c) => c && c.investor.irr != null && Math.abs(c.investor.irr - c.lp.irr) > 1e-6)) body += row("IRR on our check", cs.map((c) => c && c.investor.irr), (v) => fmt.pct(v));
     body += row("Multiple", cs.map((c) => c && c.lp.multiple), fmt.x);
     body += row("Cash yield, Years 1–4", cs.map((c) => c && c.lp.avg_cash_yield_y1_4), (v) => fmt.pct(v));
     body += row("Profit on $1M", cs.map((c, i) => c && c.investor.profit * per(c, data[i].inp)), fmt.signedk);
@@ -1720,7 +1754,15 @@ function renderCompare() {
     ctx("Open diligence items", (d) => (d.meta.diligence || []).filter((x) => x.status !== "closed").length),
   ].join("");
   document.getElementById("cmpContext").innerHTML = `<table class="cmp">${head}<tbody>${cbody}</tbody></table>`;
-  document.querySelectorAll("#compareView [data-open]").forEach((b) => b.addEventListener("click", () => openDeal(b.dataset.open)));
+  document.querySelectorAll("#compareView [data-open]").forEach((b) => b.addEventListener("click", () => openColumn(+b.dataset.open)));
+  document.querySelectorAll("#compareView [data-remove]").forEach((b) => b.addEventListener("click", () => { cmpCols.splice(+b.dataset.remove, 1); saveCols(); renderCompare(); }));
+  document.querySelectorAll("#compareView .cmp-sel").forEach((sel) => sel.addEventListener("change", () => {
+    const c = cmpCols[+sel.dataset.col];
+    if (sel.dataset.what === "slug") { c.slug = sel.value; c.src = "current"; } else c.src = sel.value;
+    saveCols(); renderCompare();
+  }));
+  const add = document.getElementById("cmpAddCol");
+  if (add) add.addEventListener("click", () => { const last = cmpCols[cmpCols.length - 1]; cmpCols.push({ slug: last ? last.slug : SLUGS[0], src: "defaults" }); saveCols(); renderCompare(); });
 
   // chart
   document.getElementById("cmpCaseSeg").innerHTML = CMP_ROLES.map(([k, n]) => `<button type="button" data-role="${k}" aria-pressed="${k === cmpRole}">${CMP_SHORT[k]}</button>`).join("");
@@ -1748,11 +1790,11 @@ function renderCompare() {
   for (let i = 1; i < ends.length; i++) if (Math.abs(ends[i].xx - ends[i - 1].xx) < 1 && ends[i].yy - ends[i - 1].yy < 14) ends[i].yy = ends[i - 1].yy + 14;
   series.forEach((s) => {
     g += `<path d="${s.pts.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("")}" fill="none" stroke="${s.d.color}" stroke-width="2.25" stroke-linejoin="round"/>`;
-    s.pts.forEach((v, i) => { g += `<circle cx="${x(i)}" cy="${y(v)}" r="${i === s.pts.length - 1 ? 4 : 2.5}" fill="${s.d.color}"><title>${esc(s.d.meta.name)} ${i === 0 ? "at close" : "after Y" + i}: ${fmt.usd(v)}</title></circle>`; });
+    s.pts.forEach((v, i) => { g += `<circle cx="${x(i)}" cy="${y(v)}" r="${i === s.pts.length - 1 ? 4 : 2.5}" fill="${s.d.color}"><title>${esc(s.d.name)} ${i === 0 ? "at close" : "after Y" + i}: ${fmt.usd(v)}</title></circle>`; });
   });
   ends.forEach((e) => { g += `<text x="${e.xx + 8}" y="${e.yy + 4}" style="fill:${e.s.d.color}">${fmt.signedk(e.v)}</text>`; });
   document.getElementById("cmpChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:520px;display:block" role="img" aria-label="Cumulative cash on $1M by deal">${g}</svg>`;
-  document.getElementById("cmpLegend").innerHTML = series.map((s) => `<span><i style="background:${s.d.color}"></i>${esc(s.d.meta.name)} · ${esc(s.d.cases[cmpRole].label)}</span>`).join("");
+  document.getElementById("cmpLegend").innerHTML = series.map((s) => `<span><i style="background:${s.d.color}"></i>${esc(s.d.meta.name)} · ${esc(s.d.version)} · ${esc(s.d.cases[cmpRole].label)}</span>`).join("");
   document.getElementById("cmpChartSub").textContent = "Cumulative net cash per $1M invested; the last point includes the sale.";
 }
 let view = "deal";
@@ -1766,6 +1808,12 @@ function setView(v) {
   window.scrollTo(0, 0);
 }
 function setHash(h) { if (location.hash.slice(1) !== h) { try { history.replaceState(null, "", "#" + h); } catch (_) { location.hash = h; } } }
+function openColumn(i) {
+  const c = cmpCols[i];
+  openDeal(c.slug);
+  const sc = scenarios.find((x) => x.id === c.src && (x.deal || SLUGS[0]) === c.slug);
+  if (sc) { try { inputs = upgradeInputs(JSON.parse(sc.inputs)); activeScenario = sc.id; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); } catch (_) {} }
+}
 function openDeal(slug) { setHash(slug); switchDeal(slug); setView("deal"); }
 
 
@@ -1931,7 +1979,7 @@ const ASK_TOOLS = [
     description: "Every deal side by side for every case: LP IRR, multiple, cash yield Years 1-4, profit per $1M, plus price per unit, going-in cap, loan / total capital, Year-1 debt coverage, waterfall, open diligence count.",
     execute: () => {
       setAskStatus("Comparing deals…");
-      return compareData().map((d) => ({ deal: d.slug, name: d.meta.name, status: d.meta.status, using_edits: d.edited,
+      return compareData().map((d) => ({ deal: d.slug, name: d.meta.name, version: d.version, status: d.meta.status, using_edits: d.edited,
         price_per_unit: r0(d.inp.deal.purchase_price / d.inp.deal.units), going_in_cap: d.cases.sponsor ? r4(d.cases.sponsor.operations.noi[0] / d.inp.deal.purchase_price) : null,
         loan_to_capital: r4(d.inp.deal.loan_amount / (d.inp.deal.loan_amount + d.inp.deal.lp_equity)), waterfall: waterfallText(d.inp.waterfall),
         open_diligence: (d.meta.diligence || []).filter((x) => x.status !== "closed").length,
@@ -2096,6 +2144,282 @@ async function connectAsk() {
   document.getElementById("askPanel").hidden = false;
   placeAsk();
 }
+
+
+/* ------------------------------------------------------------ export: PDF summary and Excel workbook */
+// Libraries load from jsDelivr only when someone exports. Files go out through the downloads capability (the viewer
+// confirms each save). Both exports follow the current view: one deal (with your edits) or the comparison columns.
+const LIBS = {
+  xlsx: "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",
+  jspdf: "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js",
+  autotable: "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js",
+};
+const libLoads = {};
+function loadLib(k) {
+  return libLoads[k] || (libLoads[k] = new Promise((res, rej) => {
+    const sc = document.createElement("script");
+    sc.src = LIBS[k]; sc.onload = res; sc.onerror = () => { delete libLoads[k]; rej(new Error("Couldn't load the export library. Check your connection and try again.")); };
+    document.head.append(sc);
+  }));
+}
+let downloadsApi = null;
+const today = () => new Date().toISOString().slice(0, 10);
+const CASE_RGB = { sponsor: [122, 135, 150], base: [43, 87, 151], downside: [183, 121, 31], stress: [180, 67, 47], custom: [106, 76, 156] };
+const COL_RGB = [[43, 87, 151], [183, 121, 31], [106, 76, 156], [180, 67, 47], [122, 135, 150], [46, 125, 90]];
+
+function exportState() {
+  // what the export covers, from what is on screen now
+  if (view === "compare") return { kind: "compare", cols: compareData(), roles: CMP_ROLES.filter(([k]) => cmpShown.has(k)) };
+  const runs = CASES.map((k) => ({ k, r: results.cases[k] }));
+  return { kind: "deal", slug: META.slug, meta: META, inp: inputs, edits: diffPaths(inputs, DEFAULTS), scenario: activeScenario && (scenarios.find((x) => x.id === activeScenario) || {}).name, runs, res: results };
+}
+function expMsg(msg, err) { const t = document.getElementById("expToast"); t.className = "toast" + (err ? " err" : ""); t.textContent = msg; }
+async function doExport(type) {
+  const btn = document.getElementById(type === "pdf" ? "expPdf" : "expXlsx");
+  btn.disabled = true; const label = btn.textContent; btn.textContent = "Preparing…";
+  try {
+    const st = exportState();
+    const base = st.kind === "compare" ? "deal-comparison" : st.slug;
+    let data, filename;
+    if (type === "pdf") { await loadLib("jspdf"); await loadLib("autotable"); data = buildPdf(st); filename = `${base}-summary-${today()}.pdf`; }
+    else { await loadLib("xlsx"); data = buildXlsx(st); filename = `${base}-model-${today()}.xlsx`; }
+    await downloadsApi.save({ filename, data });
+    expMsg("Exported " + filename);
+  } catch (e) {
+    if (e && e.code === "declined") { /* the viewer said no */ }
+    else if (e && ["unavailable", "not_granted", "capability_disabled", "capability_removed"].includes(e.code)) { document.getElementById("exportBtns").hidden = true; expMsg("Exports aren't available in this view.", true); }
+    else if (e && e.code === "extension_not_enabled") expMsg("That file type isn't available here.", true);
+    else if (e && e.code === "rate_limited") expMsg("A save is already waiting for you to confirm.", true);
+    else expMsg((e && (e.message || e.code)) || "Export failed.", true);
+  } finally { btn.disabled = false; btn.textContent = label; }
+}
+
+// ---------- shared rows
+function caseRow(k, r, inp) {
+  const o = r.operations, ex = r.exit, inv = r.investor;
+  return { key: k, label: r.label, lp_irr: r.lp.irr, multiple: r.lp.multiple, yield: r.lp.avg_cash_yield_y1_4, our_irr: inv.irr,
+    our_profit: inv.profit, per1m: inv.profit * 1e6 / inp.investor.check, noi1: o.noi[0], exit_noi: ex.y6_noi, exit_cap: ex.exit_cap,
+    gross: ex.gross_value, nsp: ex.net_sale_proceeds, dscr: Math.min(...o.noi.map((n, i) => (o.debt_service[i] ? n / o.debt_service[i] : Infinity))),
+    promote: r.gp_promote_total, side: inv.side_letter };
+}
+function sourceFor(slug, path) {
+  const src = DEALS[slug].sources, parts = path.split(".");
+  for (let n = parts.length; n > 0; n--) { const k = parts.slice(0, n).join("."); if (src[k]) return src[k]; }
+  return "";
+}
+function inputLeaves(x, pre, out) {
+  out = out || [];
+  if (Array.isArray(x)) {
+    if (x.length && x.every((v) => v && typeof v === "object")) x.forEach((v, i) => inputLeaves(v, `${pre}.${i}`, out));
+    else out.push([pre, x.join(", ")]);
+  } else if (x && typeof x === "object") Object.keys(x).forEach((k) => { if (!k.startsWith("_")) inputLeaves(x[k], pre ? `${pre}.${k}` : k, out); });
+  else out.push([pre, x]);
+  return out;
+}
+
+// ---------- Excel
+function buildXlsx(st) {
+  const X = window.XLSX, wb = X.utils.book_new();
+  const P = "0.0%", M = '0.00"x"', D = "#,##0;[Red]-#,##0";
+  const cell = (v, z) => (v == null || (typeof v === "number" && !isFinite(v)) ? { t: "s", v: "" } : typeof v === "number" ? { t: "n", v, z } : { t: "s", v: String(v) });
+  const sheet = (rows, widths) => {
+    const ws = X.utils.aoa_to_sheet(rows.map((r) => r.map((c) => (c && typeof c === "object" && "t" in c ? c : cell(c)))));
+    ws["!cols"] = (widths || []).map((w) => ({ wch: w }));
+    return ws;
+  };
+  const add = (name, ws) => {
+    let n = name.replace(/[\\/?*[\]:]/g, " ").slice(0, 31), i = 2;
+    while (wb.SheetNames.includes(n)) n = `${name.slice(0, 28)} ${i++}`;
+    X.utils.book_append_sheet(wb, ws, n);
+  };
+  const summaryRows = (title, slug, inp, version, runs) => {
+    const m = DEALS[slug].meta, d = inp.deal;
+    const rows = [[title], [`${m.sponsor} · ${m.status} · ${version}`], [`Exported ${today()} from LTEC Deal Engine. LP returns on the deal's waterfall, annual periods. Analysis, not investment advice.`], [],
+      ["Units", cell(d.units)], ["Price", cell(d.purchase_price, D)], ["Loan", cell(d.loan_amount, D)], ["Loan rate", cell(d.loan_rate, "0.00%")],
+      ["LP equity", cell(d.lp_equity, D)], ["Waterfall", waterfallText(inp.waterfall)], ["Our check", cell(inp.investor.check, D)],
+      ["Side letter on our check", inp.investor.side_letter && inp.investor.side_letter.enabled ? "Yes: " + waterfallText(Object.assign({}, inp.waterfall, inp.investor.side_letter.terms)) : "No"], [],
+      ["Case", "LP IRR", "Multiple", "Cash yield Y1-4", "IRR on our check", "Profit on our check", "Year-1 NOI", "NOI priced at sale", "Exit cap", "Gross sale", "Net sale proceeds", "Min debt coverage", "Sponsor promote", "Assumptions"]];
+    runs.forEach(({ k, r }) => {
+      const c = caseRow(k, r, inp);
+      rows.push([c.label, cell(c.lp_irr, P), cell(c.multiple, M), cell(c.yield, P), cell(c.our_irr, P), cell(c.our_profit, D), cell(c.noi1, D), cell(c.exit_noi, D),
+        cell(c.exit_cap, "0.00%"), cell(c.gross, D), cell(c.nsp, D), cell(c.dscr, '0.00"x"'), cell(c.promote, D), inp.cases[k].note || ""]);
+    });
+    return rows;
+  };
+  const caseSheet = (k, r, inp) => {
+    const o = r.operations, w = r.waterfall, H = o.hold_years, yrs = Array.from({ length: H }, (_, i) => `Year ${i + 1}`);
+    const line = (label, arr) => [label, ...arr.map((v) => cell(v, D))];
+    const sale = o.noi.map((_, i) => (i === H - 1 ? r.exit.net_sale_proceeds : 0));
+    const rows = [[`${r.label}`], [inp.cases[k].note || ""], [], ["", ...yrs],
+      line("Rents", o.rents), line("Other income", o.other_income), line("Operating expenses", o.opex.map((v) => -v)), line("Net operating income", o.noi),
+      line("CapEx / reserves", o.capex.map((v) => -v)), line("Debt service", o.debt_service.map((v) => -v)), line("Asset management fee", o.asset_mgmt_fee.map((v) => -v))];
+    if (o.below_noi_income.some((v) => v)) rows.push(line(inp.deal.below_noi_income.label || "Below-NOI income", o.below_noi_income));
+    rows.push(line("Operating cash flow", o.operating_cash_flow), line("Refinance proceeds", o.refi_proceeds), line("Net sale proceeds", sale), line("Loan balance, end", o.loan_balance_end), [],
+      line("Pref due", w.pref_due), line("To pref", w.to_pref), line("Return of capital", w.return_of_capital), line("LP distributions", w.lp), line("Sponsor promote", w.gp),
+      line("Unreturned capital, end", w.unreturned_end), line("Unpaid pref, end", w.unpaid_pref_end), [],
+      line(`Our check (${Math.round(inp.investor.check).toLocaleString("en-US")})`, r.investor.distributions), [],
+      ["Sale", `Gross ${Math.round(r.exit.gross_value).toLocaleString("en-US")} at ${(r.exit.exit_cap * 100).toFixed(2)}% cap on ${Math.round(r.exit.y6_noi).toLocaleString("en-US")} NOI; selling costs ${Math.round(r.exit.selling_costs).toLocaleString("en-US")}, loan payoff ${Math.round(r.exit.debt_payoff).toLocaleString("en-US")}`],
+      ["LP IRR", cell(r.lp.irr, P)], ["LP multiple", cell(r.lp.multiple, M)], ["IRR on our check", cell(r.investor.irr, P)]);
+    if (inp.cases[k].kind === "derived") {
+      rows.push([], ["Case inputs (adjusted from " + ((inp.cases[inp.cases[k].from] || {}).label || inp.cases[k].from) + ")"]);
+      inputLeaves(caseInputs(inp.cases[k]), "").forEach(([pp, v]) => rows.push([pp, typeof v === "number" ? cell(v) : String(v)]));
+    }
+    return sheet(rows, [34, ...yrs.map(() => 14)]);
+  };
+  const inputsSheet = (slug, inp) => {
+    const rows = [["Input", "Value", "Changed from the deal file", "Source"]];
+    const changed = new Set(diffPaths(inp, DEALS[slug]));
+    ["deal", "timing", "waterfall", "investor", "cases", "sensitivity", "warehouse", "direct_investors"].forEach((top) =>
+      inputLeaves(inp[top], top).forEach(([pp, v]) => rows.push([pp, typeof v === "number" ? cell(v) : v == null ? "" : String(v), [...changed].some((c) => c === pp || c.startsWith(pp + ".")) ? "yes" : "", sourceFor(slug, pp)])));
+    return sheet(rows, [44, 22, 12, 90]);
+  };
+  const diligenceSheet = (slug) => sheet([["Item", "Status", "Note"], ...(DEALS[slug].meta.diligence || []).map((x) => [x.item, x.status, x.note || ""])], [40, 10, 120]);
+
+  if (st.kind === "deal") {
+    const version = st.scenario ? `Saved scenario: ${st.scenario}` : st.edits.length ? `As on the dashboard, ${st.edits.length} change${st.edits.length > 1 ? "s" : ""} from the deal file` : "As underwritten";
+    add("Summary", sheet(summaryRows(st.meta.name, st.slug, st.inp, version, st.runs), [26, 10, 10, 12, 12, 14, 12, 14, 9, 14, 14, 12, 14, 80]));
+    st.runs.forEach(({ k, r }) => add(r.label, caseSheet(k, r, st.inp)));
+    add("Inputs & sources", inputsSheet(st.slug, st.inp));
+    add("Diligence", diligenceSheet(st.slug));
+  } else {
+    const cols = st.cols;
+    const rows = [["Deal comparison"], [`Exported ${today()} from LTEC Deal Engine. LP returns on each deal's waterfall, annual periods.`], [],
+      ["", ...cols.map((d) => `${d.meta.name} · ${d.version}`)]];
+    CMP_ROLES.forEach(([k, name]) => {
+      rows.push([name]);
+      const cs = cols.map((d) => d.cases[k] && caseRow(k, d.cases[k], d.inp));
+      rows.push(["LP IRR", ...cs.map((c) => cell(c && c.lp_irr, P))], ["Multiple", ...cs.map((c) => cell(c && c.multiple, M))],
+        ["Cash yield Y1-4", ...cs.map((c) => cell(c && c.yield, P))], ["IRR on our check", ...cs.map((c) => cell(c && c.our_irr, P))],
+        ["Profit per $1M", ...cs.map((c) => cell(c && c.per1m, D))]);
+    });
+    rows.push([], ["Deal context"], ["Price per unit", ...cols.map((d) => cell(d.inp.deal.purchase_price / d.inp.deal.units, D))],
+      ["Going-in cap", ...cols.map((d) => cell(d.cases.sponsor && d.cases.sponsor.operations.noi[0] / d.inp.deal.purchase_price, "0.00%"))],
+      ["Loan / total capital", ...cols.map((d) => cell(d.inp.deal.loan_amount / (d.inp.deal.loan_amount + d.inp.deal.lp_equity), P))],
+      ["Waterfall", ...cols.map((d) => waterfallText(d.inp.waterfall))], ["Open diligence items", ...cols.map((d) => cell((d.meta.diligence || []).filter((x) => x.status !== "closed").length))]);
+    add("Comparison", sheet(rows, [26, ...cols.map(() => 30)]));
+    cols.forEach((d) => add(`${d.meta.name} ${d.version}`, sheet(summaryRows(d.meta.name, d.slug, d.inp, d.version, CMP_ROLES.filter(([k]) => d.cases[k]).map(([k]) => ({ k, r: d.cases[k] }))), [26, 10, 10, 12, 12, 14, 12, 14, 9, 14, 14, 12, 14, 80])));
+  }
+  const out = X.write(wb, { bookType: "xlsx", type: "array" });
+  return new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+// ---------- PDF
+const pdfText = (t) => String(t == null ? "" : t).replace(/−/g, "-").replace(/×/g, "x").replace(/→/g, "->").replace(/≥/g, ">=").replace(/≤/g, "<=")
+  .replace(/≈/g, "~").replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\x00-\xff–—•…]/g, "");
+function pdfChart(doc, x, y, w, h, series, xLabels) {
+  const all = series.flatMap((s) => s.pts);
+  let lo = Math.min(...all), hi = Math.max(...all, 0);
+  const step = niceStep((hi - lo) / 4 || 1);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const L = 44, n = Math.max(...series.map((s) => s.pts.length)) - 1;
+  const px = (i) => x + L + (i / n) * (w - L - 40), py = (v) => y + (1 - (v - lo) / (hi - lo)) * (h - 14);
+  doc.setFontSize(7); doc.setTextColor(110);
+  for (let v = lo; v <= hi + 1e-6; v += step) {
+    doc.setDrawColor(Math.abs(v) < 1e-6 ? 120 : 220); doc.setLineWidth(Math.abs(v) < 1e-6 ? 0.8 : 0.4);
+    doc.line(x + L, py(v), x + w - 40, py(v));
+    doc.text(pdfText(fmt.usdk(v)), x + L - 4, py(v) + 2.5, { align: "right" });
+  }
+  for (let i = 0; i <= n; i++) doc.text(xLabels(i), px(i), y + h - 2, { align: "center" });
+  series.forEach((s) => {
+    doc.setDrawColor(...s.rgb); doc.setLineWidth(1.4);
+    for (let i = 1; i < s.pts.length; i++) doc.line(px(i - 1), py(s.pts[i - 1]), px(i), py(s.pts[i]));
+    doc.setFillColor(...s.rgb); doc.circle(px(s.pts.length - 1), py(s.pts[s.pts.length - 1]), 2, "F");
+  });
+  const ends = series.map((s) => ({ s, yy: py(s.pts[s.pts.length - 1]), xx: px(s.pts.length - 1) })).sort((a, b) => a.yy - b.yy);
+  for (let i = 1; i < ends.length; i++) if (ends[i].yy - ends[i - 1].yy < 8) ends[i].yy = ends[i - 1].yy + 8;
+  ends.forEach((e) => { doc.setTextColor(...e.s.rgb); doc.text(pdfText(fmt.signedk(e.s.pts[e.s.pts.length - 1])), e.xx + 5, e.yy + 2.5); });
+  let lx = x + L; const ly = y + h + 10;
+  series.forEach((s) => { doc.setFillColor(...s.rgb); doc.rect(lx, ly - 3, 8, 2.5, "F"); doc.setTextColor(60); const t = pdfText(s.label); doc.text(t, lx + 11, ly); lx += 11 + doc.getTextWidth(t) + 12; });
+  doc.setTextColor(0);
+  return y + h + 16;
+}
+function buildPdf(st) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const W = doc.internal.pageSize.getWidth(), Hh = doc.internal.pageSize.getHeight(), M = 40;
+  let y = M;
+  const ensure = (need) => { if (y + need > Hh - 46) { doc.addPage(); y = M; } };
+  const h2 = (t) => { ensure(40); doc.setFont("helvetica", "bold"); doc.setFontSize(11.5); doc.setTextColor(20); doc.text(pdfText(t), M, y); y += 14; doc.setFont("helvetica", "normal"); };
+  const para = (t, size, color) => { doc.setFontSize(size || 9); doc.setTextColor(color == null ? 50 : color); const lines = doc.splitTextToSize(pdfText(t), W - 2 * M); ensure(lines.length * (size || 9) * 1.3); doc.text(lines, M, y); y += lines.length * (size || 9) * 1.3 + 4; doc.setTextColor(0); };
+  const bullets = (items) => items.forEach((t) => { doc.setFontSize(8.5); doc.setTextColor(50); const lines = doc.splitTextToSize(pdfText(t), W - 2 * M - 12); ensure(lines.length * 11 + 2); doc.text("•", M + 2, y); doc.text(lines, M + 12, y); y += lines.length * 11 + 2; });
+  const table = (head, body, opts) => {
+    doc.autoTable(Object.assign({ head: [head.map(pdfText)], body: body.map((r) => r.map(pdfText)), startY: y, margin: { left: M, right: M },
+      styles: { fontSize: 8.5, cellPadding: 3, textColor: 30, lineColor: 225, lineWidth: 0.4 }, headStyles: { fillColor: [43, 87, 151], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [246, 248, 251] }, columnStyles: Object.fromEntries(head.map((_, i) => [i, i ? { halign: "right" } : {}])) }, opts || {}));
+    y = doc.lastAutoTable.finalY + 14;
+  };
+  const header = (title, sub, sub2) => {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(20); doc.text(pdfText(title), M, y + 4); y += 20;
+    doc.setFont("helvetica", "normal"); para(sub, 9.5, 70); if (sub2) para(sub2, 8.5, 110);
+    doc.setDrawColor(200); doc.setLineWidth(0.6); doc.line(M, y, W - M, y); y += 16;
+  };
+  if (st.kind === "deal") {
+    const m = st.meta, d = st.inp.deal, ui = Object.assign({}, m.ui || {});
+    const version = st.scenario ? `Saved scenario "${st.scenario}"` : st.edits.length ? `As on the dashboard (${st.edits.length} change${st.edits.length > 1 ? "s" : ""} from the deal file)` : "As underwritten";
+    header(m.name, `${m.sponsor} · ${ui.location || ""} · ${d.units} units · price ${fmt.usdk(d.purchase_price)} (${fmt.usdk(d.purchase_price / d.units)}/unit) · loan ${fmt.usdk(d.loan_amount)} at ${fmt.pct(d.loan_rate, 2)} · LP equity ${fmt.usdk(d.lp_equity)}`,
+      `${m.status} · ${version} · ${today()} · LTEC Deal Engine`);
+    if (m.summary) para(m.summary, 9);
+    h2(`Returns by case (our check ${fmt.usdk(st.inp.investor.check)})`);
+    const rows = st.runs.map(({ k, r }) => caseRow(k, r, st.inp));
+    const sideOn = rows.some((c) => c.side);
+    table(["Case", "LP IRR", "Multiple", "Cash yield Y1-4", ...(sideOn ? ["IRR on our check"] : []), "Profit on our check", "Exit cap", "Min debt coverage"],
+      rows.map((c) => [c.label, fmt.pct(c.lp_irr), fmt.x(c.multiple), fmt.pct(c.yield), ...(sideOn ? [fmt.pct(c.our_irr)] : []), fmt.signedk(c.our_profit), fmt.pct(c.exit_cap, 2), isFinite(c.dscr) ? c.dscr.toFixed(2) + "x" : "n/a"]));
+    if (sideOn) para(`Side letter on our check (${waterfallText(Object.assign({}, st.inp.waterfall, st.inp.investor.side_letter.terms))}): ` + rows.filter((c) => c.side).map((c) => `${c.label} ${fmt.signedk(c.side.uplift)}`).join(", ") + ", all from the sponsor's promote.", 8.5);
+    h2("Cash back on our check");
+    ensure(190);
+    y = pdfChart(doc, M, y, W - 2 * M, 150, st.runs.map(({ k, r }) => { let cum = -st.inp.investor.check; return { label: r.label, rgb: CASE_RGB[k] || [90, 90, 90], pts: [cum, ...r.investor.distributions.map((v) => (cum += v))] }; }), (i) => (i ? "Y" + i : "Close")) + 8;
+    h2("Terms");
+    bullets([`Waterfall: ${waterfallText(st.inp.waterfall)}${st.inp.waterfall.return_of_capital === "capital_events" ? " (capital back from the sale only)" : ""}.`,
+      `Fees: asset management ${fmt.pct(d.asset_mgmt_fee_pct_of_income, 1)} of income; disposition ${fmt.pct(d.disposition_fee_pct, 1)}; selling costs ${fmt.pct(d.selling_cost_pct, 1)}.`,
+      `Hold ${d.hold_years} years; ${d.refi.enabled ? `refinance at the end of Year ${d.refi.year}` : "no refinance"}.`,
+      ...(d.below_noi_income.amounts.length ? [`${d.below_noi_income.label}: ${fmt.usdk(d.below_noi_income.amounts[0])}/yr below NOI; at sale ${d.below_noi_income.sale_value === "npv" ? `valued at ${fmt.pct(d.below_noi_income.npv_rate, 0)}` : "not valued"} (per case overrides may differ).`] : [])]);
+    h2("What each case assumes");
+    bullets(st.runs.filter(({ k }) => st.inp.cases[k].note).map(({ k, r }) => `${r.label}: ${st.inp.cases[k].note}`));
+    if (st.edits.length && !st.scenario) { h2("Changed from the deal file"); para(st.edits.slice(0, 30).join(", ") + (st.edits.length > 30 ? ", ..." : ""), 8, 90); }
+    const dil = (m.diligence || []).filter((x) => x.status !== "closed");
+    if (dil.length) { h2(`Open diligence (${dil.length})`); bullets(dil.map((x) => x.item + (x.note ? ": " + x.note : ""))); }
+    if (ui.footnote) { y += 4; para(ui.footnote, 7.5, 120); }
+  } else {
+    const cols = st.cols;
+    header("Deal comparison", cols.map((c) => `${c.meta.name} (${c.version})`).join(" · "), `${today()} · LTEC Deal Engine · LP returns on each deal's waterfall, annual periods`);
+    const head = ["", ...cols.map((c) => `${c.meta.name}${cmpCols.filter((x) => x.slug === c.slug).length > 1 ? "\n" + c.version : ""}`)];
+    const body = [];
+    st.roles.forEach(([k, name]) => {
+      const cs = cols.map((d) => d.cases[k] && caseRow(k, d.cases[k], d.inp));
+      body.push([{ content: name, colSpan: cols.length + 1, styles: { fontStyle: "bold", fillColor: [228, 235, 246], textColor: 20 } }]);
+      body.push(["LP IRR", ...cs.map((c) => (c ? fmt.pct(c.lp_irr) : "-"))], ["Multiple", ...cs.map((c) => (c ? fmt.x(c.multiple) : "-"))],
+        ["Cash yield Y1-4", ...cs.map((c) => (c ? fmt.pct(c.yield) : "-"))]);
+      if (cs.some((c) => c && c.side)) body.push(["IRR on our check", ...cs.map((c) => (c ? fmt.pct(c.our_irr) : "-"))]);
+      body.push(["Profit per $1M", ...cs.map((c) => (c ? fmt.signedk(c.per1m) : "-"))]);
+    });
+    h2("Returns");
+    doc.autoTable({ head: [head.map(pdfText)], body: body.map((r) => r.map((c) => (typeof c === "string" ? pdfText(c) : Object.assign({}, c, { content: pdfText(c.content) })))), startY: y, margin: { left: M, right: M },
+      styles: { fontSize: 8.5, cellPadding: 3, lineColor: 225, lineWidth: 0.4, textColor: 30 }, headStyles: { fillColor: [43, 87, 151], textColor: 255, halign: "right" },
+      columnStyles: Object.fromEntries(head.map((_, i) => [i, i ? { halign: "right" } : { cellWidth: 120 }])) });
+    y = doc.lastAutoTable.finalY + 14;
+    const role = CMP_ROLES.find(([k]) => k === cmpRole);
+    h2(`Cash back on $1M · ${role ? role[1] : ""}`);
+    ensure(190);
+    y = pdfChart(doc, M, y, W - 2 * M, 150, cols.filter((d) => d.cases[cmpRole]).map((d) => { const mlt = 1e6 / d.inp.investor.check; let cum = -1e6; return { label: `${d.meta.name} · ${d.version}`, rgb: COL_RGB[d.col % COL_RGB.length], pts: [cum, ...d.cases[cmpRole].investor.distributions.map((v) => (cum += v * mlt))] }; }), (i) => (i ? "Y" + i : "Close")) + 8;
+    h2("Deal context");
+    table(head, [
+      ["Units", ...cols.map((d) => String(d.inp.deal.units))], ["Price per unit", ...cols.map((d) => fmt.usdk(d.inp.deal.purchase_price / d.inp.deal.units))],
+      ["Going-in cap", ...cols.map((d) => (d.cases.sponsor ? fmt.pct(d.cases.sponsor.operations.noi[0] / d.inp.deal.purchase_price, 2) : "-"))],
+      ["Loan / total capital", ...cols.map((d) => fmt.pct(d.inp.deal.loan_amount / (d.inp.deal.loan_amount + d.inp.deal.lp_equity), 1))],
+      ["Waterfall", ...cols.map((d) => waterfallText(d.inp.waterfall))], ["Open diligence items", ...cols.map((d) => String((d.meta.diligence || []).filter((x) => x.status !== "closed").length))]],
+      { columnStyles: Object.fromEntries(head.map((_, i) => [i, i ? { halign: "right", cellWidth: (W - 2 * M - 120) / cols.length } : { cellWidth: 120 }])) });
+    h2("What our cases assume");
+    cols.filter((d, i) => cols.findIndex((x) => x.slug === d.slug) === i).forEach((d) => bullets(["base", "downside", "stress"].filter((k) => d.inp.cases[k] && d.inp.cases[k].note).map((k) => `${d.meta.name} · ${d.inp.cases[k].label}: ${d.inp.cases[k].note}`)));
+    y += 4; para("Our cases (Adjusted Base, Downside, Stress) are LTEC assumptions, recorded with sources in each deal file. Analysis, not legal, tax or investment advice.", 7.5, 120);
+  }
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFontSize(7); doc.setTextColor(140); doc.text(`LTEC Deal Engine · ${today()} · page ${i} of ${pages}`, W - M, Hh - 20, { align: "right" }); }
+  return doc.output("blob");
+}
+(() => {
+  document.getElementById("expPdf").addEventListener("click", () => doExport("pdf"));
+  document.getElementById("expXlsx").addEventListener("click", () => doExport("xlsx"));
+})();
 
 /* ------------------------------------------------------------ boot and deal switching */
 // Each deal keeps its edits for the session: leaving a deal stores them, coming back restores them, and the

@@ -30,6 +30,15 @@ Adding a deal folder adds it to the picker on the next build.
 
 **Cases shown** in the comparison: Sponsor, Adjusted Base, Downside by default; Stress and Custom one click away.
 
+**Comparison columns** are a deal plus a version: current (with your edits), as underwritten, or any saved scenario
+for that deal. "+ Add column" puts versions side by side (e.g. The Bend as-is vs The Bend "Aggressive ask" vs Siena);
+"Open" loads that version on its deal. Columns are remembered per viewer.
+
+**Export** (top right, both views): a PDF summary to share (cases, cash chart, side letter, terms, what each case
+assumes, open diligence) and an Excel workbook to check the math (summary, every case year by year with its
+waterfall, inputs with sources and what you changed, diligence; the comparison exports its table plus a summary per
+column). SheetJS and jsPDF load from jsDelivr only when exporting; files go out through the `downloads` capability.
+
 **Ask** (below the case cards, or under the comparison): questions about the deals in plain English, answered by
 Claude using the engine on the page. The first question asks the viewer to allow Claude for the page; questions use
 that viewer's Claude usage.
