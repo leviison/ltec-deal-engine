@@ -209,6 +209,28 @@ table.cmp th.deal button:hover { text-decoration: underline; }
 table.cmp th.deal .muted { display: block; font-weight: 400; }
 table.cmp tr.cgrp td { font-weight: 600; color: var(--fg); background: var(--accent-soft); border-bottom: 0; }
 table.cmp td.lead { font-weight: 600; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+#askPanel .ask-log { display: grid; gap: 12px; max-height: 620px; overflow-y: auto; padding-right: 4px; }
+#askPanel .ask-log:empty { display: none; }
+.ask-turn { display: grid; gap: 4px; min-width: 0; }
+.ask-turn .who { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.ask-q { background: var(--sunk); border-radius: 8px; padding: 8px 12px; white-space: pre-wrap; max-width: 75ch; }
+.ask-a { font-size: 14px; line-height: 1.55; max-width: 80ch; min-width: 0; }
+.ask-a p, .ask-a ul, .ask-a ol { margin: 0 0 8px; }
+.ask-a ul, .ask-a ol { padding-left: 20px; }
+.ask-a h4 { margin: 10px 0 4px; font-size: 14px; }
+.ask-a code { font-family: var(--f-num); font-size: 12.5px; background: var(--sunk); padding: 0 4px; border-radius: 4px; }
+.ask-a .tablewrap { margin: 4px 0 10px; }
+.ask-a table td, .ask-a table th { white-space: nowrap; }
+.ask-a.err { color: var(--bad); }
+.ask-status { font-size: 12px; color: var(--muted); min-height: 1.2em; }
+.ask-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ask-chips button { font: 12px var(--f-body); border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 4px 10px; cursor: pointer; text-align: left; }
+.ask-chips button:hover { border-color: var(--accent); }
+.ask-form { display: grid; gap: 8px; }
+.ask-form textarea { width: 100%; min-height: 64px; resize: vertical; font: 14px var(--f-body); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; }
+.ask-form textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.ask-whatifs { display: flex; flex-wrap: wrap; gap: 6px; }
 table.cmp .edited { font-size: 11px; color: var(--warn-fg); background: var(--warn-bg); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
 
 .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
@@ -296,7 +318,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
       </section>
     </aside>
 
-    <main>
+    <main id="dealMain">
       <section aria-label="Returns by case">
         <div class="cases" id="caseCards"></div>
       </section>
@@ -369,9 +391,31 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
     </main>
   </div>
 
+  <section class="panel" id="askPanel" hidden aria-label="Ask about the deals">
+    <header>
+      <div style="min-width:0"><h2>Ask</h2><span class="muted small" id="askSub">Questions about the cases and deals. Every number comes from the engine on this page. Uses your Claude account.</span></div>
+      <button class="link" type="button" id="askClear" hidden>Clear conversation</button>
+    </header>
+    <div style="display:grid;gap:12px">
+      <div class="ask-chips" id="askChips"></div>
+      <div class="ask-log" id="askLog" aria-live="polite"></div>
+      <div class="ask-status" id="askStatus"></div>
+      <form class="ask-form" id="askForm">
+        <label class="sr-only" for="askInput">Your question</label>
+        <textarea id="askInput" placeholder="e.g. What would it take for our Downside to clear 8%?"></textarea>
+        <div class="row" style="gap:8px;justify-content:flex-end">
+          <span class="muted small" style="margin-right:auto">Analysis from the deal files, not legal or investment advice.</span>
+          <button class="btn" type="button" id="askStop" hidden>Stop</button>
+          <button class="btn primary" type="submit" id="askSend">Ask</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
   <div id="compareView" hidden>
     <section class="panel">
       <header><h2>Returns by deal</h2><span class="muted small" id="cmpSub"></span></header>
+      <div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap"><span class="eyebrow">Cases shown</span><div class="seg" id="cmpShowSeg" role="group" aria-label="Cases shown" style="flex:0 1 auto"></div></div>
       <div class="tablewrap" id="cmpReturns"></div>
       <p class="note" id="cmpNote"></p>
     </section>
@@ -1600,7 +1644,11 @@ async function connect() {
 
 /* ------------------------------------------------------------ compare deals */
 // Each deal as underwritten in its deal file, except the open deal, which uses your current edits (flagged).
-const CMP_ROLES = [["sponsor", "Sponsor's case"], ["base", "Our Adjusted Base"], ["downside", "Our Downside"]];
+const CMP_ROLES = [["sponsor", "Sponsor's case"], ["base", "Our Adjusted Base"], ["downside", "Our Downside"], ["stress", "Our Stress"],
+                   ["custom", "Custom (your what-if)"]];
+const CMP_SHORT = { sponsor: "Sponsor", base: "Adjusted Base", downside: "Downside", stress: "Stress", custom: "Custom" };
+let cmpShown;
+try { cmpShown = new Set(JSON.parse(localStorage.getItem("deal-engine.cmp.cases")) || ["sponsor", "base", "downside"]); } catch (_) { cmpShown = new Set(["sponsor", "base", "downside"]); }
 const DEAL_COLORS = ["var(--c-base)", "var(--c-down)", "var(--c-custom)", "var(--c-stress)", "var(--c-sponsor)"];
 const cmpCache = {};
 let cmpRole = "base";
@@ -1612,7 +1660,7 @@ function compareData() {
     if (!edited && cmpCache[slug]) cases = cmpCache[slug];
     else {
       cases = {};
-      CMP_ROLES.forEach(([k]) => { if (inp.cases[k]) cases[k] = E.runCase(k, inp); });
+      CMP_ROLES.forEach(([k]) => { if (inp.cases[k]) cases[k] = E.runCase(k, inp); });  // all five, so toggles are instant
       if (!edited) cmpCache[slug] = cases;
     }
     return { slug, inp, edited, cases, color: DEAL_COLORS[i % DEAL_COLORS.length], meta: DEALS[slug].meta };
@@ -1632,16 +1680,23 @@ function renderCompare() {
     return `<tr><td class="lbl">${label}</td>${vals.map((v) => `<td class="n${best != null && v === best ? " lead" : ""}">${v == null ? "—" : f(v)}</td>`).join("")}</tr>`;
   };
   let body = "";
-  CMP_ROLES.forEach(([k, name]) => {
+  document.getElementById("cmpShowSeg").innerHTML = CMP_ROLES.map(([k]) => `<button type="button" data-show="${k}" aria-pressed="${cmpShown.has(k)}">${CMP_SHORT[k]}</button>`).join("");
+  document.querySelectorAll("#cmpShowSeg button").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.show;
+    if (cmpShown.has(k)) { if (cmpShown.size > 1) cmpShown.delete(k); } else cmpShown.add(k);
+    try { localStorage.setItem("deal-engine.cmp.cases", JSON.stringify([...cmpShown])); } catch (_) {}
+    renderCompare();
+  }));
+  CMP_ROLES.filter(([k]) => cmpShown.has(k)).forEach(([k, name]) => {
     const cs = data.map((d) => d.cases[k]);
-    body += `<tr class="cgrp"><td colspan="${data.length + 1}">${name}</td></tr>`;
+    const from = k === "custom" ? data.map((d) => d.inp.cases.custom ? `${d.meta.name}: from ${(d.inp.cases[d.inp.cases.custom.built_from] || {}).label || "—"}` : "").filter(Boolean).join(" · ") : "";
+    body += `<tr class="cgrp"><td colspan="${data.length + 1}">${name}${from ? ` <span class="muted" style="font-weight:400">· ${esc(from)}</span>` : ""}</td></tr>`;
     body += row("LP IRR", cs.map((c) => c && c.lp.irr), (v) => fmt.pct(v));
     body += row("Multiple", cs.map((c) => c && c.lp.multiple), fmt.x);
     body += row("Cash yield, Years 1–4", cs.map((c) => c && c.lp.avg_cash_yield_y1_4), (v) => fmt.pct(v));
     body += row("Profit on $1M", cs.map((c, i) => c && c.investor.profit * per(c, data[i].inp)), fmt.signedk);
   });
-  body += `<tr class="cgrp"><td colspan="${data.length + 1}">Gap</td></tr>`;
-  body += row("Sponsor's IRR minus ours", data.map((d) => d.cases.sponsor && d.cases.base ? d.cases.sponsor.lp.irr - d.cases.base.lp.irr : null),
+  if (cmpShown.has("sponsor") && cmpShown.has("base")) body += `<tr class="cgrp"><td colspan="${data.length + 1}">Gap</td></tr>` + row("Sponsor's IRR minus ours", data.map((d) => d.cases.sponsor && d.cases.base ? d.cases.sponsor.lp.irr - d.cases.base.lp.irr : null),
     (v) => (v * 100).toFixed(1) + " pts", true);
   document.getElementById("cmpReturns").innerHTML = `<table class="cmp">${head}<tbody>${body}</tbody></table>`;
   document.getElementById("cmpNote").textContent = "LP returns on each deal's waterfall, annual periods. Our cases are LTEC assumptions recorded with sources in each deal file; bold is the better value in each row.";
@@ -1667,7 +1722,7 @@ function renderCompare() {
   document.querySelectorAll("#compareView [data-open]").forEach((b) => b.addEventListener("click", () => openDeal(b.dataset.open)));
 
   // chart
-  document.getElementById("cmpCaseSeg").innerHTML = CMP_ROLES.map(([k, n]) => `<button type="button" data-role="${k}" aria-pressed="${k === cmpRole}">${n.replace("Our ", "").replace("Sponsor's case", "Sponsor")}</button>`).join("");
+  document.getElementById("cmpCaseSeg").innerHTML = CMP_ROLES.map(([k, n]) => `<button type="button" data-role="${k}" aria-pressed="${k === cmpRole}">${CMP_SHORT[k]}</button>`).join("");
   document.querySelectorAll("#cmpCaseSeg button").forEach((b) => b.addEventListener("click", () => { cmpRole = b.dataset.role; renderCompare(); }));
   const series = data.filter((d) => d.cases[cmpRole]).map((d) => {
     const m = per(null, d.inp); let cum = -1e6; const pts = [cum];
@@ -1706,10 +1761,340 @@ function setView(v) {
   document.getElementById("compareView").hidden = v !== "compare";
   document.querySelectorAll("#viewSeg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
   if (v === "compare") renderCompare();
+  placeAsk();
   window.scrollTo(0, 0);
 }
 function setHash(h) { if (location.hash.slice(1) !== h) { try { history.replaceState(null, "", "#" + h); } catch (_) { location.hash = h; } } }
 function openDeal(slug) { setHash(slug); switchDeal(slug); setView("deal"); }
+
+
+/* ------------------------------------------------------------ Ask: Claude with the engine as tools */
+// Claude answers on the viewer's own account (the `sample` capability). It sees a short context and gets the
+// engine as page tools, so every figure it states is computed here, not estimated. What-ifs it runs never change
+// the dashboard; each one gets a button that opens it on the dashboard.
+let sampleFn = null, askTurns = [], askCtl = null, askBusy = false;
+const ASK_MAX_TURNS = 12;
+function placeAsk() {
+  const panel = document.getElementById("askPanel");
+  if (view === "compare") document.getElementById("compareView").children[0].after(panel);
+  else document.querySelector("#dealMain > section").after(panel);
+  renderAskChips();
+}
+function renderAskChips() {
+  const el = document.getElementById("askChips");
+  if (!el) return;
+  const qs = view === "compare" ? [
+    "Which deal looks better for us, and why?",
+    "Compare the downside risk of each deal in plain English.",
+    "Where do our cases differ most from each sponsor's, deal by deal?",
+  ] : [
+    `Summarize ${UI.deal_short} for a partner in one paragraph.`,
+    `Why is our ${(inputs.cases[PRIMARY] || {}).label || "base case"} below the sponsor's case?`,
+    "What would it take for our Downside to return our capital plus 5%?",
+    Object.keys(DEFAULTS.investor.side_letter.terms).length ? "Is the side-letter offer worth taking? What should we ask for instead?" : "What are the biggest risks in this deal, with numbers?",
+  ];
+  el.innerHTML = qs.map((q) => `<button type="button">${esc(q)}</button>`).join("");
+  el.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { if (!askBusy) ask(b.textContent); }));
+}
+
+// ---- engine helpers for the tools
+function dealInputs(slug) { return slug === META.slug ? inputs : DEALS[slug]; }
+function needDeal(slug) {
+  const s = String(slug || META.slug);
+  if (!DEALS[s]) throw new Error(`Unknown deal "${s}". Deals: ${SLUGS.join(", ")}`);
+  return s;
+}
+function needCase(inp, k) {
+  const c = String(k);
+  if (!inp.cases[c]) throw new Error(`Unknown case "${c}". Cases: ${Object.keys(inp.cases).join(", ")}`);
+  return c;
+}
+const r4 = (x) => (x == null || !isFinite(x) ? null : Math.round(x * 10000) / 10000);
+const r0 = (x) => (x == null || !isFinite(x) ? null : Math.round(x));
+function caseResult(r, inp) {
+  const o = r.operations, ex = r.exit, inv = r.investor, H = o.hold_years;
+  const out = {
+    case: r.key, label: r.label, lp_irr: r4(r.lp.irr), lp_multiple: r4(r.lp.multiple), cash_yield_y1_4: r4(r.lp.avg_cash_yield_y1_4),
+    our_check: inp.investor.check, our_irr: r4(inv.irr), our_multiple: r4(inv.multiple), our_profit: r0(inv.profit),
+    noi_year1: r0(o.noi[0]), noi_priced_at_sale: r0(ex.y6_noi), hold_years: H, exit_cap: r4(ex.exit_cap), gross_sale: r0(ex.gross_value),
+    net_sale_proceeds: r0(ex.net_sale_proceeds), min_dscr: r4(Math.min(...o.noi.map((n, i) => (o.debt_service[i] ? n / o.debt_service[i] : Infinity)))),
+    sponsor_promote: r0(r.gp_promote_total),
+  };
+  if (inv.side_letter) Object.assign(out, { our_irr_without_side_letter: r4(inv.side_letter.regular_irr), side_letter_extra_dollars: r0(inv.side_letter.uplift) });
+  return out;
+}
+function setPath(obj, path, v) {
+  const ks = String(path).split(".");
+  let o = obj;
+  for (let i = 0; i < ks.length - 1; i++) {
+    if (o == null || typeof o !== "object" || !(ks[i] in o)) throw new Error(`No input at "${ks.slice(0, i + 1).join(".")}"`);
+    o = o[ks[i]];
+  }
+  const last = ks[ks.length - 1];
+  if (o == null || typeof o !== "object" || !(last in o)) throw new Error(`No input at "${path}"`);
+  const old = o[last];
+  if (typeof old === "number") { const n = Number(v); if (!isFinite(n)) throw new Error(`"${path}" needs a number`); o[last] = n; }
+  else if (typeof old === "boolean") o[last] = v === true || v === "true";
+  else o[last] = v;
+}
+function withChanges(slug, changes) {
+  const inp = clone(dealInputs(slug));
+  Object.entries(changes || {}).forEach(([k, v]) => setPath(inp, k, v));
+  return inp;
+}
+function inputDigest(inp) {
+  const d = inp.deal, wf = inp.waterfall;
+  return {
+    purchase_price: d.purchase_price, units: d.units, loan: d.loan_amount, loan_rate: d.loan_rate, lp_equity: r0(d.lp_equity),
+    hold_years: d.hold_years, selling_cost_pct: d.selling_cost_pct, disposition_fee_pct: d.disposition_fee_pct,
+    asset_mgmt_fee_pct_of_income: d.asset_mgmt_fee_pct_of_income, waterfall: waterfallText(wf), waterfall_inputs: wf,
+    our_check: inp.investor.check, side_letter: inp.investor.side_letter,
+    below_noi_income: d.below_noi_income.amounts.length ? { label: d.below_noi_income.label, per_year: d.below_noi_income.amounts[0], sale_value: d.below_noi_income.sale_value, npv_rate: d.below_noi_income.npv_rate } : null,
+    refinance: d.refi.enabled ? d.refi : "off",
+  };
+}
+function caseInputs(c) {
+  const out = {};
+  Object.keys(c).forEach((k) => { if (!["label", "kind", "note"].includes(k) && !/^(rents|other_income|opex|capex)$/.test(k)) out[k] = c[k]; });
+  return out;
+}
+
+const ASK_TOOLS = [
+  { name: "get_deal",
+    description: "One deal: facts, key inputs (price, loan, waterfall, fees, our check, side letter), named variants, open diligence, and every case with its assumptions note and results (LP IRR, multiple, cash yield, our check's IRR and profit, NOI, sale, debt coverage). Use first for any question about a deal.",
+    inputSchema: { type: "object", properties: { deal: { type: "string", description: "deal slug" } }, required: ["deal"] },
+    execute: ({ deal }) => {
+      const slug = needDeal(deal), inp = dealInputs(slug), m = DEALS[slug].meta;
+      setAskStatus(`Reading ${m.name}…`);
+      return {
+        deal: slug, name: m.name, sponsor: m.sponsor, status: m.status, summary: m.summary, location: (m.ui || {}).location,
+        using: slug === META.slug && diffPaths(inputs, DEFAULTS).length ? "the viewer's current edits on the dashboard" : "the deal file as underwritten",
+        inputs: inputDigest(inp),
+        cases: Object.keys(inp.cases).map((k) => Object.assign({ kind: inp.cases[k].kind, note: inp.cases[k].note || "", from: inp.cases[k].from || null }, caseResult(E.runCase(k, inp), inp))),
+        variants: (m.alternatives || []).map((a) => ({ name: a.name, note: a.note, changes: a.changes })),
+        open_diligence: (m.diligence || []).filter((x) => x.status !== "closed").map((x) => x.item + (x.note ? ": " + x.note : "")),
+      };
+    } },
+  { name: "get_case_years",
+    description: "Year-by-year rows for one case of one deal: rents, other income, expenses, NOI, reserves, debt service, below-NOI income, operating cash, sale proceeds, LP distributions, sponsor promote, unpaid pref, our check's cash, plus the case's own inputs (factors, growth paths, exit cap, overrides).",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "case key, e.g. sponsor, base, downside, stress, custom" } }, required: ["deal", "case"] },
+    execute: ({ deal, case: k }) => {
+      const slug = needDeal(deal), inp = dealInputs(slug), ck = needCase(inp, k);
+      setAskStatus(`Reading ${DEALS[slug].meta.name} · ${inp.cases[ck].label} by year…`);
+      const r = E.runCase(ck, inp), o = r.operations, w = r.waterfall;
+      const sale = o.noi.map((_, i) => (i === o.noi.length - 1 ? r0(r.exit.net_sale_proceeds) : 0));
+      return { case: ck, label: r.label, inputs: caseInputs(inp.cases[ck]), years: o.noi.map((_, i) => i + 1),
+        rents: o.rents.map(r0), other_income: o.other_income.map(r0), expenses: o.opex.map(r0), noi: o.noi.map(r0), reserves: o.capex.map(r0),
+        debt_service: o.debt_service.map(r0), below_noi_income: o.below_noi_income.map(r0), asset_mgmt_fee: o.asset_mgmt_fee.map(r0),
+        operating_cash: o.operating_cash_flow.map(r0), net_sale_proceeds: sale, lp_distributions: w.lp.map(r0), sponsor_promote: w.gp.map(r0),
+        unpaid_pref_end: w.unpaid_pref_end.map(r0), our_check_cash: r.investor.distributions.map(r0), sale: { exit_cap: r4(r.exit.exit_cap), gross: r0(r.exit.gross_value), noi_priced: r0(r.exit.y6_noi) } };
+    } },
+  { name: "run_what_if",
+    description: "Change inputs and recompute (the dashboard is not changed). `changes` maps dotted input paths to new values, e.g. {\"cases.downside.exit_cap\": 0.06, \"investor.side_letter.enabled\": true, \"waterfall.pref_rate\": 0.09, \"deal.purchase_price\": 50000000}. Rates are decimals. Returns results for the chosen case (or every case with case \"all\") before and after.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "case key or \"all\"" },
+      changes: { type: "object", description: "dotted path -> new value" }, label: { type: "string", description: "a short name for this what-if, shown to the viewer" } }, required: ["deal", "case", "changes"] },
+    execute: ({ deal, case: k, changes, label }) => {
+      const slug = needDeal(deal), base = dealInputs(slug);
+      const keys = String(k) === "all" ? Object.keys(base.cases) : [needCase(base, k)];
+      const ch = changes && typeof changes === "object" ? changes : {};
+      setAskStatus(`Running ${label || "a what-if"} on ${DEALS[slug].meta.name}…`);
+      const after = withChanges(slug, ch);
+      askWhatIfs.push({ slug, changes: ch, label: String(label || Object.keys(ch).join(", ")).slice(0, 80) });
+      return { deal: slug, changes: ch, results: keys.map((c) => ({ before: caseResult(E.runCase(c, base), base), after: caseResult(E.runCase(c, after), after) })) };
+    } },
+  { name: "solve_for",
+    description: "Find the value of one numeric input that makes a result hit a target, by search between low and high (the engine recomputes each try). metric: lp_irr, our_irr, lp_multiple, our_profit. E.g. the exit cap at which our Downside's LP IRR is 0, or the pref rate that gives our check 15%. Returns the value, the result achieved, and the result at both ends.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string" }, path: { type: "string", description: "dotted input path" },
+      metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit"] }, target: { type: "number" }, low: { type: "number" }, high: { type: "number" },
+      other_changes: { type: "object", description: "optional fixed changes applied first" } }, required: ["deal", "case", "path", "metric", "target", "low", "high"] },
+    execute: ({ deal, case: k, path, metric, target, low, high, other_changes }) => {
+      const slug = needDeal(deal), ck = needCase(dealInputs(slug), k), M = String(metric), T = Number(target);
+      let lo = Number(low), hi = Number(high);
+      if (!isFinite(lo) || !isFinite(hi) || !isFinite(T)) throw new Error("low, high and target must be numbers");
+      setAskStatus(`Solving ${path} on ${DEALS[slug].meta.name}…`);
+      const at = (v) => { const inp = withChanges(slug, Object.assign({}, other_changes || {}, { [path]: v })); return caseResult(E.runCase(ck, inp), inp)[M]; };
+      let flo = at(lo), fhi = at(hi);
+      if (flo == null || fhi == null) throw new Error(`${M} is undefined at an end of the range (e.g. no IRR when everything is lost); narrow the range`);
+      if ((flo - T) * (fhi - T) > 0) return { found: false, note: "target is outside what the range produces", at_low: { value: lo, result: flo }, at_high: { value: hi, result: fhi } };
+      for (let i = 0; i < 60; i++) {
+        const mid = (lo + hi) / 2, fm = at(mid);
+        if (fm == null) break;
+        if ((flo - T) * (fm - T) <= 0) { hi = mid; fhi = fm; } else { lo = mid; flo = fm; }
+        if (Math.abs(hi - lo) < 1e-7 * Math.max(1, Math.abs(lo))) break;
+      }
+      const v = (lo + hi) / 2;
+      askWhatIfs.push({ slug, changes: Object.assign({}, other_changes || {}, { [path]: v }), label: `${path} = ${+v.toPrecision(5)}` });
+      return { found: true, path, value: +v.toPrecision(6), metric: M, achieved: at(v), target: T };
+    } },
+  { name: "compare_deals",
+    description: "Every deal side by side for every case: LP IRR, multiple, cash yield Years 1-4, profit per $1M, plus price per unit, going-in cap, loan / total capital, Year-1 debt coverage, waterfall, open diligence count.",
+    execute: () => {
+      setAskStatus("Comparing deals…");
+      return compareData().map((d) => ({ deal: d.slug, name: d.meta.name, status: d.meta.status, using_edits: d.edited,
+        price_per_unit: r0(d.inp.deal.purchase_price / d.inp.deal.units), going_in_cap: d.cases.sponsor ? r4(d.cases.sponsor.operations.noi[0] / d.inp.deal.purchase_price) : null,
+        loan_to_capital: r4(d.inp.deal.loan_amount / (d.inp.deal.loan_amount + d.inp.deal.lp_equity)), waterfall: waterfallText(d.inp.waterfall),
+        open_diligence: (d.meta.diligence || []).filter((x) => x.status !== "closed").length,
+        cases: Object.fromEntries(Object.entries(d.cases).map(([k, r]) => [k, { label: r.label, lp_irr: r4(r.lp.irr), lp_multiple: r4(r.lp.multiple),
+          cash_yield_y1_4: r4(r.lp.avg_cash_yield_y1_4), profit_per_1m: r0(r.investor.profit * 1e6 / d.inp.investor.check) }])) }));
+    } },
+  { name: "get_sources",
+    description: "Where inputs came from (deck page, model tab, email, T-12, or LTEC assumption) for one deal, optionally only paths starting with a prefix such as \"waterfall\" or \"cases.downside\".",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, prefix: { type: "string" } }, required: ["deal"] },
+    execute: ({ deal, prefix }) => {
+      const slug = needDeal(deal), src = DEALS[slug].sources, pre = String(prefix || "");
+      return Object.fromEntries(Object.entries(src).filter(([k]) => k.startsWith(pre)));
+    } },
+];
+let askWhatIfs = [];
+
+function askContext() {
+  return [
+    "You are the analyst inside LTEC Holdings' deal engine, a dashboard LTEC's partners use to evaluate real-estate syndications they invest in as an LP (often through their own SPV).",
+    "Rules:",
+    "- Every number you state must come from a tool result in this conversation. Never estimate or do your own IRR or waterfall arithmetic; run the engine (run_what_if, solve_for) instead.",
+    "- Say which deal and case a number is for. Keep the sponsor's projections and LTEC's own cases (Adjusted Base, Downside, Stress: LTEC assumptions) clearly apart.",
+    "- Negotiation questions: quantify each possible ask with the tools (what it is worth to our check in IRR points and dollars, in our Adjusted Base and Downside, not just the sponsor's case), rank them, and say what documents or diligence would change the answer.",
+    "- Plain English for a busy partner: lead with the answer, then the few numbers that support it. Short paragraphs or bullets; a small table only to compare options. Percentages to one decimal.",
+    "- If the deal files don't hold what's needed, say so. This is analysis of the files, not legal, tax or investment advice; don't add disclaimers beyond a short note when it truly matters.",
+    "- Tool rates are decimals (0.06 = 6%). What-ifs never change the dashboard; the viewer gets a button to open each one.",
+    "",
+    "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}")${diffPaths(inputs, DEFAULTS).length ? ", with unsaved edits to its inputs (tools use them for this deal)" : ""}.`),
+    "Deals: " + SLUGS.map((k) => `${DEALS[k].meta.name} (slug "${k}", ${DEALS[k].meta.status}, cases: ${Object.keys(dealInputs(k).cases).map((c) => `${c} = ${dealInputs(k).cases[c].label}`).join("; ")})`).join(" | "),
+  ].join("\n");
+}
+
+// ---- small, safe Markdown: paragraphs, bullets, numbered lists, ####/### headings, **bold**, `code`, pipe tables
+function mdInline(t) { return esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>"); }
+function md(text) {
+  const lines = text.replace(/\r/g, "").split("\n"), out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^\s*\|/.test(l)) {
+      const rows = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(lines[i++]);
+      const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+      const body = rows.filter((r) => !/^\s*\|?\s*:?-{2,}/.test(r.replace(/\|/g, "|")) || !/^[\s|:-]+$/.test(r));
+      const [h, ...rs] = body.map(cells);
+      const num = (c) => /^[−+-]?[$]?[\d.,]+[%×xkKM]*( pts)?$/.test(c.replace(/\*\*/g, ""));
+      const numCol = h.map((_, j) => rs.length > 0 && rs.every((r) => !r[j] || num(r[j])));
+      out.push(`<div class="tablewrap"><table><thead><tr>${h.map((c, j) => `<th class="${numCol[j] ? "n" : ""}">${mdInline(c)}</th>`).join("")}</tr></thead><tbody>${rs.map((r) => `<tr>${r.map((c) => `<td class="${num(c) ? "n" : ""}">${mdInline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+      continue;
+    }
+    if (/^\s*[-*•]\s+/.test(l)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*•]\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*[-*•]\s+/, ""));
+      out.push(`<ul>${items.map((x) => `<li>${mdInline(x)}</li>`).join("")}</ul>`); continue;
+    }
+    if (/^\s*\d+[.)]\s+/.test(l)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*\d+[.)]\s+/, ""));
+      out.push(`<ol>${items.map((x) => `<li>${mdInline(x)}</li>`).join("")}</ol>`); continue;
+    }
+    if (/^#{1,6}\s+/.test(l)) { out.push(`<h4>${mdInline(l.replace(/^#+\s+/, ""))}</h4>`); i++; continue; }
+    if (!l.trim()) { i++; continue; }
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !/^\s*(\||[-*•]\s|\d+[.)]\s|#{1,6}\s)/.test(lines[i])) para.push(lines[i++]);
+    out.push(`<p>${mdInline(para.join(" "))}</p>`);
+  }
+  return out.join("");
+}
+
+function setAskStatus(t) { const el = document.getElementById("askStatus"); if (el) el.textContent = t; }
+const ASK_ERR = {
+  rate_limited: "Too many questions at once, or your Claude usage limit is reached. Try again in a bit.",
+  session_expired: "Your claude.ai session expired. Sign in again, then ask.",
+  refused: "Claude declined that question. Try asking it differently.",
+  empty_completion: "No answer came back. Try a simpler question.",
+  prompt_too_large: "The conversation got too long. Clear it and ask again.",
+  upstream_error: "The connection to Claude dropped. Ask again.",
+};
+const ASK_OFF = ["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed", "tools_unavailable"];
+function askTurnEl(role, html, cls) {
+  const d = document.createElement("div");
+  d.className = "ask-turn";
+  d.innerHTML = `<span class="who">${role === "user" ? "You" : "Claude"}</span><div class="${role === "user" ? "ask-q" : "ask-a" + (cls ? " " + cls : "")}">${html}</div>`;
+  document.getElementById("askLog").append(d);
+  return d.querySelector(role === "user" ? ".ask-q" : ".ask-a");
+}
+function askBusyUi(b) {
+  askBusy = b;
+  document.getElementById("askSend").disabled = b;
+  document.getElementById("askStop").hidden = !b;
+  document.getElementById("askClear").hidden = b || !askTurns.length;
+}
+async function ask(q) {
+  q = String(q || "").trim();
+  if (!q || askBusy || !sampleFn) return;
+  document.getElementById("askInput").value = "";
+  askTurnEl("user", esc(q));
+  const a = askTurnEl("assistant", `<p class="muted">Thinking…</p>`);
+  a.scrollIntoView({ block: "nearest" });
+  askTurns.push({ role: "user", content: q });
+  askWhatIfs = [];
+  askCtl = new AbortController();
+  askBusyUi(true); setAskStatus("");
+  const turns = askTurns.slice(-ASK_MAX_TURNS);
+  while (turns[0].role !== "user") turns.shift();
+  try {
+    const { text, truncated } = await sampleFn([{ role: "user", content: askContext() }, ...turns], {
+      tools: ASK_TOOLS, signal: askCtl.signal, onText: ({ text }) => { a.innerHTML = md(text); },
+    });
+    a.innerHTML = md(text) + (truncated ? `<p class="muted">The answer was cut short. Ask for less at a time.</p>` : "");
+    askTurns.push({ role: "assistant", content: text });
+    showWhatIfs(a);
+  } catch (e) {
+    askTurns.pop();
+    const code = e && e.code;
+    if (ASK_OFF.includes(code)) { a.innerHTML = ""; a.parentElement.remove(); turnOffAsk(code); }
+    else if (code === "cancelled") a.innerHTML = e.text ? md(e.text) + `<p class="muted">Stopped.</p>` : `<p class="muted">Stopped.</p>`;
+    else { a.innerHTML = (e && e.text ? md(e.text) : "") + `<p class="muted">${esc(ASK_ERR[code] || ASK_ERR.upstream_error)}</p>`; }
+  } finally {
+    askBusyUi(false); setAskStatus("");
+  }
+}
+function showWhatIfs(a) {
+  if (!askWhatIfs.length) return;
+  const box = document.createElement("div");
+  box.className = "ask-whatifs";
+  askWhatIfs.slice(0, 6).forEach((w) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn";
+    b.textContent = `Open on dashboard: ${DEALS[w.slug].meta.name} · ${w.label}`;
+    b.addEventListener("click", () => {
+      if (w.slug !== META.slug) openDeal(w.slug); else if (view !== "deal") { setHash(w.slug); setView("deal"); }
+      try { inputs = withChanges(w.slug, w.changes); } catch (_) { return; }
+      activeScenario = null; activeVariant = null; renderAllFields(); recompute(); updateScenarioChip();
+      window.scrollTo(0, 0);
+    });
+    box.append(b);
+  });
+  a.after(box);
+}
+function turnOffAsk(code) {
+  const panel = document.getElementById("askPanel");
+  panel.querySelector(".ask-form").hidden = true;
+  document.getElementById("askChips").hidden = true;
+  document.getElementById("askSub").textContent = code === "not_granted"
+    ? "Ask is off: Claude wasn't allowed for this page in this view. Reopen the page to be asked again."
+    : "Ask isn't available in this view.";
+}
+(() => {
+  document.getElementById("askForm").addEventListener("submit", (e) => { e.preventDefault(); ask(document.getElementById("askInput").value); });
+  document.getElementById("askInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(e.target.value); } });
+  document.getElementById("askStop").addEventListener("click", () => askCtl && askCtl.abort());
+  document.getElementById("askClear").addEventListener("click", () => { askTurns = []; document.getElementById("askLog").innerHTML = ""; askBusyUi(false); });
+})();
+async function connectAsk() {
+  if (!window.claude || !claude.use) return;
+  const s = await claude.use("sample");
+  if (!s) return;
+  const lim = await s.limits().catch(() => null);
+  if (!lim || !lim.tools) return;  // this view can't run page tools: leave Ask hidden
+  sampleFn = s;
+  document.getElementById("askPanel").hidden = false;
+  placeAsk();
+}
 
 /* ------------------------------------------------------------ boot and deal switching */
 function bootDeal(slug) {
@@ -1723,6 +2108,7 @@ function bootDeal(slug) {
   document.getElementById("dealPick").value = slug;
   try { localStorage.setItem("deal-engine.last", slug); } catch (_) {}
   renderDiligence(); renderAllFields(); recompute(); renderSaved(); updateScenarioChip();
+  if (sampleFn) placeAsk();
 }
 function switchDeal(slug) {
   if (!DEALS[slug] || slug === META.slug) return;
@@ -1747,4 +2133,5 @@ function switchDeal(slug) {
 bootDeal(META.slug);
 if (location.hash === "#compare" && SLUGS.length > 1) setView("compare");
 connect();
+connectAsk();
 </script>
