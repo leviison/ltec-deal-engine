@@ -233,6 +233,8 @@ table.cmp td.lead { font-weight: 600; }
 .ask-form textarea { width: 100%; min-height: 64px; resize: vertical; font: 14px var(--f-body); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; }
 .ask-form textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .ask-whatifs { display: flex; flex-wrap: wrap; gap: 6px; }
+.ask-prop { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; background: var(--surface); max-width: 80ch; }
+.ask-prop-head { display: grid; gap: 2px; }
 table.cmp .edited { font-size: 11px; color: var(--warn-fg); background: var(--warn-bg); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
 
 .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
@@ -655,7 +657,12 @@ function renderReadout() {
 }
 // Copy another case's computed years, Year-6 growth and exit into the Custom case.
 function startFrom(k) {
-  const src = inputs.cases[k], r = E.runCase(k, inputs), o = r.operations, cu = inputs.cases.custom;
+  copyIntoCustom(inputs, k);
+  renderCaseFields(); recompute();
+}
+// Copy case k's computed years, growth and exit into inp.cases.custom (in place). Used by "Start from" and by Ask.
+function copyIntoCustom(inp, k) {
+  const src = inp.cases[k], r = E.runCase(k, inp), o = r.operations, cu = inp.cases.custom;
   ["rents", "other_income", "opex", "capex"].forEach((x) => { cu[x] = o[x].slice(); });
   if (src.deal_overrides) cu.deal_overrides = clone(src.deal_overrides); else delete cu.deal_overrides;
   if (src.kind === "custom") {
@@ -675,7 +682,7 @@ function startFrom(k) {
   }
   cu.exit_cap = r.exit.exit_cap; cu.sale_price = r.exit.gross_value;
   cu.built_from = k; cu.note = "Started from " + src.label + ".";
-  renderCaseFields(); recompute();
+  return inp;
 }
 // While the Custom case is being edited, its column is highlighted everywhere.
 function hl(k) { return k === "custom" && editCase === "custom" ? " hl" : ""; }
@@ -1840,6 +1847,7 @@ function renderAskChips() {
     `Summarize ${UI.deal_short} for a partner in one paragraph.`,
     `Why is our ${(inputs.cases[PRIMARY] || {}).label || "base case"} below the sponsor's case?`,
     "What would it take for our Downside to return our capital plus 5%?",
+    "Build a Custom case that shows where we break even, and propose it as a scenario.",
     Object.keys(DEFAULTS.investor.side_letter.terms).length ? "Is the side-letter offer worth taking? What should we ask for instead?" : "What are the biggest risks in this deal, with numbers?",
   ];
   el.innerHTML = qs.map((q) => `<button type="button">${esc(q)}</button>`).join("");
@@ -1886,10 +1894,40 @@ function setPath(obj, path, v) {
   else if (typeof old === "boolean") o[last] = v === true || v === "true";
   else o[last] = v;
 }
-function withChanges(slug, changes) {
+// A what-if: start from the deal as on the dashboard, optionally rebuild Custom from another case (like "Start from"),
+// then apply the changes (dotted paths; array items by index, e.g. cases.custom.rents.0, or a whole array).
+function withChanges(slug, changes, customFrom) {
   const inp = clone(dealInputs(slug));
-  Object.entries(changes || {}).forEach(([k, v]) => setPath(inp, k, v));
+  if (customFrom) {
+    const k = String(customFrom);
+    if (!inp.cases[k] || k === "custom") throw new Error(`custom_from must be another case: ${Object.keys(inp.cases).filter((c) => c !== "custom").join(", ")}`);
+    copyIntoCustom(inp, k);
+  }
+  Object.entries(changes || {}).forEach(([k, v]) => {
+    if (typeof v === "string" && Array.isArray(get(inp, k))) v = v.split(",").map((x) => x.trim()).filter(Boolean);
+    if (Array.isArray(v) && Array.isArray(get(inp, k))) {
+      if (!v.every((x) => isFinite(Number(x)))) throw new Error(`"${k}" needs a list of numbers`);
+      set(inp, k, v.map(Number));
+    } else setPath(inp, k, v);
+  });
   return inp;
+}
+// Warnings Claude should pass on: deal-level changes a case overrides, and fields that are labels only.
+function changeWarnings(inp, changes, keys) {
+  const w = [];
+  Object.keys(changes || {}).forEach((path) => {
+    if (path.startsWith("deal.")) {
+      const sub = path.slice(5);
+      keys.forEach((k) => {
+        const ov = inp.cases[k] && inp.cases[k].deal_overrides;
+        if (!ov) return;
+        const hit = inputLeaves(ov, "").map(([pp]) => pp).filter((pp) => pp === sub || pp.startsWith(sub + ".") || sub.startsWith(pp + "."));
+        if (hit.length) w.push(`Case "${k}" sets its own ${hit.join(", ")}, which overrides ${path}. Change cases.${k}.deal_overrides.${hit[0]} instead.`);
+      });
+    }
+    if (/\.(built_from|label|note)$/.test(path)) w.push(`${path} is a label only and changes no numbers. To rebuild Custom from another case, use custom_from.`);
+  });
+  return w;
 }
 function inputDigest(inp) {
   const d = inp.deal, wf = inp.waterfall;
@@ -1938,30 +1976,83 @@ const ASK_TOOLS = [
         operating_cash: o.operating_cash_flow.map(r0), net_sale_proceeds: sale, lp_distributions: w.lp.map(r0), sponsor_promote: w.gp.map(r0),
         unpaid_pref_end: w.unpaid_pref_end.map(r0), our_check_cash: r.investor.distributions.map(r0), sale: { exit_cap: r4(r.exit.exit_cap), gross: r0(r.exit.gross_value), noi_priced: r0(r.exit.y6_noi) } };
     } },
+  { name: "list_inputs",
+    description: "The inputs you can change for one deal, as dotted paths with current values: deal-level settings, the waterfall, our check and side letter, and for each case its kind and editable fields (our derived cases have factors, growth paths, one-off rent changes, an added expense, exit cap; Custom has year-by-year rows rents/other_income/opex/capex plus growth after them and its exit). Also lists each case's deal_overrides, which win over deal-level settings for that case. Call this before changing anything you haven't seen.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "optional: one case" } }, required: ["deal"] },
+    execute: ({ deal, case: k }) => {
+      const slug = needDeal(deal), inp = dealInputs(slug);
+      const keys = k ? [needCase(inp, k)] : Object.keys(inp.cases);
+      setAskStatus(`Listing inputs for ${DEALS[slug].meta.name}…`);
+      return {
+        deal: Object.fromEntries(inputLeaves(inp.deal, "deal").filter(([pp]) => !pp.startsWith("deal.refi.") || inp.deal.refi.enabled || /enabled|year$/.test(pp))),
+        waterfall: Object.fromEntries(inputLeaves(inp.waterfall, "waterfall")),
+        investor: Object.fromEntries(inputLeaves(inp.investor, "investor")),
+        cases: keys.map((c) => {
+          const cs = inp.cases[c], f = {};
+          inputLeaves(cs, `cases.${c}`).forEach(([pp, v]) => { if (!/\.(label|note|built_from)$/.test(pp)) f[pp] = v; });
+          return { case: c, label: cs.label, kind: cs.kind, from: cs.from || null,
+            how_to_change: cs.kind === "derived" ? "factors (1 = same as the source), *_path 'source' or 'growth' with *_growth, rent_adjust ($ by year), opex_add from opex_add_start_year, exit_cap, deal_overrides"
+              : cs.kind === "custom" ? "year rows as whole lists or by index (e.g. cases.custom.rents.0); growth after the rows; exit_method 'cap_rate' (exit_cap) or 'sale_price'; or rebuild it from another case with custom_from"
+              : cs.kind === "explicit" ? "the sponsor's deck rows; change net_sale_proceeds or y6_noi_growth, or copy into Custom with custom_from and edit there"
+              : "growth case: rent_y1, growth rates, opex, exit_cap",
+            inputs: f };
+        }),
+      };
+    } },
   { name: "run_what_if",
-    description: "Change inputs and recompute (the dashboard is not changed). `changes` maps dotted input paths to new values, e.g. {\"cases.downside.exit_cap\": 0.06, \"investor.side_letter.enabled\": true, \"waterfall.pref_rate\": 0.09, \"deal.purchase_price\": 50000000}. Rates are decimals. Returns results for the chosen case (or every case with case \"all\") before and after.",
+    description: "Change inputs and recompute (the dashboard is not changed). `changes` maps dotted input paths to new values, e.g. {\"cases.downside.exit_cap\": 0.06, \"cases.base.rent_factor\": 0.95, \"investor.side_letter.enabled\": true, \"cases.base.deal_overrides.below_noi_income.sale_value\": \"none\"}. `custom_from` first rebuilds Custom from another case (like the dashboard's Start from), then applies changes. Rates are decimals. Returns before/after for the case (or every case with \"all\") and warnings for changes that had no effect or that a case overrides.",
     inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "case key or \"all\"" },
-      changes: { type: "object", description: "dotted path -> new value" }, label: { type: "string", description: "a short name for this what-if, shown to the viewer" } }, required: ["deal", "case", "changes"] },
-    execute: ({ deal, case: k, changes, label }) => {
+      changes: { type: "object", description: "dotted path -> new value" }, custom_from: { type: "string", description: "optional: rebuild Custom from this case first" },
+      label: { type: "string", description: "a short name for this what-if, shown to the viewer" } }, required: ["deal", "case", "changes"] },
+    execute: ({ deal, case: k, changes, custom_from, label }) => {
       const slug = needDeal(deal), base = dealInputs(slug);
       const keys = String(k) === "all" ? Object.keys(base.cases) : [needCase(base, k)];
       const ch = changes && typeof changes === "object" ? changes : {};
       setAskStatus(`Running ${label || "a what-if"} on ${DEALS[slug].meta.name}…`);
-      const after = withChanges(slug, ch);
-      askWhatIfs.push({ slug, changes: ch, label: String(label || Object.keys(ch).join(", ")).slice(0, 80) });
-      return { deal: slug, changes: ch, results: keys.map((c) => ({ before: caseResult(E.runCase(c, base), base), after: caseResult(E.runCase(c, after), after) })) };
+      const after = withChanges(slug, ch, custom_from);
+      askWhatIfs.push({ slug, changes: ch, customFrom: custom_from || null, label: String(label || Object.keys(ch).join(", ") || "Custom from " + custom_from).slice(0, 80) });
+      const results = keys.map((c) => ({ before: caseResult(E.runCase(c, base), base), after: caseResult(E.runCase(c, after), after) }));
+      const warnings = changeWarnings(after, ch, keys);
+      if (results.every((x) => JSON.stringify(x.before) === JSON.stringify(Object.assign({}, x.after, { label: x.before.label })))) warnings.push("These changes did not move any result for the case(s) shown. Check list_inputs for the right path, or whether another case is the one affected.");
+      return { deal: slug, changes: ch, custom_from: custom_from || null, results, warnings };
+    } },
+  { name: "sweep",
+    description: "Sensitivity probe: recompute one case across values of one input (or a grid of two inputs) and return a table of a metric (lp_irr, our_irr, lp_multiple, our_profit, min_dscr). E.g. exit cap 5.5-7.5% against rent_factor 0.9-1.05. At most 15 values per input. Optional other_changes and custom_from apply first.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string" }, metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr"] },
+      path: { type: "string" }, values: { type: "array", items: { type: "number" } }, path2: { type: "string" }, values2: { type: "array", items: { type: "number" } },
+      other_changes: { type: "object" }, custom_from: { type: "string" } }, required: ["deal", "case", "metric", "path", "values"] },
+    execute: ({ deal, case: k, metric, path, values, path2, values2, other_changes, custom_from }) => {
+      const slug = needDeal(deal), ck = needCase(dealInputs(slug), k), M = String(metric);
+      const v1 = (values || []).map(Number).filter(isFinite).slice(0, 15), v2 = path2 ? (values2 || []).map(Number).filter(isFinite).slice(0, 15) : [null];
+      if (!v1.length || (path2 && !v2.length)) throw new Error("values (and values2) need numbers");
+      setAskStatus(`Sweeping ${path}${path2 ? " × " + path2 : ""} on ${DEALS[slug].meta.name}…`);
+      const at = (a, b) => { const ch = Object.assign({}, other_changes || {}, { [path]: a }, path2 ? { [path2]: b } : {}); const inp = withChanges(slug, ch, custom_from); return caseResult(E.runCase(ck, inp), inp)[M]; };
+      return { deal: slug, case: ck, metric: M, rows: path, columns: path2 || null, table: v1.map((a) => ({ [path]: a, results: v2.map((b) => (path2 ? { [path2]: b, value: at(a, b) } : { value: at(a, null) })) })) };
+    } },
+  { name: "propose_scenario",
+    description: "Package a scenario for the viewer to keep: a name, a one-paragraph description of what it assumes and why, and the changes (plus optional custom_from). It is computed now and shown under your answer with buttons to open it on the dashboard or save it as a saved scenario; nothing is saved unless the viewer clicks Save. Use for cases or scenarios the viewer asked you to build.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, name: { type: "string" }, description: { type: "string" },
+      changes: { type: "object" }, custom_from: { type: "string" } }, required: ["deal", "name", "description", "changes"] },
+    execute: ({ deal, name, description, changes, custom_from }) => {
+      const slug = needDeal(deal), ch = changes && typeof changes === "object" ? changes : {};
+      setAskStatus(`Building "${name}"…`);
+      const inp = withChanges(slug, ch, custom_from), base = dealInputs(slug);
+      const res = Object.keys(inp.cases).map((c) => ({ case: c, label: inp.cases[c].label, before: caseResult(E.runCase(c, base), base).lp_irr, after: caseResult(E.runCase(c, inp), inp).lp_irr,
+        our_irr_after: caseResult(E.runCase(c, inp), inp).our_irr }));
+      askWhatIfs.push({ slug, changes: ch, customFrom: custom_from || null, label: String(name).slice(0, 80), proposal: true, description: String(description || "").slice(0, 600), res });
+      return { staged: true, name, lp_irr_by_case: res, warnings: changeWarnings(inp, ch, Object.keys(inp.cases)) };
     } },
   { name: "solve_for",
     description: "Find the value of one numeric input that makes a result hit a target, by search between low and high (the engine recomputes each try). metric: lp_irr, our_irr, lp_multiple, our_profit. E.g. the exit cap at which our Downside's LP IRR is 0, or the pref rate that gives our check 15%. Returns the value, the result achieved, and the result at both ends.",
     inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string" }, path: { type: "string", description: "dotted input path" },
       metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit"] }, target: { type: "number" }, low: { type: "number" }, high: { type: "number" },
-      other_changes: { type: "object", description: "optional fixed changes applied first" } }, required: ["deal", "case", "path", "metric", "target", "low", "high"] },
-    execute: ({ deal, case: k, path, metric, target, low, high, other_changes }) => {
+      other_changes: { type: "object", description: "optional fixed changes applied first" }, custom_from: { type: "string", description: "optional: rebuild Custom from this case first" } }, required: ["deal", "case", "path", "metric", "target", "low", "high"] },
+    execute: ({ deal, case: k, path, metric, target, low, high, other_changes, custom_from }) => {
       const slug = needDeal(deal), ck = needCase(dealInputs(slug), k), M = String(metric), T = Number(target);
       let lo = Number(low), hi = Number(high);
       if (!isFinite(lo) || !isFinite(hi) || !isFinite(T)) throw new Error("low, high and target must be numbers");
       setAskStatus(`Solving ${path} on ${DEALS[slug].meta.name}…`);
-      const at = (v) => { const inp = withChanges(slug, Object.assign({}, other_changes || {}, { [path]: v })); return caseResult(E.runCase(ck, inp), inp)[M]; };
+      const at = (v) => { const inp = withChanges(slug, Object.assign({}, other_changes || {}, { [path]: v }), custom_from); return caseResult(E.runCase(ck, inp), inp)[M]; };
       let flo = at(lo), fhi = at(hi);
       if (flo == null || fhi == null) throw new Error(`${M} is undefined at an end of the range (e.g. no IRR when everything is lost); narrow the range`);
       if ((flo - T) * (fhi - T) > 0) return { found: false, note: "target is outside what the range produces", at_low: { value: lo, result: flo }, at_high: { value: hi, result: fhi } };
@@ -1972,7 +2063,7 @@ const ASK_TOOLS = [
         if (Math.abs(hi - lo) < 1e-7 * Math.max(1, Math.abs(lo))) break;
       }
       const v = (lo + hi) / 2;
-      askWhatIfs.push({ slug, changes: Object.assign({}, other_changes || {}, { [path]: v }), label: `${path} = ${+v.toPrecision(5)}` });
+      askWhatIfs.push({ slug, changes: Object.assign({}, other_changes || {}, { [path]: v }), customFrom: custom_from || null, label: `${path} = ${+v.toPrecision(5)}` });
       return { found: true, path, value: +v.toPrecision(6), metric: M, achieved: at(v), target: T };
     } },
   { name: "compare_deals",
@@ -2006,6 +2097,9 @@ function askContext() {
     "- Plain English for a busy partner: lead with the answer, then the few numbers that support it. Short paragraphs or bullets; a small table only to compare options. Percentages to one decimal.",
     "- If the deal files don't hold what's needed, say so. This is analysis of the files, not legal, tax or investment advice; don't add disclaimers beyond a short note when it truly matters.",
     "- Tool rates are decimals (0.06 = 6%). What-ifs never change the dashboard; the viewer gets a button to open each one.",
+    "- Before changing inputs you haven't seen, call list_inputs. A case's deal_overrides win over deal-level settings for that case; tools warn you, and you must tell the viewer about any warning.",
+    "- To build or rebuild Custom from another case, use custom_from (then changes on cases.custom.*). For break-evens use solve_for; for sensitivity tables use sweep.",
+    "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
     "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),
     "Deals: " + SLUGS.map((k) => `${DEALS[k].meta.name} (slug "${k}", ${DEALS[k].meta.status}, cases: ${Object.keys(dealInputs(k).cases).map((c) => `${c} = ${dealInputs(k).cases[c].label}`).join("; ")})`).join(" | "),
@@ -2102,23 +2196,60 @@ async function ask(q) {
     askBusyUi(false); setAskStatus("");
   }
 }
+function openWhatIf(w) {
+  if (w.slug !== META.slug) openDeal(w.slug); else if (view !== "deal") { setHash(w.slug); setView("deal"); }
+  try { inputs = withChanges(w.slug, w.changes, w.customFrom); } catch (_) { return; }
+  activeScenario = null; activeVariant = null; renderAllFields(); recompute(); updateScenarioChip();
+  window.scrollTo(0, 0);
+}
+async function saveProposal(w, btn) {
+  if (!db) { btn.textContent = "Saving needs a signed-in view"; return; }
+  btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    const inp = withChanges(w.slug, w.changes, w.customFrom);
+    const doc = { name: w.label, deal: w.slug, inputs: JSON.stringify(inp), created_at: new Date().toISOString(),
+      changes: diffPaths(inp, DEALS[w.slug]).length, model_version: DEALS[w.slug].version, source: "ask",
+      summary: (w.res || []).filter((x) => Math.abs(x.after - x.before) > 1e-6 || x.case === "base").map((x) => `${x.label} ${fmt.pct(x.after)}`).join(" · "),
+      note: w.description || "" };
+    try { const u = await claude.use("user"); if (u) doc.created_by = await u.id(); } catch (_) {}
+    await db.collection("scenarios").add(doc);
+    btn.textContent = "Saved ✓";
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = e && e.code === "permission_denied" ? "View-only access: can't save" : "Couldn't save. Try again";
+  }
+}
 function showWhatIfs(a) {
   if (!askWhatIfs.length) return;
+  const props = askWhatIfs.filter((w) => w.proposal), plain = askWhatIfs.filter((w) => !w.proposal);
+  props.slice(0, 6).forEach((w) => {
+    const card = document.createElement("div");
+    card.className = "ask-prop";
+    const ourCol = (w.res || []).some((x) => x.our_irr_after != null && Math.abs(x.our_irr_after - x.after) > 1e-6);
+    const rows = (w.res || []).map((x) => `<tr${Math.abs(x.after - x.before) > 1e-6 ? "" : ' class="sub"'}><td>${esc(x.label)}</td><td class="n">${fmt.pct(x.before)}</td><td class="n"><b>${fmt.pct(x.after)}</b></td>${ourCol ? `<td class="n">${fmt.pct(x.our_irr_after)}</td>` : ""}</tr>`).join("");
+    card.innerHTML = `<div class="ask-prop-head"><span class="eyebrow">Proposed scenario · ${esc(DEALS[w.slug].meta.name)}</span><b>${esc(w.label)}</b></div>
+      ${w.description ? `<p class="small" style="margin:0">${esc(w.description)}</p>` : ""}
+      <div class="tablewrap"><table><thead><tr><th>Case</th><th class="n">LP IRR now</th><th class="n">In this scenario</th>${ourCol ? '<th class="n">Our check</th>' : ""}</tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="ask-whatifs"></div>`;
+    const bar = card.querySelector(".ask-whatifs");
+    const open = document.createElement("button"); open.type = "button"; open.className = "btn"; open.textContent = "Open on dashboard";
+    open.addEventListener("click", () => openWhatIf(w));
+    const save = document.createElement("button"); save.type = "button"; save.className = "btn primary"; save.textContent = "Save as scenario";
+    save.addEventListener("click", () => saveProposal(w, save));
+    bar.append(open, save);
+    a.parentElement.append(card);
+  });
+  if (!plain.length) return;
   const box = document.createElement("div");
   box.className = "ask-whatifs";
-  askWhatIfs.slice(0, 6).forEach((w) => {
+  plain.slice(0, 6).forEach((w) => {
     const b = document.createElement("button");
     b.type = "button"; b.className = "btn";
     b.textContent = `Open on dashboard: ${DEALS[w.slug].meta.name} · ${w.label}`;
-    b.addEventListener("click", () => {
-      if (w.slug !== META.slug) openDeal(w.slug); else if (view !== "deal") { setHash(w.slug); setView("deal"); }
-      try { inputs = withChanges(w.slug, w.changes); } catch (_) { return; }
-      activeScenario = null; activeVariant = null; renderAllFields(); recompute(); updateScenarioChip();
-      window.scrollTo(0, 0);
-    });
+    b.addEventListener("click", () => openWhatIf(w));
     box.append(b);
   });
-  a.after(box);
+  a.parentElement.append(box);
 }
 function turnOffAsk(code) {
   const panel = document.getElementById("askPanel");

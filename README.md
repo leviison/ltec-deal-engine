@@ -40,7 +40,9 @@ waterfall, inputs with sources and what you changed, diligence; the comparison e
 column). ExcelJS (styled workbook) and jsPDF load from jsDelivr only when exporting; files go out through the `downloads` capability.
 
 **Ask** (below the case cards, or under the comparison): questions about the deals in plain English, answered by
-Claude using the engine on the page. The first question asks the viewer to allow Claude for the page; questions use
+Claude using the engine on the page. It can list every input, rebuild Custom from another case, run what-ifs (with warnings when
+a change has no effect or a case overrides it), solve for break-evens, run sensitivity sweeps and grids, and propose
+named scenarios; you open or save a proposal with one click (saved scenarios built this way carry `source: "ask"`). The first question asks the viewer to allow Claude for the page; questions use
 that viewer's Claude usage.
 
 **Compare deals** (the view switch at the top, or `#compare`) puts every deal side by side: LP IRR, multiple, Years 1-4
