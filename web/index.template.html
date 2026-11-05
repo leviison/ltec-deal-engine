@@ -2150,7 +2150,7 @@ async function connectAsk() {
 // Libraries load from jsDelivr only when someone exports. Files go out through the downloads capability (the viewer
 // confirms each save). Both exports follow the current view: one deal (with your edits) or the comparison columns.
 const LIBS = {
-  xlsx: "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",
+  exceljs: "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js",
   jspdf: "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js",
   autotable: "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js",
 };
@@ -2182,7 +2182,7 @@ async function doExport(type) {
     const base = st.kind === "compare" ? "deal-comparison" : st.slug;
     let data, filename;
     if (type === "pdf") { await loadLib("jspdf"); await loadLib("autotable"); data = buildPdf(st); filename = `${base}-summary-${today()}.pdf`; }
-    else { await loadLib("xlsx"); data = buildXlsx(st); filename = `${base}-model-${today()}.xlsx`; }
+    else { await loadLib("exceljs"); data = await buildXlsx(st); filename = `${base}-model-${today()}.xlsx`; }
     await downloadsApi.save({ filename, data });
     expMsg("Exported " + filename);
   } catch (e) {
@@ -2217,90 +2217,189 @@ function inputLeaves(x, pre, out) {
   return out;
 }
 
-// ---------- Excel
-function buildXlsx(st) {
-  const X = window.XLSX, wb = X.utils.book_new();
-  const P = "0.0%", M = '0.00"x"', D = "#,##0;[Red]-#,##0";
-  const cell = (v, z) => (v == null || (typeof v === "number" && !isFinite(v)) ? { t: "s", v: "" } : typeof v === "number" ? { t: "n", v, z } : { t: "s", v: String(v) });
-  const sheet = (rows, widths) => {
-    const ws = X.utils.aoa_to_sheet(rows.map((r) => r.map((c) => (c && typeof c === "object" && "t" in c ? c : cell(c)))));
-    ws["!cols"] = (widths || []).map((w) => ({ wch: w }));
-    return ws;
+// ---------- Excel (ExcelJS: styled, values only - the engine's numbers, laid out to read and to check)
+const XL = {
+  navy: "FF1F3A5F", blue: "FF2B5797", band: "FFE4EBF6", zebra: "FFF6F8FB", line: "FFD5DCE6", muted: "FF6B7785", changed: "FFFFF2C2",
+  D: '#,##0;[Red](#,##0);"–"', P: '0.0%;[Red]-0.0%', P2: '0.00%;[Red]-0.00%', M: '0.00"x"', N: "#,##0",
+};
+const TAB = { sponsor: "FF7A8796", base: "FF2B5797", downside: "FFB7791F", stress: "FFB4432F", custom: "FF6A4C9C" };
+async function buildXlsx(st) {
+  const wb = new window.ExcelJS.Workbook();
+  wb.creator = "LTEC Deal Engine"; wb.created = new Date();
+  const font = (o) => Object.assign({ name: "Calibri", size: 10, color: { argb: "FF1E2833" } }, o || {});
+  const sheetName = (name) => { let n = String(name).replace(/[\\/?*[\]:]/g, " ").slice(0, 31), i = 2; while (wb.getWorksheet(n)) n = `${String(name).slice(0, 27)} ${i++}`; return n; };
+  const newSheet = (name, opts) => wb.addWorksheet(sheetName(name), Object.assign({
+    pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
+    headerFooter: { oddFooter: "&8LTEC Deal Engine · &D · page &P of &N" } }, opts || {}));
+  // the title block: name, subtitle, note; returns the next row number
+  const title = (ws, t, sub, note, span) => {
+    ws.addRow([t]).font = font({ size: 16, bold: true, color: { argb: XL.navy } });
+    ws.getRow(1).height = 24;
+    if (sub) ws.addRow([sub]).font = font({ size: 10.5, color: { argb: "FF3B4652" } });
+    if (note) ws.addRow([note]).font = font({ size: 9, italic: true, color: { argb: XL.muted } });
+    ws.addRow([]);
+    return ws.rowCount + 1;
   };
-  const add = (name, ws) => {
-    let n = name.replace(/[\\/?*[\]:]/g, " ").slice(0, 31), i = 2;
-    while (wb.SheetNames.includes(n)) n = `${name.slice(0, 28)} ${i++}`;
-    X.utils.book_append_sheet(wb, ws, n);
-  };
-  const summaryRows = (title, slug, inp, version, runs) => {
-    const m = DEALS[slug].meta, d = inp.deal;
-    const rows = [[title], [`${m.sponsor} · ${m.status} · ${version}`], [`Exported ${today()} from LTEC Deal Engine. LP returns on the deal's waterfall, annual periods. Analysis, not investment advice.`], [],
-      ["Units", cell(d.units)], ["Price", cell(d.purchase_price, D)], ["Loan", cell(d.loan_amount, D)], ["Loan rate", cell(d.loan_rate, "0.00%")],
-      ["LP equity", cell(d.lp_equity, D)], ["Waterfall", waterfallText(inp.waterfall)], ["Our check", cell(inp.investor.check, D)],
-      ["Side letter on our check", inp.investor.side_letter && inp.investor.side_letter.enabled ? "Yes: " + waterfallText(Object.assign({}, inp.waterfall, inp.investor.side_letter.terms)) : "No"], [],
-      ["Case", "LP IRR", "Multiple", "Cash yield Y1-4", "IRR on our check", "Profit on our check", "Year-1 NOI", "NOI priced at sale", "Exit cap", "Gross sale", "Net sale proceeds", "Min debt coverage", "Sponsor promote", "Assumptions"]];
-    runs.forEach(({ k, r }) => {
-      const c = caseRow(k, r, inp);
-      rows.push([c.label, cell(c.lp_irr, P), cell(c.multiple, M), cell(c.yield, P), cell(c.our_irr, P), cell(c.our_profit, D), cell(c.noi1, D), cell(c.exit_noi, D),
-        cell(c.exit_cap, "0.00%"), cell(c.gross, D), cell(c.nsp, D), cell(c.dscr, '0.00"x"'), cell(c.promote, D), inp.cases[k].note || ""]);
-    });
-    return rows;
-  };
-  const caseSheet = (k, r, inp) => {
-    const o = r.operations, w = r.waterfall, H = o.hold_years, yrs = Array.from({ length: H }, (_, i) => `Year ${i + 1}`);
-    const line = (label, arr) => [label, ...arr.map((v) => cell(v, D))];
-    const sale = o.noi.map((_, i) => (i === H - 1 ? r.exit.net_sale_proceeds : 0));
-    const rows = [[`${r.label}`], [inp.cases[k].note || ""], [], ["", ...yrs],
-      line("Rents", o.rents), line("Other income", o.other_income), line("Operating expenses", o.opex.map((v) => -v)), line("Net operating income", o.noi),
-      line("CapEx / reserves", o.capex.map((v) => -v)), line("Debt service", o.debt_service.map((v) => -v)), line("Asset management fee", o.asset_mgmt_fee.map((v) => -v))];
-    if (o.below_noi_income.some((v) => v)) rows.push(line(inp.deal.below_noi_income.label || "Below-NOI income", o.below_noi_income));
-    rows.push(line("Operating cash flow", o.operating_cash_flow), line("Refinance proceeds", o.refi_proceeds), line("Net sale proceeds", sale), line("Loan balance, end", o.loan_balance_end), [],
-      line("Pref due", w.pref_due), line("To pref", w.to_pref), line("Return of capital", w.return_of_capital), line("LP distributions", w.lp), line("Sponsor promote", w.gp),
-      line("Unreturned capital, end", w.unreturned_end), line("Unpaid pref, end", w.unpaid_pref_end), [],
-      line(`Our check (${Math.round(inp.investor.check).toLocaleString("en-US")})`, r.investor.distributions), [],
-      ["Sale", `Gross ${Math.round(r.exit.gross_value).toLocaleString("en-US")} at ${(r.exit.exit_cap * 100).toFixed(2)}% cap on ${Math.round(r.exit.y6_noi).toLocaleString("en-US")} NOI; selling costs ${Math.round(r.exit.selling_costs).toLocaleString("en-US")}, loan payoff ${Math.round(r.exit.debt_payoff).toLocaleString("en-US")}`],
-      ["LP IRR", cell(r.lp.irr, P)], ["LP multiple", cell(r.lp.multiple, M)], ["IRR on our check", cell(r.investor.irr, P)]);
-    if (inp.cases[k].kind === "derived") {
-      rows.push([], ["Case inputs (adjusted from " + ((inp.cases[inp.cases[k].from] || {}).label || inp.cases[k].from) + ")"]);
-      inputLeaves(caseInputs(inp.cases[k]), "").forEach(([pp, v]) => rows.push([pp, typeof v === "number" ? cell(v) : String(v)]));
+  const styleHead = (row, n) => {
+    for (let c = 1; c <= n; c++) {
+      const cell = row.getCell(c);
+      cell.font = font({ bold: true, color: { argb: "FFFFFFFF" } });
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL.blue } };
+      cell.alignment = { vertical: "middle", horizontal: c === 1 ? "left" : "right", wrapText: true };
     }
-    return sheet(rows, [34, ...yrs.map(() => 14)]);
+    row.height = 30;
   };
-  const inputsSheet = (slug, inp) => {
-    const rows = [["Input", "Value", "Changed from the deal file", "Source"]];
+  const styleGroup = (row, n, label) => {
+    for (let c = 1; c <= n; c++) { const cell = row.getCell(c); cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL.band } }; cell.font = font({ bold: true, color: { argb: XL.navy } }); }
+    if (label != null) row.getCell(1).value = label;
+  };
+  const styleBody = (row, n, opts) => {
+    opts = opts || {};
+    for (let c = 1; c <= n; c++) {
+      const cell = row.getCell(c);
+      cell.font = font(opts.total ? { bold: true } : opts.sub ? { color: { argb: XL.muted } } : {});
+      if (c > 1 && opts.fmt) cell.numFmt = Array.isArray(opts.fmt) ? opts.fmt[c - 2] || opts.fmt[opts.fmt.length - 1] : opts.fmt;
+      if (c > 1) cell.alignment = { horizontal: "right" };
+      cell.border = opts.total ? { top: { style: "thin", color: { argb: "FF8A96A3" } }, bottom: { style: "thin", color: { argb: XL.line } } } : { bottom: { style: "hair", color: { argb: XL.line } } };
+      if (opts.zebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL.zebra } };
+    }
+  };
+  const num = (v) => (v == null || (typeof v === "number" && !isFinite(v)) ? null : v);
+
+  const addSummary = (ws, name, slug, inp, version, runs) => {
+    const m = DEALS[slug].meta, d = inp.deal;
+    ws.properties.tabColor = { argb: XL.navy };
+    title(ws, name, `${m.sponsor} · ${(m.ui && m.ui.location) || ""} · ${m.status} · ${version}`,
+      `Exported ${today()} from LTEC Deal Engine. LP returns on the deal's waterfall, annual periods. Our cases are LTEC assumptions. Analysis, not investment advice.`);
+    const facts = [["Units", d.units, XL.N], ["Price", d.purchase_price, XL.D], ["Price per unit", d.purchase_price / d.units, XL.D], ["Loan", d.loan_amount, XL.D],
+      ["Loan rate", d.loan_rate, XL.P2], ["LP equity", d.lp_equity, XL.D], ["Waterfall", waterfallText(inp.waterfall)], ["Our check", inp.investor.check, XL.D],
+      ["Side letter on our check", inp.investor.side_letter && inp.investor.side_letter.enabled ? waterfallText(Object.assign({}, inp.waterfall, inp.investor.side_letter.terms)) : "No"]];
+    facts.forEach(([k, v, f]) => { const r = ws.addRow([k, v]); r.getCell(1).font = font({ color: { argb: XL.muted } }); r.getCell(2).font = font({ bold: true }); if (f) r.getCell(2).numFmt = f; r.getCell(2).alignment = { horizontal: "left" }; });
+    ws.addRow([]);
+    const head = ["Case", "LP IRR", "Multiple", "Cash yield Y1–4", "IRR on our check", "Profit on our check", "Year-1 NOI", "NOI priced at sale", "Exit cap", "Gross sale", "Net sale proceeds", "Min debt coverage", "Sponsor promote"];
+    const hr = ws.addRow(head); styleHead(hr, head.length); const headRow = hr.number;
+    runs.forEach(({ k, r }, i) => {
+      const c = caseRow(k, r, inp);
+      const row = ws.addRow([c.label, num(c.lp_irr), num(c.multiple), num(c.yield), num(c.our_irr), num(c.our_profit), num(c.noi1), num(c.exit_noi), num(c.exit_cap), num(c.gross), num(c.nsp), num(c.dscr), num(c.promote)]);
+      styleBody(row, head.length, { fmt: [XL.P, XL.M, XL.P, XL.P, XL.D, XL.D, XL.D, XL.P2, XL.D, XL.D, XL.M, XL.D], zebra: i % 2 === 1 });
+      row.getCell(1).font = font({ bold: true, color: { argb: TAB[k] || XL.navy } });
+    });
+    // what each case assumes: its own block, each note across the table's width
+    ws.addRow([]);
+    styleGroup(ws.addRow(["What each case assumes"]), head.length);
+    runs.forEach(({ k, r }) => {
+      const note = inp.cases[k].note || "";
+      const row = ws.addRow([r.label, note]);
+      ws.mergeCells(row.number, 2, row.number, head.length);
+      row.getCell(1).font = font({ bold: true, color: { argb: TAB[k] || XL.navy } }); row.getCell(1).alignment = { vertical: "top" };
+      row.getCell(2).alignment = { wrapText: true, vertical: "top" }; row.getCell(2).font = font({ size: 9.5, color: { argb: "FF3B4652" } });
+      row.height = Math.max(15, Math.ceil(note.length / 175) * 13 + 3);
+    });
+    ws.columns = [{ width: 24 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 15 }, { width: 13 }, { width: 14 }, { width: 9 }, { width: 14 }, { width: 15 }, { width: 11 }, { width: 14 }];
+    ws.views = [{ state: "frozen", ySplit: headRow, xSplit: 1, showGridLines: false }];
+  };
+  const addCase = (k, r, inp) => {
+    const ws = newSheet(r.label, { properties: { tabColor: { argb: TAB[k] || XL.navy } } });
+    const o = r.operations, w = r.waterfall, H = o.hold_years, n = H + 1;
+    const c = inp.cases[k];
+    title(ws, r.label, c.kind === "derived" ? `Adjusted from ${(inp.cases[c.from] || {}).label || c.from}` : c.kind === "custom" ? "Year-by-year case" : "", c.note || "");
+    ws.mergeCells(3, 1, 3, Math.min(n, 8)); ws.getRow(3).getCell(1).alignment = { wrapText: true, vertical: "top" }; ws.getRow(3).height = c.note && c.note.length > 120 ? 42 : 18;
+    const hr = ws.addRow(["", ...Array.from({ length: H }, (_, i) => `Year ${i + 1}`)]); styleHead(hr, n); const headRow = hr.number;
+    const line = (label, arr, opts) => styleBody(ws.addRow([label, ...arr.map(num)]), n, Object.assign({ fmt: XL.D }, opts || {}));
+    const group = (label) => styleGroup(ws.addRow([label]), n);
+    group("Operations");
+    line("Rents", o.rents); line("Other income", o.other_income); line("Operating expenses", o.opex.map((v) => -v));
+    line("Net operating income", o.noi, { total: true });
+    line("CapEx / reserves", o.capex.map((v) => -v)); line("Debt service", o.debt_service.map((v) => -v)); line("Asset management fee", o.asset_mgmt_fee.map((v) => -v));
+    if (o.assumption_fee && o.assumption_fee.some((v) => v)) line("Loan assumption fee", o.assumption_fee.map((v) => -v));
+    if (o.below_noi_income.some((v) => v)) line(inp.deal.below_noi_income.label || "Below-NOI income", o.below_noi_income);
+    line("Operating cash flow", o.operating_cash_flow, { total: true });
+    if (o.refi_proceeds.some((v) => v)) line("Refinance proceeds (net)", o.refi_proceeds);
+    line("Net sale proceeds", o.noi.map((_, i) => (i === H - 1 ? r.exit.net_sale_proceeds : 0)));
+    line("Loan balance, end", o.loan_balance_end, { sub: true });
+    line("Debt coverage (NOI / debt service)", o.noi.map((v, i) => (o.debt_service[i] ? v / o.debt_service[i] : null)), { fmt: XL.M, sub: true });
+    group("Waterfall");
+    line("Pref due", w.pref_due, { sub: true }); line("To pref", w.to_pref); line("Return of capital", w.return_of_capital);
+    line(w.lp_regular ? "LP distributions, after crystallization" : "LP distributions", w.lp, { total: true });
+    line(w.lp_regular ? "Sponsor share, after crystallization" : "Sponsor promote", w.gp);
+    line("Unreturned capital, end", w.unreturned_end, { sub: true }); line("Unpaid pref, end", w.unpaid_pref_end, { sub: true });
+    group(`Our check (${fmt.usd(inp.investor.check)})`);
+    if (r.investor.side_letter) line("On regular terms", r.investor.side_letter.regular_distributions, { sub: true });
+    line(r.investor.side_letter ? "With the side letter" : "Distributions", r.investor.distributions, { total: true });
+    ws.addRow([]);
+    group("Results");
+    const kv = (label, v, f) => { const row = ws.addRow([label, num(v)]); row.getCell(1).font = font({ color: { argb: XL.muted } }); row.getCell(2).numFmt = f; row.getCell(2).font = font({ bold: true }); row.getCell(2).alignment = { horizontal: "right" }; };
+    kv("LP IRR", r.lp.irr, XL.P); kv("LP multiple", r.lp.multiple, XL.M); kv("IRR on our check", r.investor.irr, XL.P); kv("Profit on our check", r.investor.profit, XL.D);
+    kv("NOI priced at sale", r.exit.y6_noi, XL.D); kv("Exit cap", r.exit.exit_cap, XL.P2); kv("Gross sale", r.exit.gross_value, XL.D);
+    kv("Selling costs", -r.exit.selling_costs, XL.D); kv("Loan payoff", -r.exit.debt_payoff, XL.D); kv("Net sale proceeds", r.exit.net_sale_proceeds, XL.D);
+    if (c.kind === "derived") {
+      ws.addRow([]); group("Case inputs");
+      inputLeaves(caseInputs(c), "").forEach(([pp, v]) => { const row = ws.addRow([pp, typeof v === "number" ? v : String(v)]); row.getCell(1).font = font({ color: { argb: XL.muted } }); row.getCell(2).alignment = { horizontal: "right" }; });
+    }
+    ws.columns = [{ width: 36 }, ...Array.from({ length: H }, () => ({ width: 14 }))];
+    ws.views = [{ state: "frozen", ySplit: headRow, xSplit: 1, showGridLines: false }];
+  };
+  const addInputs = (slug, inp) => {
+    const ws = newSheet("Inputs & sources", { properties: { tabColor: { argb: "FF5B6B7A" } } });
+    title(ws, "Inputs & sources", DEALS[slug].meta.name, "Every input the engine used. Yellow = changed from the deal file on the dashboard.");
+    const hr = ws.addRow(["Input", "Value", "Changed", "Source"]); styleHead(hr, 4); hr.getCell(2).alignment = { horizontal: "right" };
     const changed = new Set(diffPaths(inp, DEALS[slug]));
-    ["deal", "timing", "waterfall", "investor", "cases", "sensitivity", "warehouse", "direct_investors"].forEach((top) =>
-      inputLeaves(inp[top], top).forEach(([pp, v]) => rows.push([pp, typeof v === "number" ? cell(v) : v == null ? "" : String(v), [...changed].some((c) => c === pp || c.startsWith(pp + ".")) ? "yes" : "", sourceFor(slug, pp)])));
-    return sheet(rows, [44, 22, 12, 90]);
+    ["deal", "timing", "waterfall", "investor", "cases", "sensitivity", "warehouse", "direct_investors"].forEach((top) => {
+      styleGroup(ws.addRow([top]), 4);
+      inputLeaves(inp[top], top).forEach(([pp, v]) => {
+        const ch = [...changed].some((c) => c === pp || c.startsWith(pp + "."));
+        const row = ws.addRow([pp, typeof v === "number" ? v : v == null ? "" : String(v), ch ? "yes" : "", sourceFor(slug, pp)]);
+        styleBody(row, 4, {});
+        row.getCell(2).alignment = { horizontal: "right" };
+        row.getCell(4).alignment = { wrapText: true, vertical: "top" }; row.getCell(4).font = font({ size: 9, color: { argb: "FF3B4652" } });
+        if (ch) [1, 2, 3].forEach((cI) => { row.getCell(cI).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XL.changed } }; });
+      });
+    });
+    ws.columns = [{ width: 46 }, { width: 22 }, { width: 9 }, { width: 100 }];
+    ws.views = [{ state: "frozen", ySplit: hr.number, showGridLines: false }];
   };
-  const diligenceSheet = (slug) => sheet([["Item", "Status", "Note"], ...(DEALS[slug].meta.diligence || []).map((x) => [x.item, x.status, x.note || ""])], [40, 10, 120]);
+  const addDiligence = (slug) => {
+    const ws = newSheet("Diligence", { properties: { tabColor: { argb: "FFB7791F" } } });
+    title(ws, "Open diligence", DEALS[slug].meta.name, "");
+    const hr = ws.addRow(["Item", "Status", "Note"]); styleHead(hr, 3); hr.getCell(2).alignment = { horizontal: "left" };
+    (DEALS[slug].meta.diligence || []).forEach((x, i) => {
+      const row = ws.addRow([x.item, x.status, x.note || ""]); styleBody(row, 3, { zebra: i % 2 === 1 });
+      row.getCell(1).font = font({ bold: true }); row.getCell(2).alignment = { horizontal: "left", vertical: "top" };
+      [1, 3].forEach((cI) => { row.getCell(cI).alignment = { wrapText: true, vertical: "top" }; });
+    });
+    ws.columns = [{ width: 38 }, { width: 10 }, { width: 110 }];
+    ws.views = [{ state: "frozen", ySplit: hr.number, showGridLines: false }];
+  };
 
   if (st.kind === "deal") {
-    const version = st.scenario ? `Saved scenario: ${st.scenario}` : st.edits.length ? `As on the dashboard, ${st.edits.length} change${st.edits.length > 1 ? "s" : ""} from the deal file` : "As underwritten";
-    add("Summary", sheet(summaryRows(st.meta.name, st.slug, st.inp, version, st.runs), [26, 10, 10, 12, 12, 14, 12, 14, 9, 14, 14, 12, 14, 80]));
-    st.runs.forEach(({ k, r }) => add(r.label, caseSheet(k, r, st.inp)));
-    add("Inputs & sources", inputsSheet(st.slug, st.inp));
-    add("Diligence", diligenceSheet(st.slug));
+    const version = st.scenario ? `Saved scenario: ${st.scenario}` : st.edits.length ? `As on the dashboard (${st.edits.length} change${st.edits.length > 1 ? "s" : ""} from the deal file)` : "As underwritten";
+    addSummary(newSheet("Summary"), st.meta.name, st.slug, st.inp, version, st.runs);
+    st.runs.forEach(({ k, r }) => addCase(k, r, st.inp));
+    addInputs(st.slug, st.inp);
+    addDiligence(st.slug);
   } else {
-    const cols = st.cols;
-    const rows = [["Deal comparison"], [`Exported ${today()} from LTEC Deal Engine. LP returns on each deal's waterfall, annual periods.`], [],
-      ["", ...cols.map((d) => `${d.meta.name} · ${d.version}`)]];
+    const cols = st.cols, n = cols.length + 1;
+    const ws = newSheet("Comparison", { properties: { tabColor: { argb: XL.navy } } });
+    title(ws, "Deal comparison", cols.map((d) => `${d.meta.name} (${d.version})`).join(" · "), `Exported ${today()} from LTEC Deal Engine. LP returns on each deal's waterfall, annual periods. Our cases are LTEC assumptions.`);
+    const hr = ws.addRow(["", ...cols.map((d) => `${d.meta.name}\n${d.version}`)]); styleHead(hr, n); hr.height = 34;
     CMP_ROLES.forEach(([k, name]) => {
-      rows.push([name]);
+      styleGroup(ws.addRow([name]), n);
       const cs = cols.map((d) => d.cases[k] && caseRow(k, d.cases[k], d.inp));
-      rows.push(["LP IRR", ...cs.map((c) => cell(c && c.lp_irr, P))], ["Multiple", ...cs.map((c) => cell(c && c.multiple, M))],
-        ["Cash yield Y1-4", ...cs.map((c) => cell(c && c.yield, P))], ["IRR on our check", ...cs.map((c) => cell(c && c.our_irr, P))],
-        ["Profit per $1M", ...cs.map((c) => cell(c && c.per1m, D))]);
+      [["LP IRR", "lp_irr", XL.P], ["Multiple", "multiple", XL.M], ["Cash yield Y1–4", "yield", XL.P], ["IRR on our check", "our_irr", XL.P], ["Profit per $1M", "per1m", XL.D]]
+        .forEach(([label, key, f], i) => styleBody(ws.addRow([label, ...cs.map((c) => (c ? num(c[key]) : null))]), n, { fmt: f, total: key === "lp_irr", zebra: i % 2 === 1 }));
     });
-    rows.push([], ["Deal context"], ["Price per unit", ...cols.map((d) => cell(d.inp.deal.purchase_price / d.inp.deal.units, D))],
-      ["Going-in cap", ...cols.map((d) => cell(d.cases.sponsor && d.cases.sponsor.operations.noi[0] / d.inp.deal.purchase_price, "0.00%"))],
-      ["Loan / total capital", ...cols.map((d) => cell(d.inp.deal.loan_amount / (d.inp.deal.loan_amount + d.inp.deal.lp_equity), P))],
-      ["Waterfall", ...cols.map((d) => waterfallText(d.inp.waterfall))], ["Open diligence items", ...cols.map((d) => cell((d.meta.diligence || []).filter((x) => x.status !== "closed").length))]);
-    add("Comparison", sheet(rows, [26, ...cols.map(() => 30)]));
-    cols.forEach((d) => add(`${d.meta.name} ${d.version}`, sheet(summaryRows(d.meta.name, d.slug, d.inp, d.version, CMP_ROLES.filter(([k]) => d.cases[k]).map(([k]) => ({ k, r: d.cases[k] }))), [26, 10, 10, 12, 12, 14, 12, 14, 9, 14, 14, 12, 14, 80])));
+    styleGroup(ws.addRow(["Deal context"]), n);
+    const ctx = [["Price per unit", (d) => d.inp.deal.purchase_price / d.inp.deal.units, XL.D], ["Going-in cap", (d) => d.cases.sponsor && d.cases.sponsor.operations.noi[0] / d.inp.deal.purchase_price, XL.P2],
+      ["Loan / total capital", (d) => d.inp.deal.loan_amount / (d.inp.deal.loan_amount + d.inp.deal.lp_equity), XL.P], ["Waterfall", (d) => waterfallText(d.inp.waterfall), "@"],
+      ["Open diligence items", (d) => (d.meta.diligence || []).filter((x) => x.status !== "closed").length, XL.N]];
+    ctx.forEach(([label, f, z], i) => styleBody(ws.addRow([label, ...cols.map((d) => num(f(d)))]), n, { fmt: z, zebra: i % 2 === 1 }));
+    ws.columns = [{ width: 26 }, ...cols.map(() => ({ width: 26 }))];
+    ws.views = [{ state: "frozen", ySplit: hr.number, xSplit: 1, showGridLines: false }];
+    cols.forEach((d) => addSummary(newSheet(`${d.meta.name} ${d.version}`), `${d.meta.name} · ${d.version}`, d.slug, d.inp, d.version,
+      CMP_ROLES.filter(([k]) => d.cases[k]).map(([k]) => ({ k, r: d.cases[k] }))));
   }
-  const out = X.write(wb, { bookType: "xlsx", type: "array" });
-  return new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const buf = await wb.xlsx.writeBuffer();
+  return new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
 // ---------- PDF

@@ -37,7 +37,7 @@ for that deal. "+ Add column" puts versions side by side (e.g. The Bend as-is vs
 **Export** (top right, both views): a PDF summary to share (cases, cash chart, side letter, terms, what each case
 assumes, open diligence) and an Excel workbook to check the math (summary, every case year by year with its
 waterfall, inputs with sources and what you changed, diligence; the comparison exports its table plus a summary per
-column). SheetJS and jsPDF load from jsDelivr only when exporting; files go out through the `downloads` capability.
+column). ExcelJS (styled workbook) and jsPDF load from jsDelivr only when exporting; files go out through the `downloads` capability.
 
 **Ask** (below the case cards, or under the comparison): questions about the deals in plain English, answered by
 Claude using the engine on the page. The first question asks the viewer to allow Claude for the page; questions use
