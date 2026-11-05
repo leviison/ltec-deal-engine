@@ -28,6 +28,12 @@ One page, every deal: **LTEC Deal Engine** (https://claude.ai/artifact/DLhZKbmvQ
 `python scripts/build_web.py` builds it (`dist/index.html`); `python scripts/build_web.py <slug>` builds one deal alone.
 Adding a deal folder adds it to the picker on the next build.
 
+**Compare deals** (the view switch at the top, or `#compare`) puts every deal side by side: LP IRR, multiple, Years 1-4
+cash yield and profit per $1M for the sponsor's case, our Adjusted Base and our Downside; the sponsor-vs-us IRR gap;
+cumulative cash per $1M by deal for a chosen case; and deal context (price per unit, going-in cap, loan / total capital,
+Year-1 debt coverage, waterfall, open diligence). Deals run as underwritten in their files, except the open deal, which
+uses your current edits (flagged). Click a deal to open it.
+
 ## Our cases on every deal
 
 Each deal shows the sponsor's case next to ours. Our cases are `derived`: they take the sponsor case's rows and adjust
@@ -107,7 +113,9 @@ timing) is the Siena README at `siena-v1.0`; it still applies; the v2 additions 
    list of steps (multiple hurdles, catch-ups, share classes); debt as a list of loans (The Bend's loan matures in
    Year 5); capex / lease-up schedules; Siena names in data (`timing.siena_frequency`) and Redstone/Siena wording in
    the page.
-5. ~~Deal picker, per-deal saved scenarios~~; our cases on every deal. Still to do: side-by-side deal comparison.
+5. ~~Deal picker, per-deal saved scenarios, our cases on every deal, side-by-side comparison~~.
+   Next idea: an "Ask" panel (Claude via the page's `sample` capability) with the engine as tools: negotiation what-ifs
+   solved by the engine, plain-English summaries, cross-deal questions.
 6. Intake as a reusable skill (deck + OA + sponsor model -> draft deal file with citations -> tie-out -> publish).
 
 Not legal, tax or investment advice.

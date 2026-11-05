@@ -197,6 +197,19 @@ tr.sub td { color: var(--muted); }
 tr.total td { font-weight: 600; border-top: 1px solid var(--muted); }
 tr.gap td { border-bottom: 0; padding: 4px; }
 td.lbl { white-space: normal; min-width: 170px; }
+.compare-only { display: none; }
+.wrap.comparing .compare-only { display: block; }
+.wrap.comparing .deal-only { display: none !important; }
+.view-seg { min-width: 220px; }
+.view-seg button { padding: 7px 12px; font-size: 13px; }
+#compareView { display: grid; gap: 24px; }
+table.cmp th.deal { text-align: right; vertical-align: bottom; width: 22%; }
+table.cmp th.deal button { font: 600 13px var(--f-body); color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-align: right; }
+table.cmp th.deal button:hover { text-decoration: underline; }
+table.cmp th.deal .muted { display: block; font-weight: 400; }
+table.cmp tr.cgrp td { font-weight: 600; color: var(--fg); background: var(--accent-soft); border-bottom: 0; }
+table.cmp td.lead { font-weight: 600; }
+table.cmp .edited { font-size: 11px; color: var(--warn-fg); background: var(--warn-bg); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
 
 .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
 @media (max-width: 1100px) { .two { grid-template-columns: minmax(0, 1fr); } }
@@ -214,9 +227,14 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
 @media (prefers-reduced-motion: no-preference) { .case, .panel { transition: border-color .15s; } }
 </style>
 
-<div class="wrap">
+<div class="wrap" id="wrap">
   <header class="top">
-    <div>
+    <div class="compare-only">
+      <div class="eyebrow" id="cmpEyebrow"></div>
+      <h1>Compare deals</h1>
+      <div class="facts"><span id="cmpFacts"></span></div>
+    </div>
+    <div class="deal-only">
       <div class="eyebrow" id="eyebrow"></div>
       <h1 id="dealName">__DEAL_NAME__</h1>
       <div class="facts">
@@ -228,14 +246,15 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
       </div>
     </div>
     <div class="status">
-      <label class="deal-pick" id="dealPickWrap" hidden><span class="eyebrow">Deal</span><select id="dealPick" aria-label="Deal"></select></label>
-      <span class="chip" id="scenarioChip">Defaults</span>
-      <span class="chip" id="changeChip" hidden></span>
-      <span class="chip muted" id="versionChip"></span>
+      <div class="seg view-seg" id="viewSeg" role="group" aria-label="View" hidden><button type="button" data-view="deal" aria-pressed="true">This deal</button><button type="button" data-view="compare" aria-pressed="false">Compare deals</button></div>
+      <label class="deal-pick deal-only" id="dealPickWrap" hidden><span class="eyebrow">Deal</span><select id="dealPick" aria-label="Deal"></select></label>
+      <span class="chip deal-only" id="scenarioChip">Defaults</span>
+      <span class="chip deal-only" id="changeChip" hidden></span>
+      <span class="chip muted deal-only" id="versionChip"></span>
     </div>
   </header>
 
-  <div class="layout">
+  <div class="layout deal-only">
     <aside class="rail" aria-label="Assumptions">
       <section>
         <div class="row" style="justify-content:space-between"><h2>Assumptions</h2><button class="link" id="resetBtn" type="button">Reset to defaults</button></div>
@@ -348,6 +367,26 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
 
       <p class="foot" id="footNote"></p>
     </main>
+  </div>
+
+  <div id="compareView" hidden>
+    <section class="panel">
+      <header><h2>Returns by deal</h2><span class="muted small" id="cmpSub"></span></header>
+      <div class="tablewrap" id="cmpReturns"></div>
+      <p class="note" id="cmpNote"></p>
+    </section>
+    <section class="panel">
+      <header>
+        <div style="min-width:0"><h2>Cash back on $1M</h2><span class="muted small" id="cmpChartSub"></span></div>
+        <div class="seg" id="cmpCaseSeg" role="group" aria-label="Case"></div>
+      </header>
+      <div class="legend" id="cmpLegend" style="margin-bottom:8px"></div>
+      <div class="chart-wrap" id="cmpChart"></div>
+    </section>
+    <section class="panel">
+      <header><h2>Deal context</h2><span class="muted small">From each deal file</span></header>
+      <div class="tablewrap" id="cmpContext"></div>
+    </section>
   </div>
 </div>
 
@@ -748,11 +787,17 @@ function updateLoanReadout() {
   document.getElementById("factLoan").innerHTML = `${esc(UI.loan_title)} <b class="num">${fmt.usdk(d.loan_amount)}</b> @ ${fmt.pct(d.debt_service_method === "interest_only" ? d.loan_rate : ds / d.loan_amount, 2)} IO`;
   const wf = inputs.waterfall, pc = (x) => `${Math.round(x * 100)}`;
   const ps = (x) => { const v = Math.round(x * 1000) / 10; return (v % 1 ? v.toFixed(1) : v.toFixed(0)) + "%"; };
-  // collapse consecutive tiers with the same split (e.g. 80/20 to 15%, 80/20 to 100%); hide unreachable hurdles
+  document.getElementById("factWaterfall").innerHTML = waterfallText(wf, true);
+}
+// "Pref 8% → 80/20": consecutive tiers with the same split collapse (80/20 to 15%, 80/20 to 100%); hurdles of 50%+
+// (never reached in practice) are hidden.
+function waterfallText(wf, rich) {
+  const pc = (x) => `${Math.round(x * 100)}`;
+  const ps = (x) => { const v = Math.round(x * 1000) / 10; return (v % 1 ? v.toFixed(1) : v.toFixed(0)) + "%"; };
   const tiers = wf.tiers.filter((t, i) => i === wf.tiers.length - 1 || t.lp_share !== wf.tiers[i + 1].lp_share);
   const shown = tiers.filter((t) => t.lp_irr_hurdle < 0.5);
   const lastSame = tiers.length && tiers[tiers.length - 1].lp_irr_hurdle >= 0.5;
-  document.getElementById("factWaterfall").innerHTML = `Pref <b>${ps(wf.pref_rate)}</b> → ` +
+  return `Pref ${rich ? "<b>" : ""}${ps(wf.pref_rate)}${rich ? "</b>" : ""} → ` +
     shown.map((t) => `${pc(t.lp_share)}/${pc(1 - t.lp_share)} to ${ps(t.lp_irr_hurdle)}`).concat(lastSame ? [`${pc(tiers[tiers.length - 1].lp_share)}/${pc(1 - tiers[tiers.length - 1].lp_share)}`] : []).join(" → ") +
     (lastSame ? "" : (shown.length ? " → " : "") + `${pc(wf.residual_lp_share)}/${pc(1 - wf.residual_lp_share)}`);
 }
@@ -1553,6 +1598,119 @@ async function connect() {
   }, (e) => { clearTimeout(timer); document.getElementById("savedList").innerHTML = `<p class="note" style="margin:0">Couldn't load saved scenarios (${esc(e.code || "error")}).</p>`; });
 }
 
+/* ------------------------------------------------------------ compare deals */
+// Each deal as underwritten in its deal file, except the open deal, which uses your current edits (flagged).
+const CMP_ROLES = [["sponsor", "Sponsor's case"], ["base", "Our Adjusted Base"], ["downside", "Our Downside"]];
+const DEAL_COLORS = ["var(--c-base)", "var(--c-down)", "var(--c-custom)", "var(--c-stress)", "var(--c-sponsor)"];
+const cmpCache = {};
+let cmpRole = "base";
+function compareData() {
+  return SLUGS.map((slug, i) => {
+    const edited = slug === META.slug && diffPaths(inputs, DEFAULTS).length > 0;
+    const inp = slug === META.slug ? inputs : DEALS[slug];
+    let cases;
+    if (!edited && cmpCache[slug]) cases = cmpCache[slug];
+    else {
+      cases = {};
+      CMP_ROLES.forEach(([k]) => { if (inp.cases[k]) cases[k] = E.runCase(k, inp); });
+      if (!edited) cmpCache[slug] = cases;
+    }
+    return { slug, inp, edited, cases, color: DEAL_COLORS[i % DEAL_COLORS.length], meta: DEALS[slug].meta };
+  });
+}
+function renderCompare() {
+  const data = compareData();
+  const per = (c, inp) => 1e6 / inp.investor.check;
+  document.getElementById("cmpEyebrow").textContent = `${data.length} deals · LTEC Holdings`;
+  document.getElementById("cmpFacts").textContent = data.map((d) => `${d.meta.name} (${d.meta.status})`).join(" · ");
+  document.getElementById("cmpSub").textContent = "Click a deal to open it";
+  const head = `<thead><tr><th></th>${data.map((d) => `<th class="deal"><button type="button" data-open="${esc(d.slug)}">${esc(d.meta.name)}</button>${d.edited ? '<span class="edited">your edits</span>' : ""}<span class="muted">${esc(d.meta.sponsor)}</span></th>`).join("")}</tr></thead>`;
+  // a row of one metric across deals; the best value (higher, or lower when lowerBetter) is bold
+  const row = (label, vals, f, lowerBetter) => {
+    const ok = vals.filter((v) => v != null && isFinite(v));
+    const best = ok.length > 1 ? (lowerBetter ? Math.min(...ok) : Math.max(...ok)) : null;
+    return `<tr><td class="lbl">${label}</td>${vals.map((v) => `<td class="n${best != null && v === best ? " lead" : ""}">${v == null ? "—" : f(v)}</td>`).join("")}</tr>`;
+  };
+  let body = "";
+  CMP_ROLES.forEach(([k, name]) => {
+    const cs = data.map((d) => d.cases[k]);
+    body += `<tr class="cgrp"><td colspan="${data.length + 1}">${name}</td></tr>`;
+    body += row("LP IRR", cs.map((c) => c && c.lp.irr), (v) => fmt.pct(v));
+    body += row("Multiple", cs.map((c) => c && c.lp.multiple), fmt.x);
+    body += row("Cash yield, Years 1–4", cs.map((c) => c && c.lp.avg_cash_yield_y1_4), (v) => fmt.pct(v));
+    body += row("Profit on $1M", cs.map((c, i) => c && c.investor.profit * per(c, data[i].inp)), fmt.signedk);
+  });
+  body += `<tr class="cgrp"><td colspan="${data.length + 1}">Gap</td></tr>`;
+  body += row("Sponsor's IRR minus ours", data.map((d) => d.cases.sponsor && d.cases.base ? d.cases.sponsor.lp.irr - d.cases.base.lp.irr : null),
+    (v) => (v * 100).toFixed(1) + " pts", true);
+  document.getElementById("cmpReturns").innerHTML = `<table class="cmp">${head}<tbody>${body}</tbody></table>`;
+  document.getElementById("cmpNote").textContent = "LP returns on each deal's waterfall, annual periods. Our cases are LTEC assumptions recorded with sources in each deal file; bold is the better value in each row.";
+
+  // context
+  const ctx = (label, f) => `<tr><td class="lbl">${label}</td>${data.map((d) => `<td class="n">${f(d)}</td>`).join("")}</tr>`;
+  const sp = (d) => d.cases.sponsor, dl = (d) => d.inp.deal;
+  const cbody = [
+    ctx("Units", (d) => dl(d).units),
+    ctx("Price", (d) => fmt.usdk(dl(d).purchase_price)),
+    ctx("Price per unit", (d) => fmt.usdk(dl(d).purchase_price / dl(d).units)),
+    ctx("Going-in cap (sponsor's Year-1 NOI)", (d) => sp(d) ? fmt.pct(sp(d).operations.noi[0] / dl(d).purchase_price, 2) : "—"),
+    ctx("Loan", (d) => `${fmt.usdk(dl(d).loan_amount)} @ ${fmt.pct(dl(d).loan_rate, 2)}`),
+    ctx("Loan / total capital", (d) => fmt.pct(dl(d).loan_amount / (dl(d).loan_amount + dl(d).lp_equity), 1)),
+    ctx("Debt coverage, Year 1 (sponsor / ours)", (d) => [sp(d), d.cases.base].map((c) => c ? (c.operations.noi[0] / c.operations.debt_service[0]).toFixed(2) + "×" : "—").join(" / ")),
+    ctx("LP equity", (d) => fmt.usdk(dl(d).lp_equity)),
+    ctx("Waterfall", (d) => waterfallText(d.inp.waterfall)),
+    ctx("Hold", (d) => `${dl(d).hold_years} years`),
+    ctx("Our check", (d) => fmt.usdk(d.inp.investor.check) + (d.inp.investor.side_letter && d.inp.investor.side_letter.enabled ? " · side letter" : "")),
+    ctx("Open diligence items", (d) => (d.meta.diligence || []).filter((x) => x.status !== "closed").length),
+  ].join("");
+  document.getElementById("cmpContext").innerHTML = `<table class="cmp">${head}<tbody>${cbody}</tbody></table>`;
+  document.querySelectorAll("#compareView [data-open]").forEach((b) => b.addEventListener("click", () => openDeal(b.dataset.open)));
+
+  // chart
+  document.getElementById("cmpCaseSeg").innerHTML = CMP_ROLES.map(([k, n]) => `<button type="button" data-role="${k}" aria-pressed="${k === cmpRole}">${n.replace("Our ", "").replace("Sponsor's case", "Sponsor")}</button>`).join("");
+  document.querySelectorAll("#cmpCaseSeg button").forEach((b) => b.addEventListener("click", () => { cmpRole = b.dataset.role; renderCompare(); }));
+  const series = data.filter((d) => d.cases[cmpRole]).map((d) => {
+    const m = per(null, d.inp); let cum = -1e6; const pts = [cum];
+    d.cases[cmpRole].investor.distributions.forEach((x) => { cum += x * m; pts.push(cum); });
+    return { d, pts };
+  });
+  const HY = Math.max(...series.map((s) => s.pts.length - 1));
+  const all = series.flatMap((s) => s.pts);
+  let lo = Math.min(...all), hi = Math.max(...all, 0);
+  const step = niceStep((hi - lo) / 5);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const W = 760, H = 280, L = 64, R = 74, T = 12, B = 30;
+  const x = (i) => L + (i / HY) * (W - L - R), y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  let g = "";
+  for (let v = lo; v <= hi + 1e-6; v += step) {
+    g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="${Math.abs(v) < 1e-6 ? 1.5 : 1}" ${Math.abs(v) < 1e-6 ? "" : 'stroke-dasharray="2 4"'}/>`;
+    g += `<text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${fmt.usdk(v)}</text>`;
+  }
+  for (let i = 0; i <= HY; i++) g += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${i === 0 ? "Close" : "Y" + i}</text>`;
+  g += `<text x="${L + 6}" y="${y(0) - 6}" style="fill:var(--fg)">break-even</text>`;
+  const ends = series.map((s) => ({ s, v: s.pts[s.pts.length - 1], xx: x(s.pts.length - 1), yy: y(s.pts[s.pts.length - 1]) })).sort((a, b) => a.yy - b.yy);
+  for (let i = 1; i < ends.length; i++) if (Math.abs(ends[i].xx - ends[i - 1].xx) < 1 && ends[i].yy - ends[i - 1].yy < 14) ends[i].yy = ends[i - 1].yy + 14;
+  series.forEach((s) => {
+    g += `<path d="${s.pts.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("")}" fill="none" stroke="${s.d.color}" stroke-width="2.25" stroke-linejoin="round"/>`;
+    s.pts.forEach((v, i) => { g += `<circle cx="${x(i)}" cy="${y(v)}" r="${i === s.pts.length - 1 ? 4 : 2.5}" fill="${s.d.color}"><title>${esc(s.d.meta.name)} ${i === 0 ? "at close" : "after Y" + i}: ${fmt.usd(v)}</title></circle>`; });
+  });
+  ends.forEach((e) => { g += `<text x="${e.xx + 8}" y="${e.yy + 4}" style="fill:${e.s.d.color}">${fmt.signedk(e.v)}</text>`; });
+  document.getElementById("cmpChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:520px;display:block" role="img" aria-label="Cumulative cash on $1M by deal">${g}</svg>`;
+  document.getElementById("cmpLegend").innerHTML = series.map((s) => `<span><i style="background:${s.d.color}"></i>${esc(s.d.meta.name)} · ${esc(s.d.cases[cmpRole].label)}</span>`).join("");
+  document.getElementById("cmpChartSub").textContent = "Cumulative net cash per $1M invested; the last point includes the sale.";
+}
+let view = "deal";
+function setView(v) {
+  view = v;
+  document.getElementById("wrap").classList.toggle("comparing", v === "compare");
+  document.getElementById("compareView").hidden = v !== "compare";
+  document.querySelectorAll("#viewSeg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
+  if (v === "compare") renderCompare();
+  window.scrollTo(0, 0);
+}
+function setHash(h) { if (location.hash.slice(1) !== h) { try { history.replaceState(null, "", "#" + h); } catch (_) { location.hash = h; } } }
+function openDeal(slug) { setHash(slug); switchDeal(slug); setView("deal"); }
+
 /* ------------------------------------------------------------ boot and deal switching */
 function bootDeal(slug) {
   setDeal(slug);
@@ -1568,7 +1726,7 @@ function bootDeal(slug) {
 }
 function switchDeal(slug) {
   if (!DEALS[slug] || slug === META.slug) return;
-  if (location.hash.slice(1) !== slug) { try { history.replaceState(null, "", "#" + slug); } catch (_) { location.hash = slug; } }
+  setHash(slug);
   bootDeal(slug);
   window.scrollTo(0, 0);
 }
@@ -1577,8 +1735,16 @@ function switchDeal(slug) {
   pick.innerHTML = SLUGS.map((k) => `<option value="${esc(k)}">${esc(DEALS[k].meta.name)} · ${esc(DEALS[k].meta.status)}</option>`).join("");
   document.getElementById("dealPickWrap").hidden = SLUGS.length < 2;
   pick.addEventListener("change", () => switchDeal(pick.value));
-  window.addEventListener("hashchange", () => switchDeal(decodeURIComponent(location.hash.slice(1))));
+  document.getElementById("viewSeg").hidden = SLUGS.length < 2;
+  document.querySelectorAll("#viewSeg button").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.view === "compare") { setHash("compare"); setView("compare"); } else openDeal(META.slug);
+  }));
+  window.addEventListener("hashchange", () => {
+    const h = decodeURIComponent(location.hash.slice(1));
+    if (h === "compare") setView("compare"); else if (DEALS[h]) openDeal(h);
+  });
 })();
 bootDeal(META.slug);
+if (location.hash === "#compare" && SLUGS.length > 1) setView("compare");
 connect();
 </script>
