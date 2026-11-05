@@ -233,6 +233,9 @@ table.cmp td.lead { font-weight: 600; }
 .ask-form textarea { width: 100%; min-height: 64px; resize: vertical; font: 14px var(--f-body); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; box-sizing: border-box; }
 .ask-form textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .ask-whatifs { display: flex; flex-wrap: wrap; gap: 6px; }
+.ask-wi-list { display: grid; gap: 4px; max-width: 80ch; }
+.ask-wi { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.ask-wi-name { font-weight: 600; margin-right: auto; min-width: 0; }
 .ask-prop { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; background: var(--surface); max-width: 80ch; }
 .ask-prop-head { display: grid; gap: 2px; }
 table.cmp .edited { font-size: 11px; color: var(--warn-fg); background: var(--warn-bg); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
@@ -732,6 +735,8 @@ function renderDealExtras() {
   if (hasB) {
     fields.push(rr(F("deal.below_noi_income.sale_value", `${b.label || "Below-NOI income"} at sale`, "select", null, [["npv", "Buyer pays the NPV of what's left"], ["none", "Nothing"]])));
     if (b.sale_value === "npv") fields.push(F("deal.below_noi_income.npv_rate", "Discount rate", "pct"));
+    fields.push(F("deal.below_noi_income.factor", `${b.label || "Below-NOI income"} paid`, "pct", "100% = as scheduled; 50% = half of every payment"));
+    fields.push(Object.assign(F("deal.below_noi_income.delay_years", "Starts late by", "select", null, [0, 1, 2, 3, 4, 5].map((y) => [y, y ? `${y} year${y > 1 ? "s" : ""}` : "No delay"])), { num: true }));
   }
   sec.innerHTML = `<h3>${hasSL ? "Side letter &amp; sale" : "Sale"}</h3>${fields.map(fieldHTML).join("")}<div class="readout" id="extrasReadout"></div>`;
   fields.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
@@ -1134,7 +1139,7 @@ function railSummaries() {
     "sec-timing": t.mode === "schedule" ? `${UI.sponsor_short} schedule · ${UI.deal_short} ${freq[t.siena_frequency]} · ${n.vehicle} ${freq[t.vehicle_frequency]}` : "Annual (workbook convention)",
     "sec-redstone": `${ps(wf.pref_rate)} pref → ${wf.tiers.map((x) => `${Math.round(x.lp_share * 100)}/${100 - Math.round(x.lp_share * 100)} to ${ps(x.lp_irr_hurdle)}`).join(" → ")} → ${Math.round(wf.residual_lp_share * 100)}/${100 - Math.round(wf.residual_lp_share * 100)} · ${ps(d.asset_mgmt_fee_pct_of_income)} AM fee`,
     "sec-loan": `${fmt.usdk(d.loan_amount)} @ ${fmt.pct(d.loan_rate, 2)} · ${d.debt_service_method === "interest_only" ? "balance × rate" : "fixed debt service"}${d.assumption_fee_pct ? ` · ${ps(d.assumption_fee_pct)} assumption fee` : ""}`,
-    "sec-extras": `${inputs.investor.side_letter.enabled ? "Side letter on" : Object.keys(inputs.investor.side_letter.terms).length ? "Side letter off" : ""}${d.below_noi_income.amounts.length ? ` · ${d.below_noi_income.label || "below-NOI income"} ${d.below_noi_income.sale_value === "npv" ? "valued at sale" : "not valued at sale"}` : ""}`.replace(/^ · /, ""),
+    "sec-extras": `${inputs.investor.side_letter.enabled ? "Side letter on" : Object.keys(inputs.investor.side_letter.terms).length ? "Side letter off" : ""}${d.below_noi_income.amounts.length ? ` · ${d.below_noi_income.label || "below-NOI income"} ${d.below_noi_income.factor !== 1 ? fmt.pct(d.below_noi_income.factor, 0) + " paid, " : ""}${d.below_noi_income.delay_years ? d.below_noi_income.delay_years + "-yr delay, " : ""}${d.below_noi_income.sale_value === "npv" ? "valued at sale" : "not valued at sale"}` : ""}`.replace(/^ · /, ""),
     "sec-variants": activeVariant == null ? "Defaults" : (META.alternatives[activeVariant] || {}).name,
     "sec-hold": `Sell end of Year ${d.hold_years} (${+inputs.warehouse.close_date.slice(0, 4) + d.hold_years})` + (rf.enabled && d.hold_years > 1 ? ` · refinance Year ${rf.year}${rf.crystallize ? " + crystallize" : ""}` : " · no refinance"),
     "sec-direct": di.length ? `${di.length} investor${di.length > 1 ? "s" : ""} · ${fmt.usdk(sum(di.map((x) => x.check)))}` : "None",
@@ -1611,6 +1616,7 @@ function upgradeInputs(saved) {
   o.timing = Object.assign(clone(DEFAULTS.timing), saved.timing || {});
   o.deal = Object.assign(clone(DEFAULTS.deal), saved.deal || {});
   o.deal.refi = Object.assign(clone(DEFAULTS.deal.refi), (saved.deal || {}).refi || {});
+  o.deal.below_noi_income = Object.assign(clone(DEFAULTS.deal.below_noi_income), (saved.deal || {}).below_noi_income || {});
   ["hurdle_type", "hurdle_basis", "promote_on_manager_units"].forEach((k) => { if (w2[k] == null) w2[k] = DEFAULTS.warehouse[k]; });
   if (!w2.manager_transfers) w2.manager_transfers = [];
   if (w2.manager_reserve == null) w2.manager_reserve = 0;
@@ -1963,10 +1969,11 @@ const ASK_TOOLS = [
       };
     } },
   { name: "get_case_years",
-    description: "Year-by-year rows for one case of one deal: rents, other income, expenses, NOI, reserves, debt service, below-NOI income, operating cash, sale proceeds, LP distributions, sponsor promote, unpaid pref, our check's cash, plus the case's own inputs (factors, growth paths, exit cap, overrides).",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "case key, e.g. sponsor, base, downside, stress, custom" } }, required: ["deal", "case"] },
-    execute: ({ deal, case: k }) => {
-      const slug = needDeal(deal), inp = dealInputs(slug), ck = needCase(inp, k);
+    description: "Year-by-year rows for one case of one deal: rents, other income, expenses, NOI, reserves, debt service, below-NOI income, operating cash, sale proceeds, LP distributions, sponsor promote, unpaid pref, our check's cash, plus the case's own inputs. Pass `changes` (and optionally custom_from) to get the rows for a what-if, exactly as run_what_if would compute it.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "case key, e.g. sponsor, base, downside, stress, custom" },
+      changes: { type: "object", description: "optional: dotted path -> value, as in run_what_if" }, custom_from: { type: "string" } }, required: ["deal", "case"] },
+    execute: ({ deal, case: k, changes, custom_from }) => {
+      const slug = needDeal(deal), inp = changes || custom_from ? withChanges(slug, changes || {}, custom_from) : dealInputs(slug), ck = needCase(inp, k);
       setAskStatus(`Reading ${DEALS[slug].meta.name} · ${inp.cases[ck].label} by year…`);
       const r = E.runCase(ck, inp), o = r.operations, w = r.waterfall;
       const sale = o.noi.map((_, i) => (i === o.noi.length - 1 ? r0(r.exit.net_sale_proceeds) : 0));
@@ -2098,7 +2105,8 @@ function askContext() {
     "- If the deal files don't hold what's needed, say so. This is analysis of the files, not legal, tax or investment advice; don't add disclaimers beyond a short note when it truly matters.",
     "- Tool rates are decimals (0.06 = 6%). What-ifs never change the dashboard; the viewer gets a button to open each one.",
     "- Before changing inputs you haven't seen, call list_inputs. A case's deal_overrides win over deal-level settings for that case; tools warn you, and you must tell the viewer about any warning.",
-    "- To build or rebuild Custom from another case, use custom_from (then changes on cases.custom.*). For break-evens use solve_for; for sensitivity tables use sweep.",
+    "- To build or rebuild Custom from another case, use custom_from (then changes on cases.custom.*). For break-evens use solve_for; for sensitivity tables use sweep; for year-by-year rows of a what-if, get_case_years with changes.",
+    "- A below-NOI income stream (e.g. a TIF rebate) has factor (share paid) and delay_years inputs; use them rather than editing its amounts list.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
     "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),
@@ -2202,7 +2210,7 @@ function openWhatIf(w) {
   activeScenario = null; activeVariant = null; renderAllFields(); recompute(); updateScenarioChip();
   window.scrollTo(0, 0);
 }
-async function saveProposal(w, btn) {
+async function saveProposal(w, btn, thenCompare) {
   if (!db) { btn.textContent = "Saving needs a signed-in view"; return; }
   btn.disabled = true; btn.textContent = "Saving…";
   try {
@@ -2212,8 +2220,13 @@ async function saveProposal(w, btn) {
       summary: (w.res || []).filter((x) => Math.abs(x.after - x.before) > 1e-6 || x.case === "base").map((x) => `${x.label} ${fmt.pct(x.after)}`).join(" · "),
       note: w.description || "" };
     try { const u = await claude.use("user"); if (u) doc.created_by = await u.id(); } catch (_) {}
-    await db.collection("scenarios").add(doc);
+    const ref = await db.collection("scenarios").add(doc);
     btn.textContent = "Saved ✓";
+    if (thenCompare && ref && ref.id) {  // add it as a comparison column next to the deal as it stands, and show the comparison
+      if (!cmpCols.some((c) => c.slug === w.slug && c.src === "current")) cmpCols.push({ slug: w.slug, src: "current" });
+      cmpCols.push({ slug: w.slug, src: ref.id }); saveCols();
+      setHash("compare"); setView("compare");
+    }
   } catch (e) {
     btn.disabled = false;
     btn.textContent = e && e.code === "permission_denied" ? "View-only access: can't save" : "Couldn't save. Try again";
@@ -2236,20 +2249,28 @@ function showWhatIfs(a) {
     open.addEventListener("click", () => openWhatIf(w));
     const save = document.createElement("button"); save.type = "button"; save.className = "btn primary"; save.textContent = "Save as scenario";
     save.addEventListener("click", () => saveProposal(w, save));
-    bar.append(open, save);
+    const cmp = document.createElement("button"); cmp.type = "button"; cmp.className = "btn"; cmp.textContent = "Save and compare";
+    cmp.addEventListener("click", () => saveProposal(w, cmp, true));
+    bar.append(open, save, cmp);
     a.parentElement.append(card);
   });
   if (!plain.length) return;
-  const box = document.createElement("div");
-  box.className = "ask-whatifs";
-  plain.slice(0, 6).forEach((w) => {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "btn";
-    b.textContent = `Open on dashboard: ${DEALS[w.slug].meta.name} · ${w.label}`;
-    b.addEventListener("click", () => openWhatIf(w));
-    box.append(b);
+  const list = document.createElement("div");
+  list.className = "ask-wi-list";
+  plain.slice(0, 8).forEach((w) => {
+    const row = document.createElement("div");
+    row.className = "ask-wi";
+    row.innerHTML = `<span class="ask-wi-name">${esc(DEALS[w.slug].meta.name)} · ${esc(w.label)}</span>`;
+    const open = document.createElement("button"); open.type = "button"; open.className = "link"; open.textContent = "Open on dashboard";
+    open.addEventListener("click", () => openWhatIf(w));
+    const save = document.createElement("button"); save.type = "button"; save.className = "link"; save.textContent = "Save as scenario";
+    save.addEventListener("click", () => saveProposal(w, save));
+    const cmp = document.createElement("button"); cmp.type = "button"; cmp.className = "link"; cmp.textContent = "Save and compare";
+    cmp.addEventListener("click", () => saveProposal(w, cmp, true));
+    row.append(open, save, cmp);
+    list.append(row);
   });
-  a.parentElement.append(box);
+  a.parentElement.append(list);
 }
 function turnOffAsk(code) {
   const panel = document.getElementById("askPanel");

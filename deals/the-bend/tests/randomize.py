@@ -17,6 +17,8 @@ def randomized(base, seed):
     b = d["below_noi_income"]
     b["sale_value"] = r.choice(["npv", "none"])
     b["npv_rate"] = r.uniform(0.04, 0.10)
+    b["factor"] = r.choice([1.0, 1.0, 0.5, 0.0, r.uniform(0, 1.2)])
+    b["delay_years"] = r.choice([0, 0, 1, 2, 5])
     b["amounts"] = r.choice([b["amounts"], b["amounts"][:r.randint(0, 15)], [r.uniform(0, 6e5)] * r.randint(1, 12)])
     d["asset_mgmt_fee_pct_of_income"] = r.choice([0.0, 0.01, 0.02])
     d["disposition_fee_pct"] = r.choice([0.0, 0.01])

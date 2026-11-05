@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "meta": {
     "slug": "siena-villas",
     "name": "Siena Villas",
@@ -179,7 +179,9 @@
       "label": "",
       "amounts": [],
       "sale_value": "none",
-      "npv_rate": 0
+      "npv_rate": 0,
+      "factor": 1.0,
+      "delay_years": 0
     }
   },
   "timing": {

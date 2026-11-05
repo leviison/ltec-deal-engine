@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/leviison/ltec-deal-engine/engine/schema/deal.schema.json",
-  "title": "LTEC deal file, schema version 3",
-  "description": "One deal = one file at deals/<slug>/deal.json. The engines read only this file. Keys starting with '_' are notes and are ignored by the engines. v1 = the Siena v1 input set plus meta and sources. v2 (The Bend) adds deal.exit_noi_basis, deal.reserves_returned_at_sale, deal.below_noi_income, waterfall.return_of_capital, investor.side_letter and meta.alternatives. v3 adds case kind 'derived' (our cases adjusted from another case, usually the sponsor's) and per-case deal_overrides.",
+  "title": "LTEC deal file, schema version 4",
+  "description": "One deal = one file at deals/<slug>/deal.json. The engines read only this file. Keys starting with '_' are notes and are ignored by the engines. v1 = the Siena v1 input set plus meta and sources. v2 (The Bend) adds deal.exit_noi_basis, deal.reserves_returned_at_sale, deal.below_noi_income, waterfall.return_of_capital, investor.side_letter and meta.alternatives. v3 adds case kind 'derived' (our cases adjusted from another case, usually the sponsor's) and per-case deal_overrides. v4 adds deal.below_noi_income.factor and delay_years (e.g. a TIF rebate cut or delayed).",
   "type": "object",
   "required": [
     "schema_version",
@@ -21,7 +21,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 3
+      "const": 4
     },
     "meta": {
       "type": "object",
@@ -315,7 +315,9 @@
             "label",
             "amounts",
             "sale_value",
-            "npv_rate"
+            "npv_rate",
+            "factor",
+            "delay_years"
           ],
           "description": "Cash below NOI by hold year (e.g. a TIF tax rebate); at a sale, optionally the NPV of the amounts still to come.",
           "properties": {
@@ -337,6 +339,17 @@
             "npv_rate": {
               "type": "number",
               "minimum": 0
+            },
+            "factor": {
+              "type": "number",
+              "minimum": 0,
+              "description": "share of each payment received (1 = as scheduled)"
+            },
+            "delay_years": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10,
+              "description": "years the whole schedule starts late"
             }
           }
         }

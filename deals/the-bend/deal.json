@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "meta": {
     "slug": "the-bend",
     "name": "The Bend",
@@ -75,11 +75,63 @@
       },
       {
         "name": "No TIF value at sale",
-        "note": "Buyer pays nothing extra for the rebates left after the sale.",
+        "note": "A buyer pays nothing for the rebates left after the sale (every case). The rebates during the hold still arrive.",
         "changes": {
           "deal": {
             "below_noi_income": {
               "sale_value": "none"
+            }
+          },
+          "cases": {
+            "base": {
+              "deal_overrides": {
+                "below_noi_income": {
+                  "sale_value": "none"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "TIF rebate cut 50%",
+        "note": "Half of every rebate payment, during the hold and in the value at sale.",
+        "changes": {
+          "deal": {
+            "below_noi_income": {
+              "factor": 0.5
+            }
+          }
+        }
+      },
+      {
+        "name": "TIF rebate delayed 2 years",
+        "note": "The whole rebate schedule starts two years late (first payment in Year 3).",
+        "changes": {
+          "deal": {
+            "below_noi_income": {
+              "delay_years": 2
+            }
+          }
+        }
+      },
+      {
+        "name": "No TIF rebate at all",
+        "note": "No rebate during the hold and nothing for it at sale, in every case.",
+        "changes": {
+          "deal": {
+            "below_noi_income": {
+              "factor": 0.0,
+              "sale_value": "none"
+            }
+          },
+          "cases": {
+            "base": {
+              "deal_overrides": {
+                "below_noi_income": {
+                  "sale_value": "none"
+                }
+              }
             }
           }
         }
@@ -254,7 +306,9 @@
     "direct_investors": "None",
     "cases.base": "LTEC assumption (Nov 5, 2026), applied to the sponsor case. Rent path: sponsor's (its Year-5 GPR is ~3.5%/yr above Aug-2026 T-12 GPR), 1% lower. Concessions: T-12 $210k vs model Year 1 $50k. Expenses: T-12 ex-taxes $1.64M vs model Year 1 $1.50M. Taxes: Indiana caps rental property at 2% of gross AV (DLGF circuit-breaker fact sheet, Nov 2025) = $1.04M on $52M vs model $845k; about half assumed",
     "cases.downside": "LTEC assumption (Nov 5, 2026). Taxes at the 2% cap: +$195k vs model Year 2. Concessions at T-12 level, burning off. No TIF value to a buyer",
-    "cases.stress": "LTEC assumption (Nov 5, 2026). No lease-up, +1% rents, taxes at the 2% cap, 6.75% exit, no TIF value at sale"
+    "cases.stress": "LTEC assumption (Nov 5, 2026). No lease-up, +1% rents, taxes at the 2% cap, 6.75% exit, no TIF value at sale",
+    "deal.below_noi_income.factor": "Model: rebate paid in full (1.0). Lower to test a cut; TIF agreement not received",
+    "deal.below_noi_income.delay_years": "Model: rebates start Year 1 (2027). Raise to test a delay"
   },
   "version": "bend-v1",
   "as_of": "2026-11-04",
@@ -296,7 +350,9 @@
       ],
       "sale_value": "npv",
       "npv_rate": 0.06,
-      "_note": "Hold year k = calendar year 2026 + k (as in the model: Year 1 gets 2027's $475k). Years 1-14 = 2027-2040, Year 15 = 2041 ($238k). At a sale after year H the remaining amounts are valued at npv_rate (Excel NPV)."
+      "_note": "Hold year k = calendar year 2026 + k (as in the model: Year 1 gets 2027's $475k). Years 1-14 = 2027-2040, Year 15 = 2041 ($238k). At a sale after year H the remaining amounts are valued at npv_rate (Excel NPV).",
+      "factor": 1.0,
+      "delay_years": 0
     },
     "refi": {
       "enabled": false,

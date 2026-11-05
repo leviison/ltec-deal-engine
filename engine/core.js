@@ -148,7 +148,9 @@
     }
     if (refi) { refi.first_year_debt_service = ds[R]; refi.dscr = ds[R] ? noiAll[R] / ds[R] : null; }
     // cash received below NOI (e.g. a tax-increment rebate); at a sale, optionally the NPV of what is still to come
-    const bni = deal.below_noi_income, amts = bni.amounts;
+    const bni = deal.below_noi_income;
+    // factor scales every payment; delay_years pushes the whole schedule back (see core.py)
+    const amts = Array(Math.trunc(bni.delay_years)).fill(0).concat(bni.amounts.map((a) => a * bni.factor));
     const below = []; for (let y = 0; y < H; y++) below.push(y < amts.length ? amts[y] : 0);
     let bniSale = 0;
     if (bni.sale_value === "npv") amts.slice(H).forEach((a, k) => { bniSale += a / Math.pow(1 + bni.npv_rate, k + 1); });

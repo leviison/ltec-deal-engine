@@ -247,7 +247,8 @@ def case_operations(case: dict, deal: dict, cases: dict | None = None) -> dict:
     # cash received below NOI (e.g. a tax-increment rebate): amounts by hold year; at a sale, optionally the NPV of
     # the amounts still to come (Excel NPV: first one discounted a full year)
     bni = deal["below_noi_income"]
-    amts = bni["amounts"]
+    # factor scales every payment (0.5 = half paid, 0 = none); delay_years pushes the whole schedule back
+    amts = [0.0] * int(bni["delay_years"]) + [a * bni["factor"] for a in bni["amounts"]]
     below = [amts[y] if y < len(amts) else 0.0 for y in range(H)]
     rest = amts[H:]
     bni_sale = (sum(a / (1 + bni["npv_rate"]) ** (k + 1) for k, a in enumerate(rest))
