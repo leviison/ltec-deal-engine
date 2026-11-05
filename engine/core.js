@@ -72,6 +72,8 @@
       xAll = grow([c.opex_y1], n, c.opex_growth);
     }
     const noiAll = rAll.map((r, i) => r + oAll[i] - xAll[i]);
+    // the NOI a buyer prices at the end of year H: next year's (forward) or the final hold year's (trailing)
+    const exitNoi = deal.exit_noi_basis === "forward" ? noiAll[H] : noiAll[H - 1];
     const rents = rAll.slice(0, H), oi = oAll.slice(0, H), opex = xAll.slice(0, H);
     const income = rents.map((r, i) => r + oi[i]);
     const noi = income.map((x, i) => x - opex[i]);
@@ -112,34 +114,43 @@
       ds.push(pay); balEnd.push(bal);
     }
     if (refi) { refi.first_year_debt_service = ds[R]; refi.dscr = ds[R] ? noiAll[R] / ds[R] : null; }
-    const ocf = noi.map((x, i) => x - capex[i] - ds[i] - am[i] - assume[i]);
+    // cash received below NOI (e.g. a tax-increment rebate); at a sale, optionally the NPV of what is still to come
+    const bni = deal.below_noi_income, amts = bni.amounts;
+    const below = []; for (let y = 0; y < H; y++) below.push(y < amts.length ? amts[y] : 0);
+    let bniSale = 0;
+    if (bni.sale_value === "npv") amts.slice(H).forEach((a, k) => { bniSale += a / Math.pow(1 + bni.npv_rate, k + 1); });
+    const ocf = noi.map((x, i) => x - capex[i] - ds[i] - am[i] - assume[i] + below[i]);
     return { rents, other_income: oi, total_income: income, opex, noi, capex, debt_service: ds,
-             asset_mgmt_fee: am, assumption_fee: assume, operating_cash_flow: ocf, y6_noi: noiAll[H],
-             next_year_noi: noiAll[H], hold_years: H, refi_proceeds: refiNet, loan_balance_end: balEnd, refi,
+             asset_mgmt_fee: am, assumption_fee: assume, below_noi_income: below, below_noi_sale_value: bniSale,
+             operating_cash_flow: ocf, y6_noi: exitNoi,
+             next_year_noi: exitNoi, hold_years: H, refi_proceeds: refiNet, loan_balance_end: balEnd, refi,
              _noi_year6: noiAll[Y] };
   }
 
   function caseExit(c, ops, deal) {
     const H = ops.hold_years, debt = ops.loan_balance_end[H - 1], sell = deal.selling_cost_pct, dispo = deal.disposition_fee_pct;
-    const nxt = ops.next_year_noi;
+    const nxt = ops.next_year_noi, extra = saleExtras(ops, deal);
     let nsp, gross, cap;
     if (c.kind === "explicit") {
       if (H === uwYears(deal) && !ops.refi) { nsp = c.net_sale_proceeds; gross = (nsp + debt) / (1 - sell); }
-      else { gross = nxt / caseCapBasis(c, deal, ops._noi_year6); nsp = gross - gross * sell - debt; }
+      else { gross = nxt / caseCapBasis(c, deal, ops._noi_year6); nsp = gross - gross * sell - debt + extra; }
       cap = nxt / gross;
     } else if (c.kind === "custom" && c.exit_method === "sale_price") {
-      gross = c.sale_price; cap = nxt / gross; nsp = gross - gross * sell - debt - gross * dispo;
+      gross = c.sale_price; cap = nxt / gross; nsp = gross - gross * sell - debt - gross * dispo + extra;
     } else {
-      cap = c.exit_cap; gross = nxt / cap; nsp = gross - gross * sell - debt - gross * dispo;
+      cap = c.exit_cap; gross = nxt / cap; nsp = gross - gross * sell - debt - gross * dispo + extra;
     }
     return { y6_noi: nxt, exit_cap: cap, gross_value: gross, selling_costs: gross * sell,
              disposition_fee: c.kind === "explicit" ? 0 : gross * dispo, debt_payoff: debt,
+             reserves_returned: deal.reserves_returned_at_sale, below_noi_sale_value: ops.below_noi_sale_value,
              net_sale_proceeds: nsp, price_per_unit: gross / deal.units };
   }
+  const saleExtras = (ops, deal) => deal.reserves_returned_at_sale + ops.below_noi_sale_value;
 
   // ------------------------------------------------------------ waterfall
-  function runWaterfall(cash, equity, wf) {
-    const pref = wf.pref_rate;
+  // wf.return_of_capital: "all_cash" or "capital_events" (see core.py); events = capital-event cash per year
+  function runWaterfall(cash, equity, wf, events) {
+    const pref = wf.pref_rate, rocEvents = wf.return_of_capital === "capital_events";
     let unreturned = equity, unpaid = 0;
     const rows = { cash: [], pref_due: [], to_pref: [], return_of_capital: [], unreturned_end: [],
                    unpaid_pref_end: [], tier_splits: [], lp: [], gp: [], deficit_end: [] };
@@ -152,7 +163,11 @@
       const carried = wf.pref_compounds ? unpaid * (1 + pref) : unpaid;
       const due = unreturned * pref + carried;
       const toPref = Math.min(c, due);
-      const roc = Math.min(Math.max(0, c - toPref), unreturned);
+      let roc;
+      if (rocEvents) {
+        const ev = Math.min(Math.max(0, events ? events[t - 1] : 0), c);
+        roc = Math.min(Math.max(0, ev - Math.max(0, toPref - (c - ev))), unreturned);
+      } else roc = Math.min(Math.max(0, c - toPref), unreturned);
       let remaining = c - toPref - roc, lp = toPref + roc, gp = 0;
       const splits = [];
       for (const tier of wf.tiers) {
@@ -242,12 +257,12 @@
     rows.tier_splits[t].forEach((amt, j) => { const s = j < wf.tiers.length ? wf.tiers[j].lp_share : wf.residual_lp_share; lp += amt * s; gp += amt * (1 - s); });
     return [lp, gp];
   }
-  function crystallize(cash, sale, w, refi, inp) {
+  function crystallize(cash, sale, w, refi, inp, events) {
     const deal = inp.deal, wf = inp.waterfall, eq = deal.lp_equity, R = refi.year, H = cash.length;
     const nev = refi.appraised_value - refi.loan - inp.deal.refi.crystallize_cost_pct * refi.appraised_value;
     const out = { applied: false, net_equity_value: nev, lp_pct: null, year: R };
     if (nev <= 0) return out;
-    const hyp = runWaterfall(cash.slice(0, R - 1).concat([cash[R - 1] + nev]), eq, wf);
+    const hyp = runWaterfall(cash.slice(0, R - 1).concat([cash[R - 1] + nev]), eq, wf, events.slice(0, R - 1).concat([events[R - 1] + nev]));
     const [lp2, gp2] = tierLpGp(hyp, R - 1, wf), [lp1, gp1] = tierLpGp(w, R - 1, wf);
     const dLp = lp2 - lp1, dGp = gp2 - gp1;
     if (dLp + dGp <= 1e-6) return out;
@@ -275,25 +290,31 @@
   }
 
   function returnsFor(ops, nsp, inp) {
-    const deal = inp.deal;
+    const deal = inp.deal, wf = inp.waterfall;
     const ocf = ops.operating_cash_flow;
     // Refinance proceeds (OA 8.2: same order as 8.1) and the sale added to operating cash
     const cash = ocf.map((o, i) => o + ops.refi_proceeds[i]);
     cash[cash.length - 1] += nsp;
-    let w = runWaterfall(cash, deal.lp_equity, inp.waterfall);
+    const evCash = ops.refi_proceeds.slice();  // capital-event cash per year (refinance, sale)
+    evCash[evCash.length - 1] += nsp;
+    let w = runWaterfall(cash, deal.lp_equity, wf, evCash);
     const sched = scheduled(inp), close = inp.warehouse.close_date;
     // LP cash from operations alone in each capital-event year, so the event can be dated separately
-    const opsPart = {};
-    if (sched) {
-      const events = [ocf.length - 1].concat(ops.refi ? [ops.refi.year - 1] : []);
-      events.forEach((y) => { opsPart[y] = Math.min(runWaterfall(cash.slice(0, y).concat([ocf[y]]), deal.lp_equity, inp.waterfall).lp[y], w.lp[y]); });
-    }
+    const events = [ocf.length - 1].concat(ops.refi ? [ops.refi.year - 1] : []);
+    const opsAlone = (cAll, evAll, eq, wfx, lpAll, scale) => {
+      const part = {};
+      if (sched) events.forEach((y) => {
+        part[y] = Math.min(runWaterfall(cAll.slice(0, y).concat([ocf[y] * scale]), eq, wfx, evAll.slice(0, y).concat([0])).lp[y], lpAll[y]);
+      });
+      return part;
+    };
+    const opsPart = opsAlone(cash, evCash, deal.lp_equity, wf, w.lp, 1.0);
     const payReg = dealPayments(w.lp, opsPart, inp);
     const mReg = lpMetrics(w.lp, deal.lp_equity, sched ? payReg : null, close);
     // OA 8.7 crystallization; the LTEC side letter keeps LTEC on the regular waterfall until capital + pref are back
     let cr = null, payC = payReg, m = mReg, prot = false;
     const rf = deal.refi || {};
-    if (ops.refi && rf.crystallize) cr = crystallize(cash, nsp, w, ops.refi, inp);
+    if (ops.refi && rf.crystallize) cr = crystallize(cash, nsp, w, ops.refi, inp, evCash);
     if (cr && cr.applied) {
       const partC = Object.assign({}, opsPart);
       if (sched) partC[ocf.length - 1] = Math.min(cr.lp_ops_only_last, cr.lp[cr.lp.length - 1]);
@@ -303,13 +324,26 @@
       cr.ltec_protected = prot;
       w = Object.assign({}, w, { lp_regular: w.lp, gp_regular: w.gp, lp: cr.lp, gp: cr.gp });
     }
-    const invLp = prot ? w.lp_regular : w.lp, invPay = prot ? payReg : payC, invM = prot ? mReg : m;
-    const share = inp.investor.check / deal.lp_equity;
-    const inv = invLp.map((d) => d * share);
+    const invLp = prot ? w.lp_regular : w.lp, invPayReg = prot ? payReg : payC, invM = prot ? mReg : m;
+    const check = inp.investor.check, share = check / deal.lp_equity;
+    let inv = invLp.map((d) => d * share), invPay = invPayReg, invAmts = invPayReg[1].map((a) => a * share);
+    let invIrr = invM.irr, invMult = invM.multiple, side = null;
+    // Side letter for our check (see core.py): our pro-rata share of partnership cash through our own terms
+    const sl = inp.investor.side_letter;
+    if (sl.enabled && check > 0) {
+      const swf = Object.assign({}, wf, sl.terms);
+      const sCash = cash.map((c) => c * share), sEv = evCash.map((e) => e * share);
+      const sw = runWaterfall(sCash, check, swf, sEv);
+      const sPay = dealPayments(sw.lp, opsAlone(sCash, sEv, check, swf, sw.lp, share), inp);
+      const sM = lpMetrics(sw.lp, check, sched ? sPay : null, close);
+      side = { applied: true, regular_distributions: inv, regular_total: sum(inv), regular_irr: invIrr,
+               regular_multiple: invMult, uplift: sum(sw.lp) - sum(inv), sponsor_cost: sum(sw.lp) - sum(inv) };
+      inv = sw.lp.slice(); invPay = sPay; invAmts = sPay[1]; invIrr = sM.irr; invMult = sM.multiple;
+    }
     return { waterfall: w, lp: m, crystallization: cr,
              payments: { dates: payC[0], amounts: payC[1] },
-             investor: { distributions: inv, total: sum(inv), profit: sum(inv) - inp.investor.check,
-                         irr: invM.irr, multiple: invM.multiple, payment_dates: invPay[0], payments: invPay[1].map((a) => a * share) },
+             investor: { distributions: inv, total: sum(inv), profit: sum(inv) - check,
+                         irr: invIrr, multiple: invMult, payment_dates: invPay[0], payments: invAmts, side_letter: side },
              gp_promote_total: sum(w.gp),
              direct_investors: (inp.direct_investors || []).map((d) => directInvestor(d, w.lp, m, deal.lp_equity, payC[1])) };
   }
@@ -330,11 +364,11 @@
     const ops = kase.operations, y6 = ops.y6_noi, own = kase.exit.exit_cap;
     let caps = s.exit_caps.slice();
     if (includeOwn && !caps.some((c) => Math.abs(c - own) < 1e-9)) caps = caps.concat([own]).sort((a, b) => a - b);
-    const keep = 1 - deal.selling_cost_pct - deal.disposition_fee_pct;
+    const keep = 1 - deal.selling_cost_pct - deal.disposition_fee_pct, extra = saleExtras(ops, deal);
     return {
       exit_caps: caps, noi_factors: s.noi_factors,
       lp_irr: caps.map((c) => s.noi_factors.map((f) =>
-        returnsFor(ops, y6 * f / c * keep - kase.exit.debt_payoff, inp).lp.irr)),
+        returnsFor(ops, y6 * f / c * keep - kase.exit.debt_payoff + extra, inp).lp.irr)),
       gross_value: caps.map((c) => s.noi_factors.map((f) => y6 * f / c)),
       own_cap: own,
     };

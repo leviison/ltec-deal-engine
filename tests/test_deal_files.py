@@ -77,11 +77,27 @@ def test_sources_point_at_inputs(slug):
     assert not bad, bad
 
 
+def change_paths(x, path=""):
+    if isinstance(x, dict) and x:
+        for k, v in x.items():
+            yield from change_paths(v, f"{path}.{k}" if path else k)
+    else:
+        yield path
+
+
+@pytest.mark.parametrize("slug", list_deals())
+def test_alternatives_point_at_inputs(slug):
+    d = load_deal(slug)
+    for alt in d["meta"].get("alternatives", []):
+        bad = [p for p in change_paths(alt["changes"]) if p.split(".")[0] in NOT_INPUTS or not resolves(d, p)]
+        assert not bad, (alt["name"], bad)
+
+
 @pytest.mark.parametrize("slug", list_deals())
 def test_report_unsourced(slug, capsys):
     d = load_deal(slug)
     missing = unsourced(d)
-    todo = [k for k, v in d["sources"].items() if v.upper().startswith("TODO")]
+    todo = [k for k, v in d["sources"].items() if "TODO" in v]
     with capsys.disabled():
         print(f"\n{slug}: {len(missing)} inputs without a source, {len(todo)} sources marked TODO"
               + (f"; unsourced: {', '.join(missing[:12])}" if missing else ""))

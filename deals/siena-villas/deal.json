@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "meta": {
     "slug": "siena-villas",
     "name": "Siena Villas",
@@ -89,7 +89,12 @@
     "warehouse.admin_cost_per_year": "ASSUMPTION - not from any document",
     "warehouse.member_hurdle_irr": "Memo (Nov 3): 10% per annum IRR, in aggregate",
     "warehouse.promote": "Memo (Nov 3): 40/60 with no catch-up",
-    "direct_investors": "None by default"
+    "direct_investors": "None by default",
+    "deal.exit_noi_basis": "v10: sale priced on Year-6 NOI",
+    "deal.reserves_returned_at_sale": "v10: none",
+    "deal.below_noi_income": "None for Siena",
+    "waterfall.return_of_capital": "OA §8.1: after pref, cash returns capital",
+    "investor.side_letter": "Off (the LTEC side letter is modeled as deal.refi.side_letter_protects)"
   },
   "version": "v24-code",
   "as_of": "2026-11-04",
@@ -129,7 +134,15 @@
       "crystallize_cost_pct": 0.02
     },
     "_hold_refi_note": "hold_years: sale at the end of this year (3-10; 5 = v10/deck). Past Year 5 each line grows at the case's long-run rate; the Sponsor case sells at its deck-implied cap. refi: at the end of `year` (< hold_years) the loan is replaced: appraised value = next year's NOI / appraisal_cap (0 = the case's exit cap); loan = ltv x value or a set amount, capped so next year's debt service is covered dscr_min times (0 = no cap); interest-only for io_years, then level payments over amort_years; cost_pct of the new loan. Net proceeds (new loan - old balance - costs) go through the 8.1 order (OA 8.2); the new balance is paid off at the sale. Memo: Redstone expects to evaluate a refinance in 2031 when the current mortgage matures. crystallize: Redstone elects OA 8.7 after the refinance (fixed percentages from a hypothetical distribution of appraised value - new loan - 2% costs). side_letter_protects: LTEC's units stay on the regular waterfall unless LTEC has its unreturned capital and accrued pref back by then (LTEC side letter).",
-    "underwritten_hold_years": 5
+    "underwritten_hold_years": 5,
+    "exit_noi_basis": "forward",
+    "reserves_returned_at_sale": 0,
+    "below_noi_income": {
+      "label": "",
+      "amounts": [],
+      "sale_value": "none",
+      "npv_rate": 0
+    }
   },
   "timing": {
     "mode": "annual",
@@ -158,11 +171,16 @@
         "lp_share": 0.7
       }
     ],
-    "residual_lp_share": 0.6
+    "residual_lp_share": 0.6,
+    "return_of_capital": "all_cash"
   },
   "investor": {
     "name": "LTEC Holdings, LLC",
-    "check": 1000000
+    "check": 1000000,
+    "side_letter": {
+      "enabled": false,
+      "terms": {}
+    }
   },
   "cases": {
     "sponsor": {

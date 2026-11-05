@@ -150,6 +150,8 @@ def case_operations(case: dict, deal: dict) -> dict:
             o_all = _grow([case["other_income_y1"]], n, case["other_income_growth"])
         x_all = _grow([case["opex_y1"]], n, case["opex_growth"])
     noi_all = [r + o - x for r, o, x in zip(r_all, o_all, x_all)]
+    # the NOI a buyer prices at the end of year H: next year's (forward) or the final hold year's (trailing)
+    exit_noi = noi_all[H] if deal["exit_noi_basis"] == "forward" else noi_all[H - 1]
 
     rents, oi, opex = r_all[:H], o_all[:H], x_all[:H]
     income = [r + o for r, o in zip(rents, oi)]
@@ -200,12 +202,21 @@ def case_operations(case: dict, deal: dict) -> dict:
     if refi:
         refi["first_year_debt_service"] = ds[R] if R < H else None
         refi["dscr"] = noi_all[R] / ds[R] if R < H and ds[R] else None
-    ocf = [nn - c - d - a - f for nn, c, d, a, f in zip(noi, capex, ds, am_fee, assume)]
+    # cash received below NOI (e.g. a tax-increment rebate): amounts by hold year; at a sale, optionally the NPV of
+    # the amounts still to come (Excel NPV: first one discounted a full year)
+    bni = deal["below_noi_income"]
+    amts = bni["amounts"]
+    below = [amts[y] if y < len(amts) else 0.0 for y in range(H)]
+    rest = amts[H:]
+    bni_sale = (sum(a / (1 + bni["npv_rate"]) ** (k + 1) for k, a in enumerate(rest))
+                if bni["sale_value"] == "npv" else 0.0)
+    ocf = [nn - c - d - a - f + b for nn, c, d, a, f, b in zip(noi, capex, ds, am_fee, assume, below)]
 
     return {
         "rents": rents, "other_income": oi, "total_income": income, "opex": opex,
         "noi": noi, "capex": capex, "debt_service": ds, "asset_mgmt_fee": am_fee, "assumption_fee": assume,
-        "operating_cash_flow": ocf, "y6_noi": noi_all[H], "next_year_noi": noi_all[H], "hold_years": H,
+        "below_noi_income": below, "below_noi_sale_value": bni_sale,
+        "operating_cash_flow": ocf, "y6_noi": exit_noi, "next_year_noi": exit_noi, "hold_years": H,
         "refi_proceeds": refi_net, "loan_balance_end": bal_end, "refi": refi,
         "_noi_year6": noi_all[Y],
     }
@@ -215,35 +226,49 @@ def case_exit(case: dict, ops: dict, deal: dict) -> dict:
     H = ops["hold_years"]
     debt, sell, dispo = ops["loan_balance_end"][-1], deal["selling_cost_pct"], deal["disposition_fee_pct"]
     nxt = ops["next_year_noi"]
+    # besides the property: reserves funded at close and returned, and the value of below-NOI income still to come.
+    # A deck's given net sale proceeds (explicit case at its own hold) are taken as all-in.
+    extra = sale_extras(ops, deal)
     if case["kind"] == "explicit":
         if H == uw_years(deal) and not ops["refi"]:
             nsp = case["net_sale_proceeds"]
             gross = (nsp + debt) / (1 - sell)
         else:  # the deck's implied cap, applied to the NOI after this hold
             gross = nxt / case_cap_basis(case, deal, ops["_noi_year6"])
-            nsp = gross - gross * sell - debt
+            nsp = gross - gross * sell - debt + extra
         cap = nxt / gross
     elif case["kind"] == "custom" and case["exit_method"] == "sale_price":
         gross = case["sale_price"]
         cap = nxt / gross
-        nsp = gross - gross * sell - debt - gross * dispo
+        nsp = gross - gross * sell - debt - gross * dispo + extra
     else:
         cap = case["exit_cap"]
         gross = nxt / cap
-        nsp = gross - gross * sell - debt - gross * dispo
+        nsp = gross - gross * sell - debt - gross * dispo + extra
     return {"y6_noi": nxt, "exit_cap": cap, "gross_value": gross,
             "selling_costs": gross * sell, "disposition_fee": 0 if case["kind"] == "explicit" else gross * dispo,
-            "debt_payoff": debt, "net_sale_proceeds": nsp, "price_per_unit": gross / deal["units"]}
+            "debt_payoff": debt, "reserves_returned": deal["reserves_returned_at_sale"],
+            "below_noi_sale_value": ops["below_noi_sale_value"],
+            "net_sale_proceeds": nsp, "price_per_unit": gross / deal["units"]}
+
+
+def sale_extras(ops: dict, deal: dict) -> float:
+    return deal["reserves_returned_at_sale"] + ops["below_noi_sale_value"]
 
 
 # ---------------------------------------------------------------- waterfall
 
-def run_waterfall(cash: list[float], equity: float, wf: dict) -> dict:
+def run_waterfall(cash: list[float], equity: float, wf: dict, events: list[float] | None = None) -> dict:
     """OA §8.1 waterfall on annual partnership cash. Mirrors v10 'LP Waterfall' rows.
 
     A shortfall in any year (e.g. a refinance that doesn't cover the old loan) is carried forward and covered
     from later cash; a shortfall left at the end (an underwater sale on the non-recourse loan) isn't called from
-    members. v10 does neither; no default case is affected."""
+    members. v10 does neither; no default case is affected.
+
+    wf["return_of_capital"]: "all_cash" (OA 8.1 style: after pref, any cash returns capital) or "capital_events"
+    (operating cash above the pref goes straight to the splits; capital comes back only from events - a sale or
+    refinance - whose amounts per year are `events`; pref is paid from operating cash first)."""
+    roc_events = wf["return_of_capital"] == "capital_events"
     pref = wf["pref_rate"]
     tiers = wf["tiers"]
     unreturned, unpaid = equity, 0.0
@@ -258,7 +283,11 @@ def run_waterfall(cash: list[float], equity: float, wf: dict) -> dict:
         carried = unpaid * (1 + pref) if wf.get("pref_compounds") else unpaid
         due = unreturned * pref + carried
         to_pref = min(c, due)
-        roc = min(max(0.0, c - to_pref), unreturned)
+        if roc_events:
+            ev = min(max(0.0, events[t - 1] if events else 0.0), c)
+            roc = min(max(0.0, ev - max(0.0, to_pref - (c - ev))), unreturned)
+        else:
+            roc = min(max(0.0, c - to_pref), unreturned)
         remaining = c - to_pref - roc
         lp = to_pref + roc
         gp = 0.0
@@ -397,7 +426,7 @@ def _tier_lp_gp(rows: dict, t: int, wf: dict) -> tuple[float, float]:
     return lp, gp
 
 
-def crystallize(cash: list[float], sale: float, w: dict, refi: dict, inp: dict) -> dict:
+def crystallize(cash: list[float], sale: float, w: dict, refi: dict, inp: dict, events: list[float]) -> dict:
     """OA 8.7 after the refinance at the end of year R (Manager's one-time election). Net Equity Value =
     appraised value - new loan - 2% hypothetical costs (no other assets or liabilities modeled). Distributing it
     on top of the year-R payout in the 8.1 order gives the LP and sponsor shares of the 8.1(c)-(e) portion: the
@@ -410,7 +439,7 @@ def crystallize(cash: list[float], sale: float, w: dict, refi: dict, inp: dict) 
     out = {"applied": False, "net_equity_value": nev, "lp_pct": None, "year": R}
     if nev <= 0:
         return out
-    hyp = run_waterfall(cash[:R - 1] + [cash[R - 1] + nev], eq, wf)
+    hyp = run_waterfall(cash[:R - 1] + [cash[R - 1] + nev], eq, wf, events[:R - 1] + [events[R - 1] + nev])
     lp2, gp2 = _tier_lp_gp(hyp, R - 1, wf)
     lp1, gp1 = _tier_lp_gp(w, R - 1, wf)
     d_lp, d_gp = lp2 - lp1, gp2 - gp1
@@ -450,18 +479,26 @@ def _returns(ops: dict, nsp: float, inp: dict) -> dict:
     """Refinance proceeds (OA 8.2: same order as 8.1) and the sale added to operating cash, run through the
     waterfall."""
     deal = inp["deal"]
+    wf = inp["waterfall"]
     ocf = ops["operating_cash_flow"]
     cash = [o + r for o, r in zip(ocf, ops["refi_proceeds"])]
     cash[-1] += nsp
-    w = run_waterfall(cash, deal["lp_equity"], inp["waterfall"])
+    ev_cash = list(ops["refi_proceeds"])  # capital-event cash per year (refinance, sale)
+    ev_cash[-1] += nsp
+    w = run_waterfall(cash, deal["lp_equity"], wf, ev_cash)
     sched = _scheduled(inp)
     # LP cash from operations alone in each capital-event year, so the event can be dated separately
-    ops_part = {}
     events = [len(ocf) - 1] + ([ops["refi"]["year"] - 1] if ops["refi"] else [])
-    if sched:
-        for y in events:
-            alone = run_waterfall(cash[:y] + [ocf[y]], deal["lp_equity"], inp["waterfall"])["lp"][y]
-            ops_part[y] = min(alone, w["lp"][y])  # an event never shows up as a negative payment
+
+    def ops_alone(c_all, ev_all, eq, wfx, lp_all, scale=1.0):
+        part = {}
+        if sched:
+            for y in events:
+                alone = run_waterfall(c_all[:y] + [ocf[y] * scale], eq, wfx, ev_all[:y] + [0.0])["lp"][y]
+                part[y] = min(alone, lp_all[y])  # an event never shows up as a negative payment
+        return part
+
+    ops_part = ops_alone(cash, ev_cash, deal["lp_equity"], wf, w["lp"])
     pay_reg = deal_payments(w["lp"], ops_part, inp)
     m_reg = lp_metrics(w["lp"], deal["lp_equity"], pay_reg if sched else None, _close(inp))
 
@@ -470,7 +507,7 @@ def _returns(ops: dict, nsp: float, inp: dict) -> dict:
     cr = None
     rf = deal.get("refi") or {}
     if ops["refi"] and rf.get("crystallize"):
-        cr = crystallize(cash, nsp, w, ops["refi"], inp)
+        cr = crystallize(cash, nsp, w, ops["refi"], inp, ev_cash)
     if cr and cr["applied"]:
         lp_c, gp_c = cr["lp"], cr["gp"]
         part_c = dict(ops_part)
@@ -484,15 +521,35 @@ def _returns(ops: dict, nsp: float, inp: dict) -> dict:
     else:
         pay_c, m, protected = pay_reg, m_reg, False
     inv_lp, inv_pay, inv_m = (w.get("lp_regular", w["lp"]), pay_reg, m_reg) if protected else (w["lp"], pay_c, m)
-    share = inp["investor"]["check"] / deal["lp_equity"]
+    check = inp["investor"]["check"]
+    share = check / deal["lp_equity"]
     inv = [d * share for d in inv_lp]
+    inv_amts = [a * share for a in inv_pay[1]]
+    inv_irr, inv_mult = inv_m["irr"], inv_m["multiple"]
+
+    # Side letter for our check (investor.side_letter): our pro-rata share of the partnership's cash runs through
+    # our own terms (overrides of the waterfall); everyone else's cash is unchanged, so the difference comes out of
+    # the sponsor's promote. Our check then follows these terms, not a crystallization.
+    sl = inp["investor"]["side_letter"]
+    side = None
+    if sl["enabled"] and check > 0:
+        swf = dict(wf, **sl["terms"])
+        s_cash, s_ev = [c * share for c in cash], [e * share for e in ev_cash]
+        sw = run_waterfall(s_cash, check, swf, s_ev)
+        s_pay = deal_payments(sw["lp"], ops_alone(s_cash, s_ev, check, swf, sw["lp"], share), inp)
+        s_m = lp_metrics(sw["lp"], check, s_pay if sched else None, _close(inp))
+        side = {"applied": True, "regular_distributions": inv, "regular_total": sum(inv),
+                "regular_irr": inv_irr, "regular_multiple": inv_mult,
+                "uplift": sum(sw["lp"]) - sum(inv), "sponsor_cost": sum(sw["lp"]) - sum(inv)}
+        inv, inv_pay, inv_amts = list(sw["lp"]), s_pay, s_pay[1]
+        inv_irr, inv_mult = s_m["irr"], s_m["multiple"]
     return {
         "waterfall": w, "lp": m, "crystallization": cr,
         "payments": {"dates": [d.isoformat() for d in pay_c[0]], "amounts": pay_c[1]},
-        "investor": {"distributions": inv, "total": sum(inv), "profit": sum(inv) - inp["investor"]["check"],
-                     "irr": inv_m["irr"], "multiple": inv_m["multiple"],
+        "investor": {"distributions": inv, "total": sum(inv), "profit": sum(inv) - check,
+                     "irr": inv_irr, "multiple": inv_mult,
                      "payment_dates": [d.isoformat() for d in inv_pay[0]],
-                     "payments": [a * share for a in inv_pay[1]]},
+                     "payments": inv_amts, "side_letter": side},
         "gp_promote_total": sum(w["gp"]),
         "direct_investors": [_direct(d, w["lp"], m, deal["lp_equity"], pay_c[1]) for d in inp.get("direct_investors", [])],
     }
@@ -518,7 +575,8 @@ def sensitivity(inp: dict, case: dict | None = None, *, include_own: bool = Fals
         caps = sorted(caps + [own])
     keep = 1 - deal["selling_cost_pct"] - deal["disposition_fee_pct"]
     payoff = case["exit"]["debt_payoff"]
-    grid = [[_returns(ops, y6 * f / c * keep - payoff, inp)["lp"]["irr"]
+    extra = sale_extras(ops, deal)
+    grid = [[_returns(ops, y6 * f / c * keep - payoff + extra, inp)["lp"]["irr"]
              for f in s["noi_factors"]] for c in caps]
     values = [[y6 * f / c for f in s["noi_factors"]] for c in caps]
     return {"exit_caps": caps, "noi_factors": s["noi_factors"], "lp_irr": grid, "gross_value": values, "own_cap": own}

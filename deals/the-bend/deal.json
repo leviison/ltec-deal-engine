@@ -1,0 +1,471 @@
+{
+  "schema_version": 2,
+  "meta": {
+    "slug": "the-bend",
+    "name": "The Bend",
+    "sponsor": "Focused Capital / Elkstone Capital",
+    "vehicle": "TBD: LTEC SPV or direct (modeled as a pass-through)",
+    "units": 312,
+    "status": "screening",
+    "summary": "312-unit 2024-build Class A multifamily, 1909 Greentree Blvd, Clarksville IN (Louisville MSA). $52.0M purchase, $39M fixed-rate IO loan, $16.8M LP raise. Sponsor asks LTEC for >= $1M on a 9% pref / 90-10 side letter.",
+    "documents": [
+      {
+        "key": "deck",
+        "title": "The Bend Pitch Deck (21 pages)",
+        "path": "reference/TheBend_Pitch_Deck.pdf"
+      },
+      {
+        "key": "one_pager_1",
+        "title": "One-pager: $16.8M, 17%+ IRR, 8% CoC, ~2.0x",
+        "path": "reference/TheBend_1_Pager.pdf"
+      },
+      {
+        "key": "one_pager_2",
+        "title": "One-pager: $20M, 15%+ IRR, 7% CoC, ~1.9x",
+        "path": "reference/TheBend_One_Pager_v2.pdf"
+      },
+      {
+        "key": "model",
+        "title": "Sponsor model: TheBend proforma InvestmentMemo CMBS-Citi 9-23-26.xlsm",
+        "path": "reference/TheBend_proforma_InvestmentMemo_CMBS-Citi_9-23-26.xlsm"
+      },
+      {
+        "key": "t12",
+        "title": "T-12 statement Sep 2025 - Aug 2026 (accrual)",
+        "path": "reference/TheBend_T12_bend25_Accrual.xlsx"
+      },
+      {
+        "key": "sales_comps",
+        "title": "Sales comps",
+        "path": "reference/TheBend_sales_comps.xlsm"
+      },
+      {
+        "key": "email",
+        "title": "Email, Mitchell Rice, Oct 14 2026: side-letter offer",
+        "path": "reference/Email_Mitch_Rice_2026-10-14.png"
+      },
+      {
+        "key": "oa",
+        "title": "Operating agreement / PPM / subscription agreement: NOT RECEIVED"
+      }
+    ],
+    "alternatives": [
+      {
+        "name": "Sponsor UW-tab waterfall",
+        "note": "The model's UW Model tab: simple 8% pref from operating cash, operating cash above the pref split 80/20, capital back only from the sale, then 80/20. LP IRR 17.06% (the deck's sensitivity table uses this one).",
+        "changes": {
+          "waterfall": {
+            "pref_compounds": false,
+            "return_of_capital": "capital_events",
+            "tiers": [],
+            "residual_lp_share": 0.8
+          }
+        }
+      },
+      {
+        "name": "Side letter offer (Oct 14)",
+        "note": "9% pref and 90/10 on LTEC's check.",
+        "changes": {
+          "investor": {
+            "side_letter": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      {
+        "name": "No TIF value at sale",
+        "note": "Buyer pays nothing extra for the rebates left after the sale.",
+        "changes": {
+          "deal": {
+            "below_noi_income": {
+              "sale_value": "none"
+            }
+          }
+        }
+      }
+    ],
+    "diligence": [
+      {
+        "item": "Operating agreement / PPM / subscription agreement",
+        "status": "open",
+        "note": "Needed for pref accrual (simple vs compounding), order of distributions, AM-fee priority, capital calls, GP removal, and whether a side letter can change the pref/split for one investor. Deck says Reg D 506(c) 'via the PPM'."
+      },
+      {
+        "item": "Side-letter draft (9% pref, 90/10, >= $1M)",
+        "status": "open",
+        "note": "Who pays the difference (GP promote only?), MFN, transferability."
+      },
+      {
+        "item": "Which waterfall is the deal?",
+        "status": "open",
+        "note": "Sponsor model has two: Partnership Returns tab (IRR hurdles, compounding: LP IRR 17.086%, deck headline 17.08%) and UW Model tab (simple pref, ops excess split: 17.06%, deck sensitivity table)."
+      },
+      {
+        "item": "One-pagers and deck disagree",
+        "status": "open",
+        "note": "$16.8M / 17%+ / 2.0x / 'no waterfall' vs $20M / 15%+ / 1.9x; deck 17.08% / 2.06x."
+      },
+      {
+        "item": "Deck proforma vs model",
+        "status": "open",
+        "note": "Deck Year-1 EGI $5.171M / NOI $3.026M; model $5.178M / $3.033M (loss-to-lease changed). Deck sample distributions ($6,201 Y1) are from the earlier version; model gives $6,240."
+      },
+      {
+        "item": "TIF rebate value at sale",
+        "status": "open",
+        "note": "Model adds $3.36M to sale proceeds: NPV at 6% of the 2032-2041 rebates ($475k/yr, $238k in 2041). Needs the TIF agreement: transferable to a buyer? paid as a bond? Without it LP IRR falls (see 'No TIF value at sale')."
+      },
+      {
+        "item": "Property taxes",
+        "status": "open",
+        "note": "Model: $650k Y1, $845k Y2 (+3%/yr), TIF rebate $475k below NOI. T-12 taxes $1.33M incl. a $760k Dec-2025 true-up; Jan-Aug 2026 run-rate ~$29-44k/month. Reassessment after a $52M sale?"
+      },
+      {
+        "item": "Lease-up and occupancy",
+        "status": "open",
+        "note": "T-12 vacancy loss fell from 16% of GPR (Sep 2025) to 3% (Aug 2026); deck says 95%, email 99%. T-12 NOI $1.79M (distorted by the tax true-up); Jun-Aug 2026 annualized ~$3.17M vs model T-3 $3.12M."
+      },
+      {
+        "item": "Concessions",
+        "status": "open",
+        "note": "T-12 concessions $210k (model T-3 $228k annualized) vs Year-1 $50k (1% of GPR)."
+      },
+      {
+        "item": "Sources & uses",
+        "status": "open",
+        "note": "Deck $/unit totals $178,856 vs $176,856; LTC shown ~66.3% but $39M / $55.8M = 69.9%."
+      },
+      {
+        "item": "Loan term vs hold",
+        "status": "open",
+        "note": "Deck: 5-year fixed 5.84%, 60 months IO. Holds past Year 5 need a refinance (refi switch) - the engine otherwise keeps the IO payment."
+      },
+      {
+        "item": "Close date and schedule",
+        "status": "open",
+        "note": "Deck: funding deadline Oct 5, close Oct 10, 2026; email Oct 14 still >= $1M short. Model assumes close Jan 31, 2027."
+      },
+      {
+        "item": "Investment vehicle",
+        "status": "open",
+        "note": "LTEC SPV (like SV26) or direct? Modeled as a pass-through until decided."
+      }
+    ],
+    "context_doc": "claude.ai Project 'deal engine', doc claude/deal-engine-context.md"
+  },
+  "sources": {
+    "deal.purchase_price": "Deck p13 Sources & Uses; model UW Model offer price",
+    "deal.units": "Deck p3",
+    "deal.loan_amount": "Deck p13 Debt Structure; model UW Model 1st mortgage",
+    "deal.loan_rate": "Deck p13: fixed 5.84%",
+    "deal.annual_debt_service": "Model UW Model row 152: $2,277,600 interest-only",
+    "deal.debt_service_method": "Deck p13: 60 months interest-only",
+    "deal.assumption_fee_pct": "Not applicable (new loan); loan fee 0.60% is in closing costs",
+    "deal.annual_capex_reserves": "Deck p13: $250/unit lender reserve (cases carry the yearly amounts)",
+    "deal.lp_equity": "Model: LP contribution $16,803,171.79 (deck p6 $16,803,142)",
+    "deal.asset_mgmt_fee_pct_of_income": "Deck p13 / p19: 2.0% of EGI",
+    "deal.selling_cost_pct": "Model UW Model sale costs 3%",
+    "deal.disposition_fee_pct": "Deck p13 / p19: 1.0%",
+    "deal.hold_years": "Deck p2: 5-year hold",
+    "deal.underwritten_hold_years": "Model: sale at the end of Year 5",
+    "deal.exit_noi_basis": "Model UW Model row 100: value = Year-5 NOI / 5.6%",
+    "deal.reserves_returned_at_sale": "Model UW Model row 171: operating reserves returned at sale",
+    "deal.below_noi_income": "Model UW Model row 125 (TIF rebate $475k/yr below NOI) and Bond NPV tab (2032-2041 payments at 6%, row 173); deck p2/p4 '$475,000/year through 2040'",
+    "deal.refi": "Not in the deck's plan; option, off. Rate 5.5% / 67% LTV from the model's (unused) refinance inputs; rest assumption",
+    "deal.refi.crystallize": "No crystallization provision known (OA not received)",
+    "deal.refi.crystallize_cost_pct": "Unused for this deal",
+    "deal.refi.side_letter_protects": "Unused for this deal",
+    "timing.mode": "'annual' = the sponsor model's convention; every tie-out uses it",
+    "timing.siena_frequency": "Deck p19: quarterly distributions",
+    "timing.first_distribution": "Deck p19/p21: first distribution Q1 2027 (date assumed: Mar 31)",
+    "timing.sale_date": "Deck p19: target exit Year 5 (assumed 5 years after the Oct 10, 2026 target close)",
+    "timing.vehicle_frequency": "Pass-through: pays when the sponsor pays",
+    "timing.vehicle_first_distribution": "Pass-through (unused)",
+    "timing.vehicle_holdback": "Pass-through: none",
+    "timing.vehicle_final_lag_months": "Pass-through: none",
+    "timing.acq_fee_after_first": "Pass-through: no fee",
+    "waterfall": "Model 'Partnership Returns - Annual': IRR hurdles, no catch-up; 100% to LP to an 8% IRR, 80/20 to 15%, 80/20 to 100%, 50/50 above. Deck p6: 8% pref then 80/20. TODO: OA",
+    "waterfall.pref_compounds": "IRR hurdle = pref compounds annually (model). TODO: OA",
+    "waterfall.return_of_capital": "IRR hurdle includes capital (model). TODO: OA",
+    "investor.name": "Assumption: LTEC Holdings, LLC (as for Siena)",
+    "investor.check": "Email Oct 14: 'at least $1M'",
+    "investor.side_letter": "Email Oct 14 (Mitch Rice): 9% pref and 90/10 if we fill >= $1M; off by default",
+    "cases.sponsor": "Model UW Model rows 62, 68, 92, 124 (Years 1-8); growth after Year 8 = the model's Year 7-8 growth; exit cap 5.6% (UW Model B20)",
+    "cases.custom": "Copy of the sponsor case",
+    "sensitivity.exit_caps": "Model 'IRR Sensitivity' tab: 5.3% - 5.9%",
+    "sensitivity.noi_factors": "Assumption: +/-10%",
+    "warehouse": "Assumption: pass-through until LTEC decides on an SPV (no fees, no promote, one member)",
+    "warehouse.close_date": "Deck p21: targeted close Oct 10, 2026 (slipped; model assumes Jan 31, 2027)",
+    "direct_investors": "None"
+  },
+  "version": "bend-v1",
+  "as_of": "2026-11-04",
+  "deal": {
+    "purchase_price": 52000000,
+    "units": 312,
+    "loan_amount": 39000000,
+    "loan_rate": 0.0584,
+    "annual_debt_service": 2277600,
+    "debt_service_method": "interest_only",
+    "assumption_fee_pct": 0.0,
+    "annual_capex_reserves": 78000,
+    "lp_equity": 16803171.790371783,
+    "asset_mgmt_fee_pct_of_income": 0.02,
+    "selling_cost_pct": 0.03,
+    "disposition_fee_pct": 0.01,
+    "hold_years": 5,
+    "underwritten_hold_years": 5,
+    "exit_noi_basis": "trailing",
+    "reserves_returned_at_sale": 268171.79037178354,
+    "below_noi_income": {
+      "label": "TIF tax rebate",
+      "amounts": [
+        475000,
+        475000,
+        475000,
+        475000,
+        475000,
+        475000,
+        475000,
+        475000,
+        475000,
+        475000,
+        475000,
+        475000,
+        475000,
+        475000,
+        238000
+      ],
+      "sale_value": "npv",
+      "npv_rate": 0.06,
+      "_note": "Hold year k = calendar year 2026 + k (as in the model: Year 1 gets 2027's $475k). Years 1-14 = 2027-2040, Year 15 = 2041 ($238k). At a sale after year H the remaining amounts are valued at npv_rate (Excel NPV)."
+    },
+    "refi": {
+      "enabled": false,
+      "year": 5,
+      "sizing": "ltv",
+      "ltv": 0.67,
+      "amount": 39000000,
+      "appraisal_cap": 0,
+      "dscr_min": 1.25,
+      "rate": 0.055,
+      "io_years": 0,
+      "amort_years": 30,
+      "cost_pct": 0.01,
+      "crystallize": false,
+      "crystallize_cost_pct": 0.02,
+      "side_letter_protects": false
+    }
+  },
+  "timing": {
+    "mode": "annual",
+    "first_distribution": "2027-03-31",
+    "siena_frequency": 4,
+    "sale_date": "2031-10-10",
+    "vehicle_frequency": 0,
+    "vehicle_first_distribution": "2027-03-31",
+    "vehicle_holdback": 0,
+    "vehicle_final_lag_months": 0,
+    "acq_fee_after_first": false
+  },
+  "waterfall": {
+    "pref_rate": 0.08,
+    "pref_compounds": true,
+    "return_of_capital": "all_cash",
+    "tiers": [
+      {
+        "lp_irr_hurdle": 0.15,
+        "lp_share": 0.8
+      },
+      {
+        "lp_irr_hurdle": 1.0,
+        "lp_share": 0.8
+      }
+    ],
+    "residual_lp_share": 0.5
+  },
+  "investor": {
+    "name": "LTEC Holdings, LLC",
+    "check": 1000000,
+    "side_letter": {
+      "enabled": false,
+      "terms": {
+        "pref_rate": 0.09,
+        "tiers": [
+          {
+            "lp_irr_hurdle": 0.15,
+            "lp_share": 0.9
+          },
+          {
+            "lp_irr_hurdle": 1.0,
+            "lp_share": 0.9
+          }
+        ],
+        "residual_lp_share": 0.9
+      }
+    }
+  },
+  "cases": {
+    "sponsor": {
+      "label": "Sponsor (model)",
+      "kind": "custom",
+      "rents": [
+        4385099.627836242,
+        4631589.438143181,
+        5020787.7754902,
+        5196809.766860482,
+        5580270.273930066,
+        5775802.840202701,
+        5978185.739495432,
+        6187658.934259976
+      ],
+      "other_income": [
+        792909.6,
+        816696.888,
+        841197.79464,
+        866433.7284792,
+        892426.7403335761,
+        919199.5425435834,
+        946775.5288198909,
+        975178.7946844876
+      ],
+      "opex": [
+        2145374.3229742683,
+        2389258.3414150113,
+        2469694.864554557,
+        2544674.6530248886,
+        2628979.3601078675,
+        2708833.0969430194,
+        2791116.8983443426,
+        2875904.8720849617
+      ],
+      "capex": [
+        78000,
+        79560,
+        81151.2,
+        82774.224,
+        84429.70848,
+        86118.30264960001,
+        87840.66870259201,
+        89597.48207664385
+      ],
+      "rent_growth_y6": 0.035039592928777674,
+      "other_income_growth_y6": 0.030000000000000027,
+      "opex_growth_y6": 0.030377793846941392,
+      "exit_method": "cap_rate",
+      "exit_cap": 0.056,
+      "sale_price": 68637815.25278169,
+      "note": "The sponsor model's Years 1-8 (rental revenue after vacancy, concessions, bad debt and loss-to-lease; RUBS + other income; operating expenses incl. management fee and taxes before the TIF rebate; lender reserves). Sale at the end of Year 5 on Year-5 NOI at a 5.6% cap."
+    },
+    "custom": {
+      "label": "Custom",
+      "kind": "custom",
+      "rents": [
+        4385099.627836242,
+        4631589.438143181,
+        5020787.7754902,
+        5196809.766860482,
+        5580270.273930066,
+        5775802.840202701,
+        5978185.739495432,
+        6187658.934259976
+      ],
+      "other_income": [
+        792909.6,
+        816696.888,
+        841197.79464,
+        866433.7284792,
+        892426.7403335761,
+        919199.5425435834,
+        946775.5288198909,
+        975178.7946844876
+      ],
+      "opex": [
+        2145374.3229742683,
+        2389258.3414150113,
+        2469694.864554557,
+        2544674.6530248886,
+        2628979.3601078675,
+        2708833.0969430194,
+        2791116.8983443426,
+        2875904.8720849617
+      ],
+      "capex": [
+        78000,
+        79560,
+        81151.2,
+        82774.224,
+        84429.70848,
+        86118.30264960001,
+        87840.66870259201,
+        89597.48207664385
+      ],
+      "rent_growth_y6": 0.035039592928777674,
+      "other_income_growth_y6": 0.030000000000000027,
+      "opex_growth_y6": 0.030377793846941392,
+      "exit_method": "cap_rate",
+      "exit_cap": 0.056,
+      "sale_price": 68637815.25278169,
+      "note": "Starts as the sponsor model. Edit any year, or start from another case.",
+      "built_from": "sponsor"
+    }
+  },
+  "sensitivity": {
+    "exit_caps": [
+      0.053,
+      0.054,
+      0.055,
+      0.056,
+      0.057,
+      0.058,
+      0.059
+    ],
+    "noi_factors": [
+      0.9,
+      0.95,
+      1.0,
+      1.05,
+      1.1
+    ]
+  },
+  "warehouse": {
+    "names": {
+      "vehicle": "LTEC (direct)",
+      "manager": "LTEC",
+      "buyers": "New members"
+    },
+    "close_date": "2026-10-10",
+    "unit_price": 1000,
+    "reserve": 0,
+    "manager_commitment": 0,
+    "manager_reserve": 0,
+    "admin_cost_per_year": 0,
+    "admin_cost_method": "fixed",
+    "admin_cost_pct": 0,
+    "acq_fee_pct": 0,
+    "mgmt_fee_pct": 0,
+    "member_hurdle_irr": 0.08,
+    "hurdle_type": "compound",
+    "hurdle_basis": "pooled",
+    "promote": 0,
+    "warehouse_promote": 0,
+    "promote_on_manager_units": true,
+    "people": [
+      {
+        "name": "LTEC",
+        "amount": 1000000,
+        "role": "member",
+        "manager_capital": 0,
+        "manager_share": 1.0,
+        "loan_rate": 0
+      }
+    ],
+    "selldown": {
+      "credit_distributions": true,
+      "tranches": []
+    },
+    "manager_transfers": []
+  },
+  "direct_investors": []
+}

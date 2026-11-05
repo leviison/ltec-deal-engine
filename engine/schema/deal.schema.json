@@ -1,38 +1,135 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/leviison/ltec-deal-engine/engine/schema/deal.schema.json",
-  "title": "LTEC deal file, schema version 1",
-  "description": "One deal = one file at deals/<slug>/deal.json. The engines read only this file. Keys starting with '_' are notes and are ignored by the engines. Version 1 is the Siena v1 input set plus meta and sources; later versions add a data-driven waterfall, a list of loans and operating schedules.",
+  "title": "LTEC deal file, schema version 2",
+  "description": "One deal = one file at deals/<slug>/deal.json. The engines read only this file. Keys starting with '_' are notes and are ignored by the engines. v1 = the Siena v1 input set plus meta and sources. v2 (The Bend) adds deal.exit_noi_basis, deal.reserves_returned_at_sale, deal.below_noi_income, waterfall.return_of_capital, investor.side_letter and meta.alternatives.",
   "type": "object",
-  "required": ["schema_version", "meta", "sources", "version", "as_of", "deal", "timing", "waterfall", "investor", "cases", "sensitivity", "warehouse", "direct_investors"],
+  "required": [
+    "schema_version",
+    "meta",
+    "sources",
+    "version",
+    "as_of",
+    "deal",
+    "timing",
+    "waterfall",
+    "investor",
+    "cases",
+    "sensitivity",
+    "warehouse",
+    "direct_investors"
+  ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {
+      "const": 2
+    },
     "meta": {
       "type": "object",
       "description": "Facts about the deal for headers, the deal picker and diligence. Not read by the engines.",
-      "required": ["slug", "name", "sponsor", "status"],
+      "required": [
+        "slug",
+        "name",
+        "sponsor",
+        "status"
+      ],
       "properties": {
-        "slug": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
-        "name": {"type": "string", "minLength": 1},
-        "sponsor": {"type": "string"},
-        "vehicle": {"type": "string"},
-        "units": {"type": "integer", "minimum": 1},
-        "status": {"enum": ["screening", "diligence", "committed", "active", "passed", "exited"]},
-        "summary": {"type": "string"},
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sponsor": {
+          "type": "string"
+        },
+        "vehicle": {
+          "type": "string"
+        },
+        "units": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "screening",
+            "diligence",
+            "committed",
+            "active",
+            "passed",
+            "exited"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
         "documents": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["key", "title"],
-            "properties": {"key": {"type": "string"}, "title": {"type": "string"}, "path": {"type": "string"}}
+            "required": [
+              "key",
+              "title"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
           }
         },
         "diligence": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["item", "status"],
-            "properties": {"item": {"type": "string"}, "status": {"enum": ["open", "answered", "closed"]}, "note": {"type": "string"}}
+            "required": [
+              "item",
+              "status"
+            ],
+            "properties": {
+              "item": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "open",
+                  "answered",
+                  "closed"
+                ]
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "alternatives": {
+          "type": "array",
+          "description": "Named sets of input changes worth comparing (documents that disagree, offers). Merged over the defaults.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "changes"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "changes": {
+                "type": "object"
+              }
+            }
           }
         }
       }
@@ -40,123 +137,478 @@
     "sources": {
       "type": "object",
       "description": "Dotted input path -> where the value came from (document + page/section, or 'Assumption'). A source on a parent covers its children unless a child has its own.",
-      "additionalProperties": {"type": "string", "minLength": 1}
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
     },
-    "version": {"type": "string"},
-    "as_of": {"type": "string", "format": "date"},
+    "version": {
+      "type": "string"
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date"
+    },
     "deal": {
       "type": "object",
-      "required": ["purchase_price", "units", "loan_amount", "loan_rate", "annual_debt_service", "debt_service_method",
-                   "annual_capex_reserves", "lp_equity", "asset_mgmt_fee_pct_of_income", "selling_cost_pct",
-                   "disposition_fee_pct", "hold_years", "underwritten_hold_years", "refi"],
+      "required": [
+        "purchase_price",
+        "units",
+        "loan_amount",
+        "loan_rate",
+        "annual_debt_service",
+        "debt_service_method",
+        "annual_capex_reserves",
+        "lp_equity",
+        "asset_mgmt_fee_pct_of_income",
+        "selling_cost_pct",
+        "disposition_fee_pct",
+        "hold_years",
+        "underwritten_hold_years",
+        "refi",
+        "exit_noi_basis",
+        "reserves_returned_at_sale",
+        "below_noi_income"
+      ],
       "properties": {
-        "purchase_price": {"type": "number", "minimum": 0},
-        "units": {"type": "integer", "minimum": 1},
-        "loan_amount": {"type": "number", "minimum": 0},
-        "loan_rate": {"type": "number"},
-        "annual_debt_service": {"type": "number", "minimum": 0},
-        "debt_service_method": {"enum": ["fixed", "interest_only"]},
-        "assumption_fee_pct": {"type": "number", "minimum": 0},
-        "annual_capex_reserves": {"type": "number", "minimum": 0},
-        "lp_equity": {"type": "number", "exclusiveMinimum": 0},
-        "asset_mgmt_fee_pct_of_income": {"type": "number", "minimum": 0},
-        "selling_cost_pct": {"type": "number", "minimum": 0, "maximum": 1},
-        "disposition_fee_pct": {"type": "number", "minimum": 0, "maximum": 1},
-        "hold_years": {"type": "integer", "minimum": 1, "maximum": 10},
-        "underwritten_hold_years": {"type": "integer", "minimum": 1, "maximum": 10},
+        "purchase_price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "units": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "loan_amount": {
+          "type": "number",
+          "minimum": 0
+        },
+        "loan_rate": {
+          "type": "number"
+        },
+        "annual_debt_service": {
+          "type": "number",
+          "minimum": 0
+        },
+        "debt_service_method": {
+          "enum": [
+            "fixed",
+            "interest_only"
+          ]
+        },
+        "assumption_fee_pct": {
+          "type": "number",
+          "minimum": 0
+        },
+        "annual_capex_reserves": {
+          "type": "number",
+          "minimum": 0
+        },
+        "lp_equity": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "asset_mgmt_fee_pct_of_income": {
+          "type": "number",
+          "minimum": 0
+        },
+        "selling_cost_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "disposition_fee_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "hold_years": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "underwritten_hold_years": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
         "refi": {
           "type": "object",
-          "required": ["enabled", "year", "sizing", "ltv", "amount", "appraisal_cap", "dscr_min", "rate", "io_years",
-                       "amort_years", "cost_pct", "crystallize", "crystallize_cost_pct", "side_letter_protects"],
+          "required": [
+            "enabled",
+            "year",
+            "sizing",
+            "ltv",
+            "amount",
+            "appraisal_cap",
+            "dscr_min",
+            "rate",
+            "io_years",
+            "amort_years",
+            "cost_pct",
+            "crystallize",
+            "crystallize_cost_pct",
+            "side_letter_protects"
+          ],
           "properties": {
-            "enabled": {"type": "boolean"},
-            "year": {"type": "integer", "minimum": 1},
-            "sizing": {"enum": ["ltv", "amount"]},
-            "crystallize": {"type": "boolean"},
-            "crystallize_cost_pct": {"type": "number", "minimum": 0, "maximum": 1},
-            "side_letter_protects": {"type": "boolean"}
+            "enabled": {
+              "type": "boolean"
+            },
+            "year": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sizing": {
+              "enum": [
+                "ltv",
+                "amount"
+              ]
+            },
+            "crystallize": {
+              "type": "boolean"
+            },
+            "crystallize_cost_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "side_letter_protects": {
+              "type": "boolean"
+            }
+          }
+        },
+        "exit_noi_basis": {
+          "enum": [
+            "forward",
+            "trailing"
+          ],
+          "description": "Sale priced on next year's NOI (forward) or the final hold year's (trailing)."
+        },
+        "reserves_returned_at_sale": {
+          "type": "number",
+          "minimum": 0
+        },
+        "below_noi_income": {
+          "type": "object",
+          "required": [
+            "label",
+            "amounts",
+            "sale_value",
+            "npv_rate"
+          ],
+          "description": "Cash below NOI by hold year (e.g. a TIF tax rebate); at a sale, optionally the NPV of the amounts still to come.",
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "amounts": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            "sale_value": {
+              "enum": [
+                "npv",
+                "none"
+              ]
+            },
+            "npv_rate": {
+              "type": "number",
+              "minimum": 0
+            }
           }
         }
       }
     },
     "timing": {
       "type": "object",
-      "required": ["mode", "first_distribution", "siena_frequency", "sale_date", "vehicle_frequency"],
+      "required": [
+        "mode",
+        "first_distribution",
+        "siena_frequency",
+        "sale_date",
+        "vehicle_frequency"
+      ],
       "properties": {
-        "mode": {"enum": ["annual", "schedule"]},
-        "first_distribution": {"type": "string", "format": "date"},
-        "siena_frequency": {"enum": [1, 2, 4], "description": "Sponsor distributions per year (name kept from Siena v1 so saved scenarios load)."},
-        "sale_date": {"type": "string", "format": "date"},
-        "vehicle_frequency": {"enum": [0, 1, 2, 4]},
-        "vehicle_holdback": {"type": "number", "minimum": 0},
-        "vehicle_final_lag_months": {"type": "integer", "minimum": 0, "maximum": 6}
+        "mode": {
+          "enum": [
+            "annual",
+            "schedule"
+          ]
+        },
+        "first_distribution": {
+          "type": "string",
+          "format": "date"
+        },
+        "siena_frequency": {
+          "enum": [
+            1,
+            2,
+            4
+          ],
+          "description": "Sponsor distributions per year (name kept from Siena v1 so saved scenarios load)."
+        },
+        "sale_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "vehicle_frequency": {
+          "enum": [
+            0,
+            1,
+            2,
+            4
+          ]
+        },
+        "vehicle_holdback": {
+          "type": "number",
+          "minimum": 0
+        },
+        "vehicle_final_lag_months": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        }
       }
     },
     "waterfall": {
       "type": "object",
-      "required": ["pref_rate", "pref_compounds", "tiers", "residual_lp_share"],
+      "required": [
+        "pref_rate",
+        "pref_compounds",
+        "tiers",
+        "residual_lp_share",
+        "return_of_capital"
+      ],
       "properties": {
-        "pref_rate": {"type": "number", "minimum": 0},
-        "pref_compounds": {"type": "boolean"},
+        "pref_rate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pref_compounds": {
+          "type": "boolean"
+        },
         "tiers": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["lp_irr_hurdle", "lp_share"],
-            "properties": {"lp_irr_hurdle": {"type": "number"}, "lp_share": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}}
+            "required": [
+              "lp_irr_hurdle",
+              "lp_share"
+            ],
+            "properties": {
+              "lp_irr_hurdle": {
+                "type": "number"
+              },
+              "lp_share": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              }
+            }
           }
         },
-        "residual_lp_share": {"type": "number", "minimum": 0, "maximum": 1}
+        "residual_lp_share": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "return_of_capital": {
+          "enum": [
+            "all_cash",
+            "capital_events"
+          ],
+          "description": "all_cash: after the pref any cash returns capital. capital_events: operating cash above the pref goes to the splits; capital comes back only from a sale or refinance."
+        }
       }
     },
     "investor": {
       "type": "object",
-      "required": ["name", "check"],
-      "properties": {"name": {"type": "string"}, "check": {"type": "number", "minimum": 0}}
+      "required": [
+        "name",
+        "check",
+        "side_letter"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "check": {
+          "type": "number",
+          "minimum": 0
+        },
+        "side_letter": {
+          "type": "object",
+          "required": [
+            "enabled",
+            "terms"
+          ],
+          "description": "Our check's pro-rata share of partnership cash runs through the waterfall with these overrides; other investors unchanged.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "terms": {
+              "type": "object",
+              "properties": {
+                "pref_rate": {
+                  "type": "number"
+                },
+                "pref_compounds": {
+                  "type": "boolean"
+                },
+                "tiers": {
+                  "$ref": "#/properties/waterfall/properties/tiers"
+                },
+                "residual_lp_share": {
+                  "type": "number"
+                },
+                "return_of_capital": {
+                  "$ref": "#/properties/waterfall/properties/return_of_capital"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      }
     },
     "cases": {
       "type": "object",
-      "required": ["custom"],
+      "required": [
+        "custom"
+      ],
       "description": "Operating cases. 'custom' is required (the scenario builder and the exit sensitivity grid run on it).",
-      "additionalProperties": {"$ref": "#/$defs/case"}
+      "additionalProperties": {
+        "$ref": "#/$defs/case"
+      }
     },
     "sensitivity": {
       "type": "object",
-      "required": ["exit_caps", "noi_factors"],
+      "required": [
+        "exit_caps",
+        "noi_factors"
+      ],
       "properties": {
-        "exit_caps": {"type": "array", "items": {"type": "number", "exclusiveMinimum": 0}, "minItems": 1},
-        "noi_factors": {"type": "array", "items": {"type": "number"}, "contains": {"const": 1.0}}
+        "exit_caps": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "minItems": 1
+        },
+        "noi_factors": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "contains": {
+            "const": 1.0
+          }
+        }
       }
     },
     "warehouse": {
       "type": "object",
-      "required": ["names", "close_date", "unit_price", "reserve", "manager_commitment", "admin_cost_per_year",
-                   "admin_cost_method", "admin_cost_pct", "acq_fee_pct", "mgmt_fee_pct", "member_hurdle_irr", "promote",
-                   "warehouse_promote", "people", "selldown"],
+      "required": [
+        "names",
+        "close_date",
+        "unit_price",
+        "reserve",
+        "manager_commitment",
+        "admin_cost_per_year",
+        "admin_cost_method",
+        "admin_cost_pct",
+        "acq_fee_pct",
+        "mgmt_fee_pct",
+        "member_hurdle_irr",
+        "promote",
+        "warehouse_promote",
+        "people",
+        "selldown"
+      ],
       "properties": {
-        "names": {"type": "object", "required": ["vehicle", "manager", "buyers"]},
-        "close_date": {"type": "string", "format": "date"},
-        "admin_cost_method": {"enum": ["fixed", "pct_raise"]},
-        "hurdle_type": {"enum": ["compound", "simple"]},
-        "hurdle_basis": {"enum": ["pooled", "per_member"]},
+        "names": {
+          "type": "object",
+          "required": [
+            "vehicle",
+            "manager",
+            "buyers"
+          ]
+        },
+        "close_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "admin_cost_method": {
+          "enum": [
+            "fixed",
+            "pct_raise"
+          ]
+        },
+        "hurdle_type": {
+          "enum": [
+            "compound",
+            "simple"
+          ]
+        },
+        "hurdle_basis": {
+          "enum": [
+            "pooled",
+            "per_member"
+          ]
+        },
         "people": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["name", "amount", "role", "manager_capital", "manager_share", "loan_rate"],
-            "properties": {"role": {"enum": ["member", "warehouse", "loan"]}}
+            "required": [
+              "name",
+              "amount",
+              "role",
+              "manager_capital",
+              "manager_share",
+              "loan_rate"
+            ],
+            "properties": {
+              "role": {
+                "enum": [
+                  "member",
+                  "warehouse",
+                  "loan"
+                ]
+              }
+            }
           }
         },
         "selldown": {
           "type": "object",
-          "required": ["credit_distributions", "tranches"],
+          "required": [
+            "credit_distributions",
+            "tranches"
+          ],
           "properties": {
             "tranches": {
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["date", "share", "pricing", "rate"],
-                "properties": {"pricing": {"enum": ["carry_simple", "carry_compound", "premium"]}}
+                "required": [
+                  "date",
+                  "share",
+                  "pricing",
+                  "rate"
+                ],
+                "properties": {
+                  "pricing": {
+                    "enum": [
+                      "carry_simple",
+                      "carry_compound",
+                      "premium"
+                    ]
+                  }
+                }
               }
             }
           }
@@ -165,28 +617,96 @@
     },
     "direct_investors": {
       "type": "array",
-      "items": {"type": "object", "required": ["name", "check"]}
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "check"
+        ]
+      }
     }
   },
   "$defs": {
-    "series": {"type": "array", "items": {"type": "number"}, "minItems": 1},
+    "series": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 1
+    },
     "case": {
       "type": "object",
-      "required": ["label", "kind"],
+      "required": [
+        "label",
+        "kind"
+      ],
       "oneOf": [
         {
-          "properties": {"kind": {"const": "explicit"}},
-          "required": ["rents", "other_income", "opex", "net_sale_proceeds", "y6_noi_growth"]
+          "properties": {
+            "kind": {
+              "const": "explicit"
+            }
+          },
+          "required": [
+            "rents",
+            "other_income",
+            "opex",
+            "net_sale_proceeds",
+            "y6_noi_growth"
+          ]
         },
         {
-          "properties": {"kind": {"const": "growth"}},
-          "required": ["rent_y1", "rent_growth_y2", "rent_growth_y3_plus", "opex_y1", "opex_growth", "exit_cap"],
-          "anyOf": [{"required": ["other_income_explicit"]}, {"required": ["other_income_y1", "other_income_growth"]}]
+          "properties": {
+            "kind": {
+              "const": "growth"
+            }
+          },
+          "required": [
+            "rent_y1",
+            "rent_growth_y2",
+            "rent_growth_y3_plus",
+            "opex_y1",
+            "opex_growth",
+            "exit_cap"
+          ],
+          "anyOf": [
+            {
+              "required": [
+                "other_income_explicit"
+              ]
+            },
+            {
+              "required": [
+                "other_income_y1",
+                "other_income_growth"
+              ]
+            }
+          ]
         },
         {
-          "properties": {"kind": {"const": "custom"}, "exit_method": {"enum": ["cap_rate", "sale_price"]}},
-          "required": ["rents", "other_income", "opex", "capex", "rent_growth_y6", "other_income_growth_y6",
-                       "opex_growth_y6", "exit_method", "exit_cap", "sale_price"]
+          "properties": {
+            "kind": {
+              "const": "custom"
+            },
+            "exit_method": {
+              "enum": [
+                "cap_rate",
+                "sale_price"
+              ]
+            }
+          },
+          "required": [
+            "rents",
+            "other_income",
+            "opex",
+            "capex",
+            "rent_growth_y6",
+            "other_income_growth_y6",
+            "opex_growth_y6",
+            "exit_method",
+            "exit_cap",
+            "sale_price"
+          ]
         }
       ]
     }
