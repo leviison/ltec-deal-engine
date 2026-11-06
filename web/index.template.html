@@ -156,6 +156,14 @@ input.text:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .saved .item.active { border-color: var(--accent); background: var(--accent-soft); }
 .saved .item .nm { font-weight: 500; overflow-wrap: anywhere; }
 .saved .item .meta { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
+.saved .item .note { grid-column: 1 / -1; font-size: 11.5px; color: var(--fg); opacity: .85; }
+.saved .item .flag { grid-column: 1 / -1; font-size: 11.5px; color: var(--warn-fg); background: var(--warn-bg); border-radius: 4px; padding: 3px 6px; }
+.saved .item .flag.info { color: var(--muted); background: var(--sunk); }
+.saved .item .acts { display: flex; flex-wrap: wrap; gap: 2px 8px; justify-content: flex-end; }
+.saved .item .rename { grid-column: 1 / -1; display: flex; gap: 6px; }
+.saved .item .rename input { flex: 1; min-width: 0; }
+.editing { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); font-size: 13px; }
+.editing span { flex: 1; min-width: 0; }
 .saved .acts { display: flex; gap: 10px; font-size: 12px; }
 .note { font-size: 12px; color: var(--muted); }
 .toast { font-size: 12px; color: var(--good); min-height: 1em; }
@@ -311,6 +319,10 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
       <section id="sec-wh"></section>
       <section id="sec-saved">
         <h3>Saved scenarios</h3>
+        <div class="editing" id="editingRow" hidden>
+          <span id="editingText"></span>
+          <button class="btn primary" id="updateBtn" type="button">Update</button>
+        </div>
         <div class="row">
           <input class="text" id="saveName" placeholder="Name this scenario" maxlength="80" aria-label="Scenario name">
           <button class="btn primary" id="saveBtn" type="button">Save</button>
@@ -1218,6 +1230,7 @@ function diffPaths(a, b, pre = "", out = []) {
 }
 function markChanged() {
   refreshPicker();
+  if (typeof loadedScenario === "function" && activeScenario) updateScenarioChip();
   const changed = new Set(diffPaths(inputs, DEFAULTS));
   document.querySelectorAll("[data-path]").forEach((el) => {
     const p = el.dataset.path;
@@ -1540,10 +1553,81 @@ document.getElementById("copyBtn").addEventListener("click", () => {
 });
 
 /* ------------------------------------------------------------ saved scenarios (shared db) */
+// ---- Saved scenarios store only what differs from the deal file (diff_json: dotted path -> value) and the deal-file
+// version they were saved against, so later corrections to the deal file flow into them. Scenarios saved before this
+// stored every input (inputs); they still load as saved. Updating keeps up to 5 earlier versions for Undo.
+const HISTORY_KEEP = 5;
+function scenarioDiff(inp, slug) {
+  const base = DEALS[slug], out = {};
+  diffPaths(inp, base).forEach((pp) => { if (!pp.startsWith("meta") && !pp.startsWith("sources")) out[pp] = get(inp, pp); });
+  return out;
+}
+function applyDiff(slug, diff) {
+  const inp = clone(DEALS[slug]);
+  Object.entries(diff || {}).forEach(([pp, v]) => { try { set(inp, pp, clone(v)); } catch (_) {} });
+  return inp;
+}
+function scenarioInputs(sc, slug) {
+  slug = slug || sc.deal || SLUGS[0];
+  if (sc.diff_json) return applyDiff(slug, JSON.parse(sc.diff_json));
+  return mergeDeep(DEALS[slug], JSON.parse(sc.inputs));
+}
+// what to put on the dashboard for a scenario (old full-input saves go through upgradeInputs, as before)
+function loadScenarioInputs(sc) { return sc.diff_json ? scenarioInputs(sc, META.slug) : upgradeInputs(JSON.parse(sc.inputs)); }
+function scenarioSummary(inp, slug) {
+  const prim = (DEALS[slug].meta.ui || {}).primary_case || Object.keys(inp.cases)[0];
+  const b = E.runCase(prim, inp), parts = [`${shortLabel(prim)} ${fmt.pct(b.lp.irr)}`];
+  if (inp.cases.custom) parts.push(`Custom ${fmt.pct(E.runCase("custom", inp).lp.irr)}`);
+  try { const v = E.warehouse(inp, { [prim]: b })[prim]; parts.push(`${inp.warehouse.people[0].name} ${fmt.signedk(v.summary.people[0].profit)}`); } catch (_) {}
+  return parts.join(" · ");
+}
+function scenarioIssues(inp) { try { return vehicleIssues(inp, null); } catch (_) { return []; } }
+function scenarioDoc(inp, slug, extra) {
+  return Object.assign({ deal: slug, diff_json: JSON.stringify(scenarioDiff(inp, slug)), base_version: DEALS[slug].version, base_as_of: DEALS[slug].as_of,
+    changes: diffPaths(inp, DEALS[slug]).length, model_version: DEALS[slug].version, summary: scenarioSummary(inp, slug) }, extra || {});
+}
+async function whoAmI() { try { const u = await claude.use("user"); return u ? await u.id() : null; } catch (_) { return null; } }
+async function addScenario(inp, slug, name, extra) {
+  const doc = scenarioDoc(inp, slug, Object.assign({ name, created_at: new Date().toISOString() }, extra || {}));
+  const by = await whoAmI(); if (by) doc.created_by = by;
+  return db.collection("scenarios").add(doc);
+}
+// Replace a saved scenario's contents, keeping its id, name and creation; the previous version goes to history.
+async function updateScenario(sc, inp, extra) {
+  const slug = sc.deal || SLUGS[0];
+  const prevDiff = sc.diff_json || JSON.stringify(scenarioDiff(scenarioInputs(sc, slug), slug));
+  const history = (sc.history || []).concat([{ saved_at: sc.updated_at || sc.created_at || "", by: sc.updated_by || sc.created_by || "", summary: sc.summary || "", diff_json: prevDiff }]).slice(-HISTORY_KEEP);
+  const doc = scenarioDoc(inp, slug, { name: sc.name, created_at: sc.created_at || "", updated_at: new Date().toISOString(), history });
+  ["created_by", "note", "source"].forEach((k) => { if (sc[k] != null) doc[k] = sc[k]; });
+  Object.assign(doc, extra || {});
+  const by = await whoAmI(); if (by) doc.updated_by = by;
+  await db.collection("scenarios").doc(sc.id).set(doc);
+}
+async function undoScenario(sc) {
+  const h = (sc.history || []).slice(), last = h.pop();
+  if (!last) return;
+  const doc = Object.assign({}, sc); delete doc.id; delete doc.inputs;
+  Object.assign(doc, { diff_json: last.diff_json, summary: last.summary, history: h, updated_at: new Date().toISOString(),
+    changes: Object.keys(JSON.parse(last.diff_json)).length, base_version: DEALS[sc.deal || SLUGS[0]].version, base_as_of: DEALS[sc.deal || SLUGS[0]].as_of });
+  const by = await whoAmI(); if (by) doc.updated_by = by;
+  await db.collection("scenarios").doc(sc.id).set(doc);
+}
+const loadedScenario = () => scenarios.find((x) => x.id === activeScenario && (x.deal || SLUGS[0]) === META.slug);
+function scenarioEdited() { const sc = loadedScenario(); if (!sc) return false; try { return diffPaths(inputs, scenarioInputs(sc, META.slug)).length > 0; } catch (_) { return false; } }
 function updateScenarioChip() {
   const chip = document.getElementById("scenarioChip");
-  const s = scenarios.find((x) => x.id === activeScenario);
-  chip.textContent = s ? "Scenario: " + s.name : "Defaults";
+  const sc = loadedScenario(), edited = sc && scenarioEdited();
+  chip.textContent = sc ? "Scenario: " + sc.name + (edited ? " · edited" : "") : "Defaults";
+  const row = document.getElementById("editingRow");
+  if (row) {
+    row.hidden = !sc || !db;
+    if (sc) {
+      document.getElementById("editingText").innerHTML = edited ? `Editing <b>${esc(sc.name)}</b>: you've changed it since loading.` : `Loaded <b>${esc(sc.name)}</b>. Change anything, then update it.`;
+      document.getElementById("updateBtn").textContent = `Update “${sc.name.length > 28 ? sc.name.slice(0, 27) + "…" : sc.name}”`;
+      document.getElementById("updateBtn").disabled = !edited;
+    }
+    document.getElementById("saveBtn").textContent = sc ? "Save as new" : "Save";
+  }
 }
 // Saved scenarios belong to a deal; ones saved before the picker existed belong to the page's first deal.
 const savedHere = () => scenarios.filter((s) => (s.deal || SLUGS[0]) === META.slug);
@@ -1558,18 +1642,49 @@ function renderSaved() {
     const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = s.name;
     const acts = document.createElement("span"); acts.className = "acts";
     const load = document.createElement("button"); load.className = "link"; load.type = "button"; load.textContent = "Load";
-    load.onclick = () => { try { inputs = upgradeInputs(JSON.parse(s.inputs)); } catch (_) { return; } activeScenario = s.id; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); };
+    load.onclick = () => { try { inputs = loadScenarioInputs(s); } catch (_) { return; } activeScenario = s.id; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); };
+    const ren = document.createElement("button"); ren.className = "link"; ren.type = "button"; ren.textContent = "Rename";
+    ren.onclick = () => {
+      if (el.querySelector(".rename")) return;
+      const box = document.createElement("div"); box.className = "rename";
+      box.innerHTML = `<input class="text" maxlength="80" aria-label="New name"><button class="btn" type="button">Rename</button><button class="link" type="button">Cancel</button>`;
+      const inp = box.querySelector("input"); inp.value = s.name;
+      const go = async () => { const v = inp.value.trim(); if (!v || v === s.name) { box.remove(); return; }
+        try { await db.collection("scenarios").doc(s.id).update({ name: v, updated_at: new Date().toISOString() }); toast(`Renamed to “${v}”.`); } catch (e) { toast("Couldn't rename: " + ((e && (e.message || e.code)) || "error"), true); } };
+      box.querySelectorAll("button")[0].onclick = go; box.querySelectorAll("button")[1].onclick = () => box.remove();
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); if (e.key === "Escape") box.remove(); });
+      el.append(box); inp.focus(); inp.select();
+    };
+    const dup = document.createElement("button"); dup.className = "link"; dup.type = "button"; dup.textContent = "Duplicate";
+    dup.onclick = async () => { try { const ref = await addScenario(scenarioInputs(s, META.slug), META.slug, s.name + " (copy)", s.note ? { note: s.note } : {}); toast(`Saved “${s.name} (copy)”.`); return ref; } catch (e) { toast("Couldn't duplicate: " + ((e && (e.message || e.code)) || "error"), true); } };
+    const undo = document.createElement("button"); undo.className = "link"; undo.type = "button"; undo.textContent = "Undo last update";
+    undo.hidden = !(s.history && s.history.length);
+    undo.onclick = async () => {
+      if (!undo.dataset.confirm) { undo.dataset.confirm = "1"; undo.textContent = "Confirm undo"; setTimeout(() => { if (undo.isConnected) { delete undo.dataset.confirm; undo.textContent = "Undo last update"; } }, 4000); return; }
+      try { await undoScenario(s); toast(`Restored the previous version of “${s.name}”.`); if (activeScenario === s.id) { activeScenario = null; updateScenarioChip(); } } catch (e) { toast("Couldn't undo: " + ((e && (e.message || e.code)) || "error"), true); }
+    };
     const del = document.createElement("button"); del.className = "link"; del.type = "button"; del.textContent = "Delete";
     del.onclick = () => {
       if (del.dataset.confirm) { db.collection("scenarios").doc(s.id).delete().catch((e) => toast("Couldn't delete: " + (e.message || e.code), true)); if (activeScenario === s.id) activeScenario = null; return; }
       del.dataset.confirm = "1"; del.textContent = "Confirm delete"; del.style.color = "var(--bad)";
       setTimeout(() => { if (del.isConnected) { delete del.dataset.confirm; del.textContent = "Delete"; del.style.color = ""; } }, 4000);
     };
-    acts.append(load, del);
+    acts.append(load, ren, dup, undo, del);
     const meta = document.createElement("span"); meta.className = "meta";
     const n = s.changes != null ? s.changes + (s.changes === 1 ? " change" : " changes") : "";
-    meta.textContent = [s.created_at ? new Date(s.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "", n, s.summary || ""].filter(Boolean).join(" · ");
+    const when = (t) => (t ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");
+    meta.textContent = [s.updated_at ? "updated " + when(s.updated_at) : when(s.created_at), n, s.summary || "", s.source === "ask" ? "built with Ask" : "",
+      s.history && s.history.length ? `${s.history.length} earlier version${s.history.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
     el.append(nm, acts, meta);
+    if (s.note) { const nt = document.createElement("span"); nt.className = "note"; nt.textContent = s.note; el.append(nt); }
+    let issues = [];
+    try { issues = scenarioIssues(scenarioInputs(s, META.slug)); } catch (_) { issues = ["This scenario can't be read."]; }
+    issues.forEach((t) => { const f = document.createElement("span"); f.className = "flag"; f.textContent = "⚠ " + t; el.append(f); });
+    if (s.diff_json && (s.base_version !== DEFAULTS.version || s.base_as_of !== DEFAULTS.as_of)) {
+      const f = document.createElement("span"); f.className = "flag info";
+      f.textContent = `The deal file was updated since this was saved (${s.base_as_of || "earlier"} → ${DEFAULTS.as_of}). Inputs you didn't change follow the current file.`;
+      el.append(f);
+    }
     box.append(el);
   });
   decorateRail();
@@ -1625,23 +1740,25 @@ function upgradeInputs(saved) {
   return o;
 }
 function toast(msg, err) { const t = document.getElementById("saveToast"); t.className = "toast" + (err ? " err" : ""); t.textContent = msg; }
+document.getElementById("updateBtn").addEventListener("click", async () => {
+  const sc = loadedScenario();
+  if (!sc || !db) return;
+  const btn = document.getElementById("updateBtn"); btn.disabled = true;
+  const issues = scenarioIssues(inputs);
+  try { await updateScenario(sc, inputs); toast(`Updated “${sc.name}”. Undo is in its menu below.` + (issues.length ? " Note: " + issues[0] : ""), issues.length > 0); }
+  catch (e) { toast(e && e.code === "permission_denied" ? "You have view-only access, so you can't update here." : "Couldn't update: " + ((e && (e.message || e.code)) || "unknown error"), true); btn.disabled = false; }
+});
 document.getElementById("saveBtn").addEventListener("click", async () => {
   if (!db) { toast("Saving isn't available in this view.", true); return; }
   const name = document.getElementById("saveName").value.trim();
   if (!name) { toast("Give the scenario a name first.", true); document.getElementById("saveName").focus(); return; }
-  const b = results.cases[PRIMARY], wh = results.warehouse[PRIMARY].summary;
-  const doc = {
-    name, deal: META.slug, inputs: JSON.stringify(inputs), created_at: new Date().toISOString(),
-    changes: diffPaths(inputs, DEFAULTS).length, model_version: DEFAULTS.version,
-    summary: `${shortLabel(PRIMARY)} ${fmt.pct(b.lp.irr)} · Custom ${fmt.pct(results.cases.custom.lp.irr)} · ${inputs.warehouse.people[0].name} ${fmt.signedk(wh.people[0].profit)}`,
-  };
-  try {
-    const u = await claude.use("user"); if (u) doc.created_by = await u.id();
-  } catch (_) {}
   const btn = document.getElementById("saveBtn"); btn.disabled = true;
+  const issues = scenarioIssues(inputs);
   try {
-    const ref = await db.collection("scenarios").add(doc);
-    activeScenario = ref.id; document.getElementById("saveName").value = ""; toast("Saved “" + name + "”.");
+    const ref = await addScenario(inputs, META.slug, name);
+    activeScenario = ref.id; document.getElementById("saveName").value = "";
+    toast("Saved “" + name + "”." + (issues.length ? " Note: " + issues[0] : ""), issues.length > 0);
+    updateScenarioChip();
   } catch (e) { toast(e && e.code === "permission_denied" ? "You have view-only access, so you can't save here." : "Couldn't save: " + ((e && (e.message || e.code)) || "unknown error"), true); }
   btn.disabled = false;
 });
@@ -1687,7 +1804,7 @@ function columnInputs(col) {
   if (col.src === "defaults") return { inp: DEALS[col.slug], version: "As underwritten", edited: false };
   if (col.src !== "current") {
     const sc = scenarios.find((x) => x.id === col.src && (x.deal || SLUGS[0]) === col.slug);
-    if (sc) { try { return { inp: mergeDeep(DEALS[col.slug], JSON.parse(sc.inputs)), version: sc.name, edited: false, scenario: sc }; } catch (_) {} }
+    if (sc) { try { return { inp: scenarioInputs(sc, col.slug), version: sc.name, edited: false, scenario: sc }; } catch (_) {} }
   }
   const edited = isEdited(col.slug);
   return { inp: dealInputs(col.slug), version: edited ? "Current (your edits)" : "Current", edited };
@@ -1695,7 +1812,7 @@ function columnInputs(col) {
 function compareData() {
   return cmpCols.map((col, i) => {
     const { inp, version, edited, scenario } = columnInputs(col);
-    const key = `${col.slug}|${scenario ? col.src : edited ? "" : "defaults"}`;
+    const key = `${col.slug}|${scenario ? col.src + "@" + (scenario.updated_at || scenario.created_at || "") : edited ? "" : "defaults"}`;
     let cases;
     if (!edited && cmpCache[key]) cases = cmpCache[key];
     else {
@@ -1826,7 +1943,7 @@ function openColumn(i) {
   const c = cmpCols[i];
   openDeal(c.slug);
   const sc = scenarios.find((x) => x.id === c.src && (x.deal || SLUGS[0]) === c.slug);
-  if (sc) { try { inputs = upgradeInputs(JSON.parse(sc.inputs)); activeScenario = sc.id; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); } catch (_) {} }
+  if (sc) { try { inputs = loadScenarioInputs(sc); activeScenario = sc.id; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); } catch (_) {} }
 }
 function openDeal(slug) { setHash(slug); switchDeal(slug); setView("deal"); }
 
@@ -1911,7 +2028,7 @@ function findScenario(slug, ref) {
 // The inputs a tool starts from: a saved scenario when named, else the deal as on the dashboard.
 function baseInputs(slug, scenario) {
   if (!scenario) return dealInputs(slug);
-  return mergeDeep(DEALS[slug], JSON.parse(findScenario(slug, scenario).inputs));
+  return scenarioInputs(findScenario(slug, scenario), slug);
 }
 // A what-if: start from the deal as on the dashboard (or a saved scenario), optionally rebuild Custom from another
 // case (like "Start from"), then apply the changes (dotted paths; array items by index, e.g. cases.custom.rents.0).
@@ -1986,7 +2103,7 @@ const ASK_TOOLS = [
       if (!db) return { note: "Saved scenarios can't be read in this view (signed out or no access).", scenarios: [] };
       return slugs.flatMap((slug) => scenariosFor(slug).map((x) => {
         let inp, err = null;
-        try { inp = mergeDeep(DEALS[slug], JSON.parse(x.inputs)); } catch (e) { err = "unreadable"; }
+        try { inp = scenarioInputs(x, slug); } catch (e) { err = "unreadable"; }
         const out = { deal: slug, name: x.name, saved: x.created_at, built_by_ask: x.source === "ask", note: x.note || "", summary: x.summary || "" };
         if (err) return Object.assign(out, { error: err });
         const prim = (DEALS[slug].meta.ui || {}).primary_case || Object.keys(inp.cases)[0];
@@ -2104,16 +2221,17 @@ const ASK_TOOLS = [
       return { deal: slug, case: ck, metric: M, rows: path, columns: path2 || null, table: v1.map((a) => ({ [path]: a, results: v2.map((b) => (path2 ? { [path2]: b, value: at(a, b) } : { value: at(a, null) })) })) };
     } },
   { name: "propose_scenario",
-    description: "Package a scenario for the viewer to keep: a name, a one-paragraph description of what it assumes and why, and the changes (plus optional custom_from). It is computed now and shown under your answer with buttons to open it on the dashboard or save it as a saved scenario; nothing is saved unless the viewer clicks Save. Use for cases or scenarios the viewer asked you to build.",
+    description: "Package a scenario for the viewer to keep: a name, a one-paragraph description of what it assumes and why, and the changes (plus optional custom_from). It is computed now and shown under your answer with buttons to open it on the dashboard or save it; nothing is saved unless the viewer clicks. To fix or adjust an existing saved scenario, pass scenario AND replaces with its name: the viewer gets an Update button that replaces it (earlier versions are kept for Undo).",
     inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, name: { type: "string" }, description: { type: "string" },
-      changes: { type: "object" }, custom_from: { type: "string" } }, required: ["deal", "name", "description", "changes"] },
-    execute: ({ deal, scenario, name, description, changes, custom_from }) => {
+      changes: { type: "object" }, custom_from: { type: "string" }, replaces: { type: "string", description: "optional: name of the saved scenario this proposal would replace (also pass it as scenario)" } }, required: ["deal", "name", "description", "changes"] },
+    execute: ({ deal, scenario, name, description, changes, custom_from, replaces }) => {
+      if (replaces && !scenario) scenario = replaces;  // a replacement builds on the scenario it replaces
       const slug = needDeal(deal), ch = changes && typeof changes === "object" ? changes : {};
       setAskStatus(`Building "${name}"…`);
       const inp = withChanges(slug, ch, custom_from, scenario), base = baseInputs(slug, scenario);
       const res = Object.keys(inp.cases).map((c) => ({ case: c, label: inp.cases[c].label, before: caseResult(E.runCase(c, base), base).lp_irr, after: caseResult(E.runCase(c, inp), inp).lp_irr,
         our_irr_after: caseResult(E.runCase(c, inp), inp).our_irr }));
-      askWhatIfs.push({ slug, scenario: scenario ? findScenario(slug, scenario).name : null, changes: ch, customFrom: custom_from || null, label: String(name).slice(0, 80), proposal: true, description: String(description || "").slice(0, 600), res });
+      askWhatIfs.push({ slug, scenario: scenario ? findScenario(slug, scenario).name : null, replaces: replaces ? findScenario(slug, replaces).name : null, changes: ch, customFrom: custom_from || null, label: String(name).slice(0, 80), proposal: true, description: String(description || "").slice(0, 600), res });
       return { staged: true, name, lp_irr_by_case: res, warnings: changeWarnings(inp, ch, Object.keys(inp.cases)) };
     } },
   { name: "solve_for",
@@ -2175,6 +2293,7 @@ function askContext() {
     "- To build or rebuild Custom from another case, use custom_from (then changes on cases.custom.*). For break-evens use solve_for; for sensitivity tables use sweep; for year-by-year rows of a what-if, get_case_years with changes.",
     "- A below-NOI income stream (e.g. a TIF rebate) has factor (share paid) and delay_years inputs; use them rather than editing its amounts list.",
     "- If a tool reports issues or vehicle_issues (inputs that don't add up), tell the viewer first, in plain words, with the fix.",
+    "- To fix or adjust a saved scenario, use propose_scenario with scenario and replaces set to its name; the viewer clicks Update. Never claim a scenario was changed.",
     "- Saved scenarios: list_scenarios shows them; pass a scenario's name as `scenario` to any tool to work from it (what-ifs then build on it). get_vehicle covers our SPV: each person's cash, profit and IRR, buyers, fees and promote.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
@@ -2278,7 +2397,9 @@ async function ask(q) {
 function openWhatIf(w) {
   if (w.slug !== META.slug) openDeal(w.slug); else if (view !== "deal") { setHash(w.slug); setView("deal"); }
   try { inputs = withChanges(w.slug, w.changes, w.customFrom, w.scenario); } catch (_) { return; }
-  activeScenario = null; activeVariant = null; renderAllFields(); recompute(); updateScenarioChip();
+  // built on a saved scenario: keep it as the loaded one, so Update applies the what-if to it
+  const base = w.scenario ? scenariosFor(w.slug).find((x) => x.name === w.scenario) : null;
+  activeScenario = base ? base.id : null; activeVariant = null; renderSaved(); renderAllFields(); recompute(); updateScenarioChip();
   window.scrollTo(0, 0);
 }
 async function saveProposal(w, btn, thenCompare) {
@@ -2286,12 +2407,7 @@ async function saveProposal(w, btn, thenCompare) {
   btn.disabled = true; btn.textContent = "Saving…";
   try {
     const inp = withChanges(w.slug, w.changes, w.customFrom, w.scenario);
-    const doc = { name: w.label, deal: w.slug, inputs: JSON.stringify(inp), created_at: new Date().toISOString(),
-      changes: diffPaths(inp, DEALS[w.slug]).length, model_version: DEALS[w.slug].version, source: "ask",
-      summary: (w.res || []).filter((x) => Math.abs(x.after - x.before) > 1e-6 || x.case === "base").map((x) => `${x.label} ${fmt.pct(x.after)}`).join(" · "),
-      note: (w.description || "") + (w.scenario ? ` (built on saved scenario "${w.scenario}")` : "") };
-    try { const u = await claude.use("user"); if (u) doc.created_by = await u.id(); } catch (_) {}
-    const ref = await db.collection("scenarios").add(doc);
+    const ref = await addScenario(inp, w.slug, w.label, { source: "ask", note: (w.description || "") + (w.scenario ? ` (built on saved scenario "${w.scenario}")` : "") });
     btn.textContent = "Saved ✓";
     if (thenCompare && ref && ref.id) {  // add it as a comparison column next to the deal as it stands, and show the comparison
       if (!cmpCols.some((c) => c.slug === w.slug && c.src === "current")) cmpCols.push({ slug: w.slug, src: "current" });
@@ -2303,6 +2419,16 @@ async function saveProposal(w, btn, thenCompare) {
     btn.textContent = e && e.code === "permission_denied" ? "View-only access: can't save" : "Couldn't save. Try again";
   }
 }
+// Ask proposed a change to an existing saved scenario: replace it (its previous version is kept for Undo).
+async function applyToScenario(w, btn) {
+  if (!db) { btn.textContent = "Saving needs a signed-in view"; return; }
+  btn.disabled = true; btn.textContent = "Updating…";
+  try {
+    const sc = findScenario(w.slug, w.replaces);
+    await updateScenario(sc, withChanges(w.slug, w.changes, w.customFrom, w.scenario));
+    btn.textContent = "Updated ✓ (Undo is in Saved scenarios)";
+  } catch (e) { btn.disabled = false; btn.textContent = e && e.code === "permission_denied" ? "View-only access: can't update" : "Couldn't update. Try again"; }
+}
 function showWhatIfs(a) {
   if (!askWhatIfs.length) return;
   const props = askWhatIfs.filter((w) => w.proposal), plain = askWhatIfs.filter((w) => !w.proposal);
@@ -2311,15 +2437,20 @@ function showWhatIfs(a) {
     card.className = "ask-prop";
     const ourCol = (w.res || []).some((x) => x.our_irr_after != null && Math.abs(x.our_irr_after - x.after) > 1e-6);
     const rows = (w.res || []).map((x) => `<tr${Math.abs(x.after - x.before) > 1e-6 ? "" : ' class="sub"'}><td>${esc(x.label)}</td><td class="n">${fmt.pct(x.before)}</td><td class="n"><b>${fmt.pct(x.after)}</b></td>${ourCol ? `<td class="n">${fmt.pct(x.our_irr_after)}</td>` : ""}</tr>`).join("");
-    card.innerHTML = `<div class="ask-prop-head"><span class="eyebrow">Proposed scenario · ${esc(DEALS[w.slug].meta.name)}</span><b>${esc(w.label)}</b></div>
+    card.innerHTML = `<div class="ask-prop-head"><span class="eyebrow">${w.replaces ? `Proposed change to “${esc(w.replaces)}”` : "Proposed scenario"} · ${esc(DEALS[w.slug].meta.name)}</span><b>${esc(w.label)}</b></div>
       ${w.description ? `<p class="small" style="margin:0">${esc(w.description)}</p>` : ""}
       <div class="tablewrap"><table><thead><tr><th>Case</th><th class="n">LP IRR now</th><th class="n">In this scenario</th>${ourCol ? '<th class="n">Our check</th>' : ""}</tr></thead><tbody>${rows}</tbody></table></div>
       <div class="ask-whatifs"></div>`;
     const bar = card.querySelector(".ask-whatifs");
     const open = document.createElement("button"); open.type = "button"; open.className = "btn"; open.textContent = "Open on dashboard";
     open.addEventListener("click", () => openWhatIf(w));
-    const save = document.createElement("button"); save.type = "button"; save.className = "btn primary"; save.textContent = "Save as scenario";
+    const save = document.createElement("button"); save.type = "button"; save.className = "btn" + (w.replaces ? "" : " primary"); save.textContent = w.replaces ? "Save as new" : "Save as scenario";
     save.addEventListener("click", () => saveProposal(w, save));
+    if (w.replaces) {
+      const upd = document.createElement("button"); upd.type = "button"; upd.className = "btn primary"; upd.textContent = `Update “${w.replaces}”`;
+      upd.addEventListener("click", () => applyToScenario(w, upd));
+      bar.append(upd);
+    }
     const cmp = document.createElement("button"); cmp.type = "button"; cmp.className = "btn"; cmp.textContent = "Save and compare";
     cmp.addEventListener("click", () => saveProposal(w, cmp, true));
     bar.append(open, save, cmp);

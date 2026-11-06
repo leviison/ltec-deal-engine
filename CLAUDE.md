@@ -13,7 +13,10 @@
 - The dashboard is one page with every deal and a deal picker (`#<slug>` opens a deal):
   https://claude.ai/artifact/DLhZKbmvQwLC1NFoYySKvZ ("LTEC Deal Engine"). Rebuild with `python scripts/build_web.py`
   (no args) and republish `dist/index.html` there. Capabilities: `db` (rule: `scenarios` read view / write interact),
-  `user`, `downloads`, `sample` (the Ask panel); omit `capabilities` on republish to keep them. Saved scenarios carry a `deal` slug.
+  `user`, `downloads`, `sample` (the Ask panel); omit `capabilities` on republish to keep them. Saved scenarios carry a `deal` slug and store only what differs from the
+  deal file (`diff_json`, dotted path -> value, plus `base_version` / `base_as_of`), so deal-file corrections flow into them;
+  older ones store full `inputs` and still load. Update keeps up to 5 earlier versions in `history` (Undo). Read them
+  through `scenarioInputs()` in the page, never by parsing `inputs` directly.
   The single-deal Bend page (https://claude.ai/artifact/2j1bHRKCAy91vXT4LZGPiG) is superseded.
   Do not republish over the Siena v1 dashboard (https://claude.ai/artifact/XXaQnEbg8T1by6PYY17osj); it stays on
   leviison/siena-villas-model until replaced.
