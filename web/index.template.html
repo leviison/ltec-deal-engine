@@ -219,6 +219,7 @@ table.cmp .cmp-sel + .cmp-sel { font-weight: 400; }
 table.cmp th.deal button { font: 600 13px var(--f-body); color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-align: right; }
 table.cmp th.deal button:hover { text-decoration: underline; }
 table.cmp th.deal .muted { display: block; font-weight: 400; }
+table.cmp tr.vsub td { font-size: 12px; color: var(--muted); padding-top: 10px; }
 table.cmp tr.cgrp td { font-weight: 600; color: var(--fg); background: var(--accent-soft); border-bottom: 0; }
 table.cmp td.lead { font-weight: 600; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -1904,15 +1905,16 @@ function compareData() {
   return cmpCols.map((col, i) => {
     const { inp, version, edited, scenario } = columnInputs(col);
     const key = `${col.slug}|${scenario ? col.src + "@" + (scenario.updated_at || scenario.created_at || "") : edited ? "" : "defaults"}`;
-    let cases;
-    if (!edited && cmpCache[key]) cases = cmpCache[key];
+    let cases, veh;
+    if (!edited && cmpCache[key]) ({ cases, veh } = cmpCache[key]);
     else {
       cases = {};
       CMP_ROLES.forEach(([k]) => { if (inp.cases[k]) cases[k] = E.runCase(k, inp); });  // all five, so toggles are instant
-      if (!edited) cmpCache[key] = cases;
+      try { veh = E.warehouse(inp, cases); } catch (_) { veh = {}; }  // our vehicle: each person, per case
+      if (!edited) cmpCache[key] = { cases, veh };
     }
     const meta = DEALS[col.slug].meta;
-    return { col: i, slug: col.slug, src: col.src, version, inp, edited, cases, color: DEAL_COLORS[i % DEAL_COLORS.length], meta,
+    return { col: i, slug: col.slug, src: col.src, version, inp, edited, cases, veh, color: DEAL_COLORS[i % DEAL_COLORS.length], meta,
              name: meta.name + (cmpCols.filter((c) => c.slug === col.slug).length > 1 ? ` · ${version}` : "") };
   });
 }
@@ -1952,6 +1954,14 @@ function renderCompare() {
     body += row("Multiple", cs.map((c) => c && c.lp.multiple), fmt.x);
     body += row("Cash yield, Years 1–4", cs.map((c) => c && c.lp.avg_cash_yield_y1_4), (v) => fmt.pct(v));
     body += row("Profit on $1M", cs.map((c, i) => c && c.investor.profit * per(c, data[i].inp)), fmt.signedk);
+    // our vehicle: each person (matched by name across columns), profit with what came from the manager under it
+    const vs = data.map((d) => d.veh && d.veh[k]);
+    const names = [...new Set(vs.flatMap((v) => (v ? v.people.map((p) => p.name) : [])))];
+    if (names.length) body += `<tr class="vsub"><td class="lbl" colspan="${data.length + 1}">In our vehicle · profit, and cash from the manager</td></tr>`;
+    names.forEach((nm) => {
+      const sm = vs.map((v, i) => { if (!v) return null; const j = v.people.findIndex((p) => p.name === nm); return j < 0 ? null : { s: v.summary.people[j], mgr: data[i].inp.warehouse.names.manager }; });
+      body += `<tr><td class="lbl">${esc(nm)}</td>${sm.map((x) => `<td class="n">${x ? `${fmt.signedk(x.s.profit)}<br><span class="muted small">${fmt.usdk(x.s.from_manager)} from ${esc(x.mgr)}</span>` : "—"}</td>`).join("")}</tr>`;
+    });
   });
   if (cmpShown.has("sponsor") && cmpShown.has("base")) body += `<tr class="cgrp"><td colspan="${data.length + 1}">Gap</td></tr>` + row("Sponsor's IRR minus ours", data.map((d) => d.cases.sponsor && d.cases.base ? d.cases.sponsor.lp.irr - d.cases.base.lp.irr : null),
     (v) => (v * 100).toFixed(1) + " pts", true);
@@ -2133,6 +2143,7 @@ function withChanges(slug, changes, customFrom, scenario) {
   Object.entries(changes || {}).forEach(([k, v]) => {
     if (typeof v === "string" && Array.isArray(get(inp, k))) v = v.split(",").map((x) => x.trim()).filter(Boolean);
     if (Array.isArray(v) && Array.isArray(get(inp, k))) {
+      if (v.some((x) => x && typeof x === "object")) { set(inp, k, clone(v)); return; }  // lists of records: people, loans, vesting, tiers, sales
       if (!v.every((x) => isFinite(Number(x)))) throw new Error(`"${k}" needs a list of numbers`);
       set(inp, k, v.map(Number));
     } else setPath(inp, k, v);
@@ -2140,6 +2151,21 @@ function withChanges(slug, changes, customFrom, scenario) {
   return inp;
 }
 // Warnings Claude should pass on: deal-level changes a case overrides, and fields that are labels only.
+// What a probe (sweep / solve_for) measures: a deal result for the case, or one person in our vehicle (by name).
+const VEH_METRICS = ["person_profit", "person_irr", "person_from_manager"];
+function probeMetric(ck, inp, M, person) {
+  if (!VEH_METRICS.includes(M)) return caseResult(E.runCase(ck, inp), inp)[M];
+  const v = E.warehouse(inp, { [ck]: E.runCase(ck, inp) })[ck];
+  const i = v.people.findIndex((p) => p.name.trim().toLowerCase() === String(person || "").trim().toLowerCase());
+  if (i < 0) throw new Error(`${M} needs person: one of ${v.people.map((p) => p.name).join(", ")}`);
+  const sm = v.summary.people[i];
+  return M === "person_profit" ? sm.profit : M === "person_irr" ? sm.irr : sm.from_manager;
+}
+// Each vehicle person's results for a case (for what-ifs that change the vehicle or the manager's terms).
+function vehiclePeople(ck, inp) {
+  const v = E.warehouse(inp, { [ck]: E.runCase(ck, inp) })[ck];
+  return v.people.map((pp, i) => ({ name: pp.name, cash_in: r0(v.summary.people[i].cash_in), from_manager: r0(v.summary.people[i].from_manager), profit: r0(v.summary.people[i].profit), irr: r4(v.summary.people[i].irr) }));
+}
 function changeWarnings(inp, changes, keys) {
   const w = [];
   Object.keys(changes || {}).forEach((path) => {
@@ -2285,6 +2311,8 @@ const ASK_TOOLS = [
         deal: Object.fromEntries(inputLeaves(inp.deal, "deal").filter(([pp]) => !pp.startsWith("deal.refi.") || inp.deal.refi.enabled || /enabled|year$/.test(pp))),
         waterfall: Object.fromEntries(inputLeaves(inp.waterfall, "waterfall")),
         investor: Object.fromEntries(inputLeaves(inp.investor, "investor")),
+        vehicle: Object.fromEntries(inputLeaves(inp.warehouse, "warehouse").filter(([pp]) => !pp.startsWith("warehouse.names."))),
+        vehicle_how_to_change: "our SPV and the manager: people by index (warehouse.people.0.manager_capital, .manager_share), or lists whole (warehouse.manager_loans, warehouse.manager_vesting, warehouse.manager_waterfall.tiers); results via get_vehicle, or person_* metrics in sweep / solve_for",
         cases: keys.map((c) => {
           const cs = inp.cases[c], f = {};
           inputLeaves(cs, `cases.${c}`).forEach(([pp, v]) => { if (!/\.(label|note|built_from)$/.test(pp)) f[pp] = v; });
@@ -2311,21 +2339,24 @@ const ASK_TOOLS = [
       askWhatIfs.push({ slug, scenario: scenario ? findScenario(slug, scenario).name : null, changes: ch, customFrom: custom_from || null, label: String(label || Object.keys(ch).join(", ") || "Custom from " + custom_from).slice(0, 80) });
       const results = keys.map((c) => ({ before: caseResult(E.runCase(c, base), base), after: caseResult(E.runCase(c, after), after) }));
       const warnings = changeWarnings(after, ch, keys);
-      if (results.every((x) => JSON.stringify(x.before) === JSON.stringify(Object.assign({}, x.after, { label: x.before.label })))) warnings.push("These changes did not move any result for the case(s) shown. Check list_inputs for the right path, or whether another case is the one affected.");
-      return { deal: slug, changes: ch, custom_from: custom_from || null, results, warnings };
+      const vehCh = Object.keys(ch).some((pp) => pp.startsWith("warehouse"));
+      const vehicle = vehCh ? keys.map((c) => ({ case: c, before: vehiclePeople(c, base), after: vehiclePeople(c, after) })) : undefined;
+      const vehMoved = vehCh && vehicle.some((x) => JSON.stringify(x.before) !== JSON.stringify(x.after));
+      if (!vehMoved && results.every((x) => JSON.stringify(x.before) === JSON.stringify(Object.assign({}, x.after, { label: x.before.label })))) warnings.push("These changes did not move any result for the case(s) shown. Check list_inputs for the right path, or whether another case is the one affected.");
+      return { deal: slug, changes: ch, custom_from: custom_from || null, results, vehicle, warnings };
     } },
   { name: "sweep",
-    description: "Sensitivity probe: recompute one case across values of one input (or a grid of two inputs) and return a table of a metric (lp_irr, our_irr, lp_multiple, our_profit, min_dscr). E.g. exit cap 5.5-7.5% against rent_factor 0.9-1.05. At most 15 values per input. Optional other_changes and custom_from apply first.",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr"] },
+    description: "Sensitivity probe: recompute one case across values of one input (or a grid of two inputs) and return a table of a metric (lp_irr, our_irr, lp_multiple, our_profit, min_dscr; or for one person in our vehicle, with `person`: person_profit, person_irr, person_from_manager). E.g. exit cap 5.5-7.5% against rent_factor 0.9-1.05, or warehouse.manager_waterfall.pref 0-12% for Thaxter's person_profit. At most 15 values per input. Optional other_changes and custom_from apply first.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr", "person_profit", "person_irr", "person_from_manager"] }, person: { type: "string", description: "for person_* metrics: a vehicle person's name" },
       path: { type: "string" }, values: { type: "array", items: { type: "number" } }, path2: { type: "string" }, values2: { type: "array", items: { type: "number" } },
       other_changes: { type: "object" }, custom_from: { type: "string" } }, required: ["deal", "case", "metric", "path", "values"] },
-    execute: ({ deal, scenario, case: k, metric, path, values, path2, values2, other_changes, custom_from }) => {
+    execute: ({ deal, scenario, case: k, metric, person, path, values, path2, values2, other_changes, custom_from }) => {
       const slug = needDeal(deal), ck = needCase(baseInputs(slug, scenario), k), M = String(metric);
       const v1 = (values || []).map(Number).filter(isFinite).slice(0, 15), v2 = path2 ? (values2 || []).map(Number).filter(isFinite).slice(0, 15) : [null];
       if (!v1.length || (path2 && !v2.length)) throw new Error("values (and values2) need numbers");
       setAskStatus(`Sweeping ${path}${path2 ? " × " + path2 : ""} on ${DEALS[slug].meta.name}…`);
-      const at = (a, b) => { const ch = Object.assign({}, other_changes || {}, { [path]: a }, path2 ? { [path2]: b } : {}); const inp = withChanges(slug, ch, custom_from, scenario); return caseResult(E.runCase(ck, inp), inp)[M]; };
-      return { deal: slug, case: ck, metric: M, rows: path, columns: path2 || null, table: v1.map((a) => ({ [path]: a, results: v2.map((b) => (path2 ? { [path2]: b, value: at(a, b) } : { value: at(a, null) })) })) };
+      const at = (a, b) => { const ch = Object.assign({}, other_changes || {}, { [path]: a }, path2 ? { [path2]: b } : {}); const inp = withChanges(slug, ch, custom_from, scenario); return probeMetric(ck, inp, M, person); };
+      return { deal: slug, case: ck, metric: M, person: person || null, rows: path, columns: path2 || null, table: v1.map((a) => ({ [path]: a, results: v2.map((b) => (path2 ? { [path2]: b, value: at(a, b) } : { value: at(a, null) })) })) };
     } },
   { name: "propose_scenario",
     description: "Package a scenario for the viewer to keep: a name, a one-paragraph description of what it assumes and why, and the changes (plus optional custom_from). It is computed now and shown under your answer with buttons to open it on the dashboard or save it; nothing is saved unless the viewer clicks. To fix or adjust an existing saved scenario, pass scenario AND replaces with its name: the viewer gets an Update button that replaces it (earlier versions are kept for Undo).",
@@ -2339,19 +2370,20 @@ const ASK_TOOLS = [
       const res = Object.keys(inp.cases).map((c) => ({ case: c, label: inp.cases[c].label, before: caseResult(E.runCase(c, base), base).lp_irr, after: caseResult(E.runCase(c, inp), inp).lp_irr,
         our_irr_after: caseResult(E.runCase(c, inp), inp).our_irr }));
       askWhatIfs.push({ slug, scenario: scenario ? findScenario(slug, scenario).name : null, replaces: replaces ? findScenario(slug, replaces).name : null, changes: ch, customFrom: custom_from || null, label: String(name).slice(0, 80), proposal: true, description: String(description || "").slice(0, 600), res });
-      return { staged: true, name, lp_irr_by_case: res, warnings: changeWarnings(inp, ch, Object.keys(inp.cases)) };
+      const vehicle = Object.keys(ch).some((pp) => pp.startsWith("warehouse")) ? Object.keys(inp.cases).map((c) => ({ case: c, people: vehiclePeople(c, inp) })) : undefined;
+      return { staged: true, name, lp_irr_by_case: res, vehicle, warnings: changeWarnings(inp, ch, Object.keys(inp.cases)) };
     } },
   { name: "solve_for",
-    description: "Find the value of one numeric input that makes a result hit a target, by search between low and high (the engine recomputes each try). metric: lp_irr, our_irr, lp_multiple, our_profit. E.g. the exit cap at which our Downside's LP IRR is 0, or the pref rate that gives our check 15%. Returns the value, the result achieved, and the result at both ends.",
+    description: "Find the value of one numeric input that makes a result hit a target, by search between low and high (the engine recomputes each try). metric: lp_irr, our_irr, lp_multiple, our_profit, or for one person in our vehicle (pass `person`) person_profit, person_irr, person_from_manager. E.g. the exit cap at which our Downside's LP IRR is 0, the pref rate that gives our check 15%, or the LTEC pref (warehouse.manager_waterfall.pref) at which Thaxter's person_profit equals a target. Returns the value, the result achieved, and the result at both ends.",
     inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, path: { type: "string", description: "dotted input path" },
-      metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit"] }, target: { type: "number" }, low: { type: "number" }, high: { type: "number" },
+      metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "person_profit", "person_irr", "person_from_manager"] }, person: { type: "string", description: "for person_* metrics: a vehicle person's name" }, target: { type: "number" }, low: { type: "number" }, high: { type: "number" },
       other_changes: { type: "object", description: "optional fixed changes applied first" }, custom_from: { type: "string", description: "optional: rebuild Custom from this case first" } }, required: ["deal", "case", "path", "metric", "target", "low", "high"] },
-    execute: ({ deal, scenario, case: k, path, metric, target, low, high, other_changes, custom_from }) => {
+    execute: ({ deal, scenario, case: k, path, metric, person, target, low, high, other_changes, custom_from }) => {
       const slug = needDeal(deal), ck = needCase(baseInputs(slug, scenario), k), M = String(metric), T = Number(target);
       let lo = Number(low), hi = Number(high);
       if (!isFinite(lo) || !isFinite(hi) || !isFinite(T)) throw new Error("low, high and target must be numbers");
       setAskStatus(`Solving ${path} on ${DEALS[slug].meta.name}…`);
-      const at = (v) => { const inp = withChanges(slug, Object.assign({}, other_changes || {}, { [path]: v }), custom_from, scenario); return caseResult(E.runCase(ck, inp), inp)[M]; };
+      const at = (v) => { const inp = withChanges(slug, Object.assign({}, other_changes || {}, { [path]: v }), custom_from, scenario); return probeMetric(ck, inp, M, person); };
       let flo = at(lo), fhi = at(hi);
       if (flo == null || fhi == null) throw new Error(`${M} is undefined at an end of the range (e.g. no IRR when everything is lost); narrow the range`);
       if ((flo - T) * (fhi - T) > 0) return { found: false, note: "target is outside what the range produces", at_low: { value: lo, result: flo }, at_high: { value: hi, result: fhi } };
@@ -2402,6 +2434,7 @@ function askContext() {
     "- If a tool reports issues or vehicle_issues (inputs that don't add up), tell the viewer first, in plain words, with the fix.",
     "- To fix or adjust a saved scenario, use propose_scenario with scenario and replaces set to its name; the viewer clicks Update. Never claim a scenario was changed.",
     "- Saved scenarios: list_scenarios shows them; pass a scenario's name as `scenario` to any tool to work from it (what-ifs then build on it). get_vehicle covers our SPV: each person's cash, profit and IRR, buyers, fees and promote.",
+    "- For questions about who in our vehicle gets what, measure the person: sweep / solve_for take metric person_profit, person_irr or person_from_manager with `person`; run_what_if and propose_scenario return each person's results when you change warehouse.*.",
     "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
@@ -2657,6 +2690,21 @@ async function doExport(type) {
 }
 
 // ---------- shared rows
+// Our vehicle for an export: each person's profit and cash from the manager, by case, and the manager's own terms.
+function vehicleRows(inp, runs) {
+  let v;
+  try { v = E.warehouse(inp, Object.fromEntries(runs.map(({ k, r }) => [k, r]))); } catch (_) { return null; }
+  const w = inp.warehouse, mgr = w.names.manager, rows = [], terms = [];
+  w.people.forEach((p, i) => {
+    rows.push({ label: `${p.name} · profit`, vals: runs.map(({ k }) => v[k].summary.people[i].profit) });
+    rows.push({ label: `${p.name} · from ${mgr}`, vals: runs.map(({ k }) => v[k].summary.people[i].from_manager) });
+  });
+  const ms = w.manager_waterfall || {};
+  if (ms.enabled) terms.push(`${mgr} pays its capital + ${fmt.pct(ms.pref, 1)} back first, then splits by fees & promote shares`);
+  (w.manager_loans || []).forEach((x) => terms.push(`${x.lender} lends ${x.borrower} ${fmt.usdk(x.amount)} at ${fmt.pct(x.rate, 1)}${x.recourse ? "" : " (forgiven if unpaid)"}`));
+  (w.manager_vesting || []).forEach((x) => terms.push(`${x.person}'s fees & promote share vests over ${x.years} yrs${x.leaves ? `; leaves ${x.leaves}` : ""}`));
+  return { title: `Our vehicle: ${w.names.vehicle} and ${mgr}`, rows, terms };
+}
 function caseRow(k, r, inp) {
   const o = r.operations, ex = r.exit, inv = r.investor;
   return { key: k, label: r.label, lp_irr: r.lp.irr, multiple: r.lp.multiple, yield: r.lp.avg_cash_yield_y1_4, our_irr: inv.irr,
@@ -2746,6 +2794,14 @@ async function buildXlsx(st) {
       styleBody(row, head.length, { fmt: [XL.P, XL.M, XL.P, XL.P, XL.D, XL.D, XL.D, XL.P2, XL.D, XL.D, XL.M, XL.D], zebra: i % 2 === 1 });
       row.getCell(1).font = font({ bold: true, color: { argb: TAB[k] || XL.navy } });
     });
+    const vr = vehicleRows(inp, runs);
+    if (vr) {
+      ws.addRow([]);
+      styleGroup(ws.addRow([vr.title]), head.length);
+      const vh = ws.addRow(["", ...runs.map(({ r }) => r.label)]); styleHead(vh, runs.length + 1);
+      vr.rows.forEach((x, i) => styleBody(ws.addRow([x.label, ...x.vals.map(num)]), runs.length + 1, { fmt: runs.map(() => XL.D), zebra: i % 2 === 1 }));
+      if (vr.terms.length) { const tr = ws.addRow([vr.terms.join(" · ")]); tr.getCell(1).font = font({ size: 9.5, color: { argb: "FF3B4652" } }); }
+    }
     // what each case assumes: its own block, each note across the table's width
     ws.addRow([]);
     styleGroup(ws.addRow(["What each case assumes"]), head.length);
@@ -2934,6 +2990,8 @@ function buildPdf(st) {
       `Fees: asset management ${fmt.pct(d.asset_mgmt_fee_pct_of_income, 1)} of income; disposition ${fmt.pct(d.disposition_fee_pct, 1)}; selling costs ${fmt.pct(d.selling_cost_pct, 1)}.`,
       `Hold ${d.hold_years} years; ${d.refi.enabled ? `refinance at the end of Year ${d.refi.year}` : "no refinance"}.`,
       ...(d.below_noi_income.amounts.length ? [`${d.below_noi_income.label}: ${fmt.usdk(d.below_noi_income.amounts[0])}/yr below NOI; at sale ${d.below_noi_income.sale_value === "npv" ? `valued at ${fmt.pct(d.below_noi_income.npv_rate, 0)}` : "not valued"} (per case overrides may differ).`] : [])]);
+    const vr = vehicleRows(st.inp, st.runs);
+    if (vr) { h2(vr.title); table(["", ...st.runs.map(({ r }) => r.label)], vr.rows.map((x) => [x.label, ...x.vals.map(fmt.signedk)])); if (vr.terms.length) para(vr.terms.join(" · "), 8, 90); }
     h2("What each case assumes");
     bullets(st.runs.filter(({ k }) => st.inp.cases[k].note).map(({ k, r }) => `${r.label}: ${st.inp.cases[k].note}`));
     if (st.edits.length && !st.scenario) { h2("Changed from the deal file"); para(st.edits.slice(0, 30).join(", ") + (st.edits.length > 30 ? ", ..." : ""), 8, 90); }

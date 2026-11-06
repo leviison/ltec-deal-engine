@@ -24,7 +24,10 @@
   with custom_from, solve_for, sweep, propose_scenario, compare_deals, get_sources, list_scenarios, get_vehicle); every
   deal tool takes `scenario` (a saved scenario's name) to work from it in `web/index.template.html`. Rules given to Claude: every number from a tool result;
   Claude proposes scenarios, the viewer saves them (Save as scenario button); run_what_if warns on no-op or overridden changes.
-  New engine outputs a partner would ask about should be exposed through these tools.
+  New engine outputs a partner would ask about should be exposed through these tools. Vehicle inputs (`warehouse.*`,
+  incl. LTEC's own terms) are inputs like any other: list_inputs lists them, run_what_if / propose_scenario return each
+  person's results when they change, sweep / solve_for measure a person (person_profit / person_irr /
+  person_from_manager + `person`), and the Compare view and both exports show each vehicle person by case.
 - LTEC's own terms between its partners (schema 5, issue #9): `warehouse.manager_waterfall` (all manager cash pooled;
   capital + pref back first, then capital/promote splits by IRR step), `manager_loans` (a partner funds another's manager
   capital, capped at it; repaid from the borrower's manager cash first; recourse or forgiven) and `manager_vesting`
