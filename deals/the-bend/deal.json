@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "meta": {
     "slug": "the-bend",
     "name": "The Bend",
@@ -138,145 +138,13 @@
       },
       {
         "name": "Through an SPV, fully subscribed",
-        "note": "An SPV invests the check; LTEC commits part of it and manages it, outside members put in the rest at close. LTEC earns an acquisition fee and a promote above the members' hurdle.",
-        "changes": {
-          "warehouse": {
-            "names": {
-              "vehicle": "The Bend SPV",
-              "manager": "LTEC",
-              "buyers": "New members"
-            },
-            "close_date": "2026-10-10",
-            "unit_price": 1000.0,
-            "reserve": 50000.0,
-            "manager_commitment": 350000.0,
-            "manager_reserve": 0.0,
-            "admin_cost_per_year": 15000.0,
-            "admin_cost_method": "fixed",
-            "admin_cost_pct": 0,
-            "acq_fee_pct": 0.01,
-            "mgmt_fee_pct": 0.0,
-            "member_hurdle_irr": 0.1,
-            "hurdle_type": "compound",
-            "hurdle_basis": "pooled",
-            "promote": 0.4,
-            "warehouse_promote": 0.4,
-            "promote_on_manager_units": true,
-            "people": [
-              {
-                "name": "Levi",
-                "amount": 0.0,
-                "role": "member",
-                "manager_capital": 175000.0,
-                "manager_share": 0.5,
-                "loan_rate": 0.08
-              },
-              {
-                "name": "Thaxter",
-                "amount": 0.0,
-                "role": "member",
-                "manager_capital": 175000.0,
-                "manager_share": 0.5,
-                "loan_rate": 0.08
-              },
-              {
-                "name": "New members",
-                "amount": 700000.0,
-                "role": "member",
-                "manager_capital": 0.0,
-                "manager_share": 0.0,
-                "loan_rate": 0.08
-              }
-            ],
-            "selldown": {
-              "credit_distributions": true,
-              "tranches": []
-            },
-            "manager_transfers": [],
-            "manager_waterfall": {
-              "enabled": false,
-              "pref": 0.08,
-              "pref_type": "compound",
-              "tiers": [],
-              "residual_capital_share": 0.0
-            },
-            "manager_loans": [],
-            "manager_vesting": [],
-            "_manager_split_note": "LTEC's own terms between its partners (issue #9), all off by default. manager_waterfall: all manager cash is pooled; capital holders get capital back plus `pref` first, then each tier gives capital_share to capital holders until they reach to_irr, residual_capital_share above that; the rest goes by fees & promote shares. manager_loans: a partner funds part of another's manager capital; the borrower's manager cash repays it first; recourse = any balance is paid at the end, else forgiven. manager_vesting: fees & promote share vests over `years` from close after `cliff_years`; on `leaves` the unvested part goes to the other partners pro rata.",
-            "structure": "spv"
-          }
-        }
+        "note": "An SPV invests the check; {manager} commits part of it and manages it, outside members put in the rest at close. Built from {manager}'s SPV template for the current check and partners.",
+        "structure": "spv"
       },
       {
         "name": "Through an SPV with warehouse (SV26-style)",
-        "note": "As the fully subscribed SPV, but the lead partner funds the outside share at close (warehouses it) and sells it to new members six months later at par plus 6% simple carry.",
-        "changes": {
-          "warehouse": {
-            "names": {
-              "vehicle": "The Bend SPV",
-              "manager": "LTEC",
-              "buyers": "New members"
-            },
-            "close_date": "2026-10-10",
-            "unit_price": 1000.0,
-            "reserve": 50000.0,
-            "manager_commitment": 350000.0,
-            "manager_reserve": 0.0,
-            "admin_cost_per_year": 15000.0,
-            "admin_cost_method": "fixed",
-            "admin_cost_pct": 0,
-            "acq_fee_pct": 0.01,
-            "mgmt_fee_pct": 0.0,
-            "member_hurdle_irr": 0.1,
-            "hurdle_type": "compound",
-            "hurdle_basis": "pooled",
-            "promote": 0.4,
-            "warehouse_promote": 0.4,
-            "promote_on_manager_units": true,
-            "people": [
-              {
-                "name": "Levi",
-                "amount": 700000.0,
-                "role": "warehouse",
-                "manager_capital": 175000.0,
-                "manager_share": 0.5,
-                "loan_rate": 0.08
-              },
-              {
-                "name": "Thaxter",
-                "amount": 0.0,
-                "role": "member",
-                "manager_capital": 175000.0,
-                "manager_share": 0.5,
-                "loan_rate": 0.08
-              }
-            ],
-            "selldown": {
-              "credit_distributions": true,
-              "tranches": [
-                {
-                  "date": "2027-04-10",
-                  "share": 1.0,
-                  "pricing": "carry_simple",
-                  "rate": 0.06,
-                  "buyer": "New members"
-                }
-              ]
-            },
-            "manager_transfers": [],
-            "manager_waterfall": {
-              "enabled": false,
-              "pref": 0.08,
-              "pref_type": "compound",
-              "tiers": [],
-              "residual_capital_share": 0.0
-            },
-            "manager_loans": [],
-            "manager_vesting": [],
-            "_manager_split_note": "LTEC's own terms between its partners (issue #9), all off by default. manager_waterfall: all manager cash is pooled; capital holders get capital back plus `pref` first, then each tier gives capital_share to capital holders until they reach to_irr, residual_capital_share above that; the rest goes by fees & promote shares. manager_loans: a partner funds part of another's manager capital; the borrower's manager cash repays it first; recourse = any balance is paid at the end, else forgiven. manager_vesting: fees & promote share vests over `years` from close after `cliff_years`; on `leaves` the unvested part goes to the other partners pro rata.",
-            "structure": "spv_warehouse"
-          }
-        }
+        "note": "As the fully subscribed SPV, but {levi} warehouses the outside share at close and sells it to new members six months later at par plus 6% carry. Built from {manager}'s template.",
+        "structure": "spv_warehouse"
       }
     ],
     "diligence": [
@@ -800,6 +668,7 @@
     "promote_on_manager_units": true,
     "people": [
       {
+        "id": "levi",
         "name": "Levi",
         "amount": 0.0,
         "role": "member",
@@ -808,6 +677,7 @@
         "loan_rate": 0.08
       },
       {
+        "id": "thaxter",
         "name": "Thaxter",
         "amount": 0.0,
         "role": "member",

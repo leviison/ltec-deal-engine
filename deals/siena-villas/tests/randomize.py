@@ -41,7 +41,7 @@ def randomized(base, seed):
     names = [f"P{i}" for i in range(n)]
     mcp = [r.random() for _ in range(n)]
     mcap = w["manager_commitment"] + w["manager_reserve"]
-    w["people"] = [{"name": names[i], "amount": short * sf[i] / sum(sf), "manager_share": mg[i] / sum(mg),
+    w["people"] = [{"id": f"x{i}", "name": names[i], "amount": short * sf[i] / sum(sf), "manager_share": mg[i] / sum(mg),
                     "manager_capital": mcap * mcp[i] / sum(mcp),
                     "role": r.choice(["member", "warehouse", "loan"]), "loan_rate": r.uniform(0.0, 0.14)} for i in range(n)]
     w["manager_transfers"] = [{"date": r.choice(["2027-01-15", "2027-06-30", "2027-11-05", "2028-06-30", "2029-03-01"]),
@@ -77,7 +77,7 @@ def randomized(base, seed):
                                   "rate": r.uniform(-0.1, 0.12),
                                   "buyer": r.choice(["", "Fund A", "Fund B"] + names)} for _ in range(r.randint(0, 3))]
     # LTEC's own split between its partners (issue #9)
-    pn = [p["name"] for p in w["people"]]
+    pn = [r.choice([p["id"], p["name"]]) for p in w["people"]]  # people by id, or by name as older files do
     w["manager_waterfall"] = {"enabled": r.random() < 0.5, "pref": r.choice([0.0, 0.06, 0.08, 0.1]),
                               "pref_type": r.choice(["compound", "simple"]),
                               "tiers": [{"capital_share": r.choice([0.0, 0.3, 0.5, 1.0]), "to_irr": r.choice([0.12, 0.15, 0.2])}

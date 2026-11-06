@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from engine.core import load_deal, run_all  # noqa: E402
+from engine.core import apply_variant, fill_label, load_deal, run_all  # noqa: E402
 
 OUT = Path(__file__).parent / ".fixtures"
 
@@ -45,9 +45,11 @@ def main():
     base = load_deal("siena-villas")
     exp = []
     for a in base["meta"].get("alternatives", []):
-        inp = _merge(base, a["changes"])
+        inp = apply_variant(base, a)
         wh = run_all(inp)["warehouse"]
-        exp.append({"name": a["name"], "cases": {k: [{"name": p["name"], "profit": x["profit"], "from_manager": x["from_manager"]}
+        if not (a.get("set") or a.get("structure") or "warehouse" in a.get("changes", {})):
+            continue
+        exp.append({"name": fill_label(a["name"], base), "cases": {k: [{"name": p["name"], "profit": x["profit"], "from_manager": x["from_manager"]}
                                                       for p, x in zip(v["people"], v["summary"]["people"])] for k, v in wh.items()}})
     (OUT / "siena_variants.json").write_text(json.dumps(exp))
 

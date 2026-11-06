@@ -37,6 +37,12 @@
   built by `apply_structure` (core.py) = `applyStructure` (core.js); `warehouse.structure` records it (schema 6). Set it
   with `python scripts/apply_structure.py <slug> <template> [--variant NAME]`. House terms for SPVs live in that file.
   The dashboard's flow diagram is drawn from the same inputs and results (never hand-placed numbers).
+- Ids (#14, schema 7): each `warehouse.people` entry has a stable `id`; names are labels. Loans, vesting, buy-ins and
+  person sales refer to people by id (engines resolve id first, then name for older files). Paths address list items
+  by id: `warehouse.people[levi].manager_capital` (`get_path`/`set_path` = `getPath`/`setPath`). Variants
+  (`meta.alternatives`) are patches: `structure` (template), `set` (paths), older `changes` (merged); titles and notes
+  use `{manager}`, `{vehicle}`, `{buyers}`, `{<person id>}`. `reference_issues` must stay empty for deal files and every
+  variant (tests/test_ids.py, incl. after renames). Never write a person's name where an id belongs.
 - New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from
   the sponsor case; defaults in `engine/standard_cases.json`), then tune them to the deal's diligence and source them.
 - Tests: `python -m pytest` runs engine, deal-file, tie-out AND page tests (`tests/web/*.test.js` in headless Chromium,

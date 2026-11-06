@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -830,8 +831,10 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
         prices.append(_sale_price(tr, par, days, credit))
     units_sold = [s * w_tot for s in shares]
 
-    # buyers: a person (by name) or an outside group
+    # people are referred to by id (stable; names are labels) or, in older files, by name; ids win
     pidx = {_key(p["name"]): i for i, p in enumerate(people)}
+    pidx.update({_key(p["id"]): i for i, p in enumerate(people) if p.get("id")})
+    # buyers: a person (by id or name) or an outside group
     buyer_names = [(tr.get("buyer") or "").strip() or w["names"]["buyers"] for tr in trs]
     buyer_person = [pidx.get(_key(b)) for b in buyer_names]
 
@@ -1008,8 +1011,9 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
             lo, bo = pidx.get(_key(ln["lender"])), pidx.get(_key(ln["borrower"]))
             # a loan funds the borrower's own manager capital, so it is capped at that
             a_l = min(ln["amount"], people[bo]["manager_capital"]) if bo is not None else 0.0
-            rec = {"lender": ln["lender"], "borrower": ln["borrower"], "amount": a_l, "repaid": 0.0, "interest": 0.0,
-                   "owed_end": 0.0, "settled": "invalid"}
+            rec = {"lender": people[lo]["name"] if lo is not None else ln["lender"],
+                   "borrower": people[bo]["name"] if bo is not None else ln["borrower"], "amount": a_l, "repaid": 0.0,
+                   "interest": 0.0, "owed_end": 0.0, "settled": "invalid"}
             loans_out.append(rec)
             if lo is None or bo is None or lo == bo or a_l <= 0:
                 continue
@@ -1131,8 +1135,9 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
         "dates": [d.isoformat() for d in all_dates],
         "sv26_distributable": dist_cash, "manager_promote": promote, "manager_fees": [-f for f in fee],
         "member_distributions": members, "per_unit": pu_s, "per_unit_warehouse": pu_w,
-        "tranches": [{"date": d.isoformat(), "share": s, "units": u, "price": pr, "buyer": b}
-                     for d, s, u, pr, b in zip(t_dates, shares, units_sold, prices, buyer_names)],
+        "tranches": [{"date": d.isoformat(), "share": s, "units": u, "price": pr,
+                      "buyer": people[bp]["name"] if bp is not None else b}
+                     for d, s, u, pr, b, bp in zip(t_dates, shares, units_sold, prices, buyer_names, buyer_person)],
         "people": out_people,
         "buyers": groups,
         "manager_transfers": [{"date": x["date"].isoformat(), "index": x["index"],
@@ -1171,7 +1176,8 @@ def structure_partners(inp: dict, lib: dict) -> list:
     tc, tp = sum(p["manager_capital"] for p in ps), sum(p["manager_share"] for p in ps)
     if not ps or tp <= 0:
         return [dict(p) for p in lib["partners"]]
-    return [{"name": p["name"], "capital_share": p["manager_capital"] / tc if tc > 0 else p["manager_share"] / tp,
+    return [{"id": p.get("id") or person_id(p["name"]), "name": p["name"],
+             "capital_share": p["manager_capital"] / tc if tc > 0 else p["manager_share"] / tp,
              "promote_share": p["manager_share"] / tp} for p in ps]
 
 
@@ -1188,12 +1194,13 @@ def apply_structure(inp: dict, key: str, lib: dict | None = None, partners: list
     mc = check * t["manager_commitment_pct"]
     outside = check + reserve - mc
     deal_name = inp.get("meta", {}).get("ui", {}).get("deal_short") or inp.get("meta", {}).get("name", "Deal")
-    people = [{"name": p["name"], "amount": 0.0, "role": "member", "manager_capital": mc * p["capital_share"],
-               "manager_share": p["promote_share"], "loan_rate": 0.08} for p in ps]
+    people = [{"id": p.get("id") or person_id(p["name"]), "name": p["name"], "amount": 0.0, "role": "member",
+               "manager_capital": mc * p["capital_share"], "manager_share": p["promote_share"], "loan_rate": 0.08}
+              for p in ps]
     tranches = []
     if t["outside"] == "members" and outside > 0.005:
-        people.append({"name": w0["names"]["buyers"], "amount": outside, "role": "member", "manager_capital": 0.0,
-                       "manager_share": 0.0, "loan_rate": 0.08})
+        people.append({"id": "outside_members", "name": w0["names"]["buyers"], "amount": outside, "role": "member",
+                       "manager_capital": 0.0, "manager_share": 0.0, "loan_rate": 0.08})
     elif t["outside"] == "warehouse" and outside > 0.005:
         people[0]["amount"] = outside
         people[0]["role"] = "warehouse"
@@ -1213,6 +1220,128 @@ def apply_structure(inp: dict, key: str, lib: dict | None = None, partners: list
         "selldown": {"credit_distributions": True, "tranches": tranches},
     })  # LTEC's own terms (buy-ins, waterfall, loans, vesting) belong to LTEC, not the vehicle, so they stay
     return out
+
+
+# ---------------------------------------------------------------- ids, paths and variants
+# People (and other list items) carry a stable `id`; names are labels. Paths address list items by id with
+# `key[id]` (warehouse.people[levi].manager_capital), by position with a number, or fields with names.
+
+def person_id(name: str, taken=()) -> str:
+    """A stable id from a name: lowercase letters, digits and _; made unique against `taken`."""
+    base = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_") or "person"
+    pid, n = base, 2
+    while pid in taken:
+        pid, n = f"{base}_{n}", n + 1
+    return pid
+
+
+_ID_SEG = re.compile(r"^([^\[\]]+)\[([^\]]+)\]$")
+
+
+def get_path(obj, path: str):
+    """The value at a dotted path (None when missing)."""
+    cur = obj
+    for seg in path.split("."):
+        m = _ID_SEG.match(seg)
+        if m:
+            lst = cur.get(m.group(1)) if isinstance(cur, dict) else None
+            cur = next((x for x in lst or [] if isinstance(x, dict) and x.get("id") == m.group(2)), None)
+        elif isinstance(cur, list):
+            cur = cur[int(seg)] if seg.isdigit() and int(seg) < len(cur) else None
+        elif isinstance(cur, dict):
+            cur = cur.get(seg)
+        else:
+            return None
+        if cur is None:
+            return None
+    return cur
+
+
+def set_path(obj, path: str, value) -> None:
+    """Set the value at a dotted path. `list[id]` as the last segment replaces that item (adding it if new, removing
+    it when value is None)."""
+    segs = path.split(".")
+    cur = obj
+    for n, seg in enumerate(segs):
+        last = n == len(segs) - 1
+        m = _ID_SEG.match(seg)
+        if m:
+            lst, iid = cur[m.group(1)], m.group(2)
+            idx = next((i for i, x in enumerate(lst) if isinstance(x, dict) and x.get("id") == iid), None)
+            if last:
+                if value is None:
+                    if idx is not None:
+                        lst.pop(idx)
+                elif idx is None:
+                    lst.append(dict(value, id=iid))
+                else:
+                    lst[idx] = dict(value, id=iid)
+                return
+            if idx is None:
+                raise KeyError(f"{path}: no item with id {iid}")
+            cur = lst[idx]
+        else:
+            key = int(seg) if isinstance(cur, list) else seg
+            if last:
+                cur[key] = value
+                return
+            cur = cur[key]
+
+
+def merge_deep(base, changes):
+    """Objects merge; everything else (lists too) replaces."""
+    out = json.loads(json.dumps(base))
+    for k, v in changes.items():
+        out[k] = merge_deep(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else json.loads(json.dumps(v))
+    return out
+
+
+def apply_variant(inp: dict, alt: dict, lib: dict | None = None) -> dict:
+    """A variant (meta.alternatives entry) applied to inputs: its structure template first (built for the current
+    check, names and partners), then `changes` merged (older variants), then each `set` path (list items by id)."""
+    out = json.loads(json.dumps(inp))
+    if alt.get("structure"):
+        out = apply_structure(out, alt["structure"], lib)
+    if alt.get("changes"):
+        out = merge_deep(out, alt["changes"])
+    for p, v in (alt.get("set") or {}).items():
+        set_path(out, p, json.loads(json.dumps(v)))
+    return out
+
+
+def reference_issues(inp: dict, strict: bool = False) -> list:
+    """People references that point at nobody: loans, vesting, buy-ins (by id, or by name unless strict), and missing
+    or duplicate ids. Empty = every reference resolves."""
+    w = inp["warehouse"]
+    ids = [p.get("id") for p in w["people"]]
+    out = []
+    if any(not i for i in ids):
+        out.append("a person has no id")
+    dup = sorted({i for i in ids if i and ids.count(i) > 1})
+    if dup:
+        out.append(f"duplicate ids: {', '.join(dup)}")
+    known = {i for i in ids if i} | (set() if strict else {_key(p["name"]) for p in w["people"]})
+    ok = lambda r: bool(r) and (r in known or (not strict and _key(r) in known))  # noqa: E731
+    for q, ln in enumerate(w.get("manager_loans", [])):
+        for role in ("lender", "borrower"):
+            if not ok(ln[role]):
+                out.append(f"partner loan {q + 1}: {role} '{ln[role]}' is not a person")
+    for q, v in enumerate(w.get("manager_vesting", [])):
+        if not ok(v["person"]):
+            out.append(f"vesting {q + 1}: '{v['person']}' is not a person")
+    for q, x in enumerate(w.get("manager_transfers", [])):
+        for role in ("buyer", "seller"):
+            if not ok(x[role]):
+                out.append(f"buy-in {q + 1}: {role} '{x[role]}' is not a person")
+    return out
+
+
+def fill_label(text: str, inp: dict) -> str:
+    """A variant's title or note with current names: {manager}, {vehicle}, {buyers} and {<person id>}."""
+    w = inp["warehouse"]
+    names = dict(w["names"])
+    names.update({p["id"]: p["name"] for p in w["people"] if p.get("id")})
+    return re.sub(r"\{([a-z0-9_]+)\}", lambda m: names.get(m.group(1), m.group(0)), text or "")
 
 
 def warehouse(inp: dict, cases: dict) -> dict:
