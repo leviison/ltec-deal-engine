@@ -5,6 +5,18 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.3.0 — unreleased (feature/18-rail-flow)
+
+- Side panel follows the flow (#18), in fixed, labelled stages in the order of the flow diagram: **Which version**
+  (variants, saved scenarios) · **The deal** (operating cases, sponsor terms, loan, hold, distribution timing, costs &
+  sale) · **Our position** (your investment incl. the side letter, other investors) · **Our vehicle** (structure,
+  names, raise, fees, sell-down, people) · **LTEC and its partners** (its own terms, buy-ins) · **Tools**.
+  "Side letter & sale" is split: the side letter sits with our check, selling costs / CapEx reserves / TIF with the deal.
+- Clicking a box in the flow diagram opens and scrolls to the cards that control it.
+- "Show only what's changed" hides every card, group, person and field still at the deal file's value.
+- "Find an input": type a label ("exit cap", "carry") and jump to the field.
+- No drag-to-rearrange, on purpose: position carries meaning in a shared model.
+
 ## 2.2.1 — 2026-11-06
 
 - Structure picker (#16): the description is filled from the template's own numbers (it said "6% carry" as fixed

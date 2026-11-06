@@ -79,7 +79,21 @@ header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-cont
 aside.rail { position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); max-height: calc(100vh - 24px); overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
 @media (max-width: 900px) { aside.rail { position: static; max-height: none; } }
 .rail section { padding: 14px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
-.rail section:last-child { border-bottom: 0; }
+.rail > .stage:last-child > section:last-child { border-bottom: 0; }
+.rail .stage-h { padding: 12px 16px 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 60%, transparent); }
+.rail-find { position: relative; }
+.rail-find input { width: 100%; }
+.find-results { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.12); max-height: 320px; overflow: auto; }
+.find-results button { display: block; width: 100%; text-align: left; padding: 7px 10px; border: 0; background: none; color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; }
+.find-results button:hover, .find-results button.active { background: var(--accent-soft); }
+.find-results .where { display: block; font-size: 11.5px; color: var(--muted); }
+.find-results .none { padding: 8px 10px; font-size: 12.5px; color: var(--muted); }
+.only-changed-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.rail.only-changed section[id].no-changes, .rail.only-changed .grp.no-changes, .rail.only-changed .card.no-changes, .rail.only-changed .field.unchanged-hide { display: none !important; }
+.flash { animation: flash 1.4s ease-out; }
+@keyframes flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
+.flow .node { cursor: pointer; }
+.flow .node:hover rect { stroke: var(--accent); stroke-width: 1.8; }
 .field { display: grid; grid-template-columns: minmax(0, 1fr) 118px; align-items: center; gap: 8px; }
 .field label { font-size: 13px; color: var(--fg); }
 .field label .src { display: block; font-size: 11px; color: var(--muted); }
@@ -319,45 +333,65 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
       <section>
         <div class="row" style="justify-content:space-between"><h2>Assumptions</h2><button class="link" id="resetBtn" type="button">Reset to defaults</button></div>
         <p class="note" style="margin:0">Changed fields turn yellow. Results update as you type. Click a heading to open or close it.</p>
+        <div class="rail-find">
+          <input class="text" id="railFind" type="search" placeholder="Find an input: exit cap, carry, loan…" aria-label="Find an input" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="railFindResults">
+          <div class="find-results" id="railFindResults" role="listbox" hidden></div>
+        </div>
+        <label class="only-changed-toggle"><input type="checkbox" id="onlyChanged"> Show only what's changed</label>
         <div class="row rail-tools"><button class="link" type="button" id="expandAll">Expand all</button><span class="muted">·</span><button class="link" type="button" id="collapseAll">Collapse all</button><span class="muted">·</span><button class="link" type="button" id="showChanged">Open only changed</button></div>
+        <p class="note" id="noChanges" hidden style="margin:0">Nothing differs from the deal file yet.</p>
       </section>
-      <section id="sec-variants" hidden></section>
-      <section id="sec-investor"></section>
-      <section id="sec-extras" hidden></section>
-      <section id="sec-timing"></section>
-      <section id="sec-redstone"></section>
-      <section id="sec-loan"></section>
-      <section id="sec-hold"></section>
-      <section id="sec-direct"></section>
-      <section id="sec-cases">
-        <h3>Operating cases</h3>
-        <div class="seg" id="caseTabs" role="group" aria-label="Case to edit"></div>
-        <div id="caseFields" style="display:grid;gap:10px"></div>
-      </section>
-      <section id="sec-wh"></section>
-      <section id="sec-saved">
-        <h3>Saved scenarios</h3>
-        <div class="editing" id="editingRow" hidden>
-          <span id="editingText"></span>
-          <button class="btn primary" id="updateBtn" type="button">Update</button>
-        </div>
-        <div class="row">
-          <input class="text" id="saveName" placeholder="Name this scenario" maxlength="80" aria-label="Scenario name">
-          <button class="btn primary" id="saveBtn" type="button">Save</button>
-        </div>
-        <div class="toast" id="saveToast" role="status"></div>
-        <div class="saved" id="savedList"><p class="note" style="margin:0">Loading saved scenarios…</p></div>
-      </section>
-      <section id="sec-repo">
-        <h3>Send changes to the repo</h3>
-        <p class="note" style="margin:0">The repo's <span class="num" id="repoPath"></span> is the source of truth. Copy these inputs and replace that file to make them the new defaults.</p>
-        <div class="row">
-          <button class="btn" id="copyBtn" type="button">Copy deal.json</button>
-          <button class="btn" id="dlBtn" type="button" hidden>Download</button>
-        </div>
-        <textarea id="copyFallback" hidden readonly style="width:100%;height:120px;font:11px var(--f-num);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px"></textarea>
-        <div class="toast" id="copyToast" role="status"></div>
-      </section>
+      <!-- stages follow the flow diagram: which version, the deal, our position, our vehicle, the manager, tools (#18) -->
+      <div class="stage" data-stage="version"><div class="stage-h">Which version</div>
+        <section id="sec-variants" hidden></section>
+        <section id="sec-saved">
+          <h3>Saved scenarios</h3>
+          <div class="editing" id="editingRow" hidden>
+            <span id="editingText"></span>
+            <button class="btn primary" id="updateBtn" type="button">Update</button>
+          </div>
+          <div class="row">
+            <input class="text" id="saveName" placeholder="Name this scenario" maxlength="80" aria-label="Scenario name">
+            <button class="btn primary" id="saveBtn" type="button">Save</button>
+          </div>
+          <div class="toast" id="saveToast" role="status"></div>
+          <div class="saved" id="savedList"><p class="note" style="margin:0">Loading saved scenarios…</p></div>
+        </section>
+      </div>
+      <div class="stage" data-stage="deal"><div class="stage-h">The deal</div>
+        <section id="sec-cases">
+          <h3>Operating cases</h3>
+          <div class="seg" id="caseTabs" role="group" aria-label="Case to edit"></div>
+          <div id="caseFields" style="display:grid;gap:10px"></div>
+        </section>
+        <section id="sec-redstone"></section>
+        <section id="sec-loan"></section>
+        <section id="sec-hold"></section>
+        <section id="sec-timing"></section>
+        <section id="sec-sale"></section>
+      </div>
+      <div class="stage" data-stage="position"><div class="stage-h">Our position</div>
+        <section id="sec-investor"></section>
+        <section id="sec-direct"></section>
+      </div>
+      <div class="stage" data-stage="vehicle"><div class="stage-h">Our vehicle</div>
+        <section id="sec-wh"></section>
+      </div>
+      <div class="stage" data-stage="ltec"><div class="stage-h" id="stageLtec">The manager and its partners</div>
+        <section id="sec-ltec"></section>
+      </div>
+      <div class="stage" data-stage="tools"><div class="stage-h">Tools</div>
+        <section id="sec-repo">
+          <h3>Send changes to the repo</h3>
+          <p class="note" style="margin:0">The repo's <span class="num" id="repoPath"></span> is the source of truth. Copy these inputs and replace that file to make them the new defaults.</p>
+          <div class="row">
+            <button class="btn" id="copyBtn" type="button">Copy deal.json</button>
+            <button class="btn" id="dlBtn" type="button" hidden>Download</button>
+          </div>
+          <textarea id="copyFallback" hidden readonly style="width:100%;height:120px;font:11px var(--f-num);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px"></textarea>
+          <div class="toast" id="copyToast" role="status"></div>
+        </section>
+      </div>
     </aside>
 
     <main id="dealMain">
@@ -537,15 +571,7 @@ const fmt = {
 /* ------------------------------------------------------------ field specs */
 const F = (path, label, kind, src, opts) => ({ path, label, kind, src: hint(path, src), opts });
 const EXIT_OPTS = [["cap_rate", "Cap rate"], ["sale_price", "Sale price"]];
-const sections = () => ({
-  "sec-investor": ["Check & deal", [
-    F("investor.name", `${UI.deal_short} investor`, "text", "Signs the side letter"),
-    F("investor.check", "Investor check", "usd", "Side letter commitment"),
-    F("deal.selling_cost_pct", "Selling costs", "pct"),
-    F("deal.disposition_fee_pct", "Disposition fee", "pct", "OA §9.8: “market” — not fixed"),
-    F("deal.annual_capex_reserves", "CapEx / reserves per year", "usd"),
-  ]],
-});
+const sections = () => ({});  // every card has its own renderer now (#18)
 function caseFields(k) {
   const p = "cases." + k + ".";
   if (inputs.cases[k].kind === "custom") return [
@@ -732,7 +758,7 @@ function copyIntoCustom(inp, k) {
 // chart, exit and flow diagram follow it), so tables with every case point at the one the panels above describe
 function hl(k) { return (k === "custom" && editCase === "custom" ? " hl" : "") + (k === detailCase ? " shown" : ""); }
 function shortLabel(k) { return { sponsor: "Sponsor", base: "Base", downside: "Downside", stress: "Stress", custom: "Custom" }[k] || inputs.cases[k].label; }
-function renderAllFields() { Object.keys(sections()).forEach(renderSection); renderVariants(); renderDealExtras(); renderTimingInputs(); renderRedstoneInputs(); renderLoanInputs(); renderHoldInputs(); renderCaseFields(); renderDirectInputs(); renderWarehouseInputs(); }
+function renderAllFields() { renderVariants(); renderInvestor(); renderSale(); renderTimingInputs(); renderRedstoneInputs(); renderLoanInputs(); renderHoldInputs(); renderCaseFields(); renderDirectInputs(); renderWarehouseInputs(); }
 
 /* ------------------------------------------------------------ variants from the deal file (meta.alternatives) */
 let activeVariant = null;
@@ -759,13 +785,13 @@ function renderVariants() {
 }
 
 /* ------------------------------------------------------------ side letter and sale extras (shown when the deal has them) */
-function renderDealExtras() {
-  const sec = document.getElementById("sec-extras"), sl = inputs.investor.side_letter, d = inputs.deal, b = d.below_noi_income;
-  const terms = DEFAULTS.investor.side_letter.terms, hasSL = Object.keys(terms).length > 0, hasB = b.amounts.length > 0;
-  sec.hidden = !(hasSL || hasB || d.reserves_returned_at_sale);
-  if (sec.hidden) return;
-  const rr = (f) => Object.assign(f, { rerender: true, after: renderDealExtras });
-  const fields = [];
+// Our position: the check, and the side letter on it (when the deal has one)
+function renderInvestor() {
+  const sec = document.getElementById("sec-investor"), sl = inputs.investor.side_letter;
+  const hasSL = Object.keys(DEFAULTS.investor.side_letter.terms).length > 0;
+  const rr = (f) => Object.assign(f, { rerender: true, after: renderInvestor });
+  const fields = [F("investor.name", `${UI.deal_short} investor`, "text", "Signs the side letter"),
+                  F("investor.check", "Investor check", "usd", "Side letter commitment")];
   if (hasSL) {
     fields.push(rr(F("investor.side_letter.enabled", "Side letter on our check", "bool", "Our share runs on these terms; others unchanged")));
     if (sl.enabled) {
@@ -774,27 +800,40 @@ function renderDealExtras() {
         { onset: (v) => { (sl.terms.tiers || []).forEach((t) => { t.lp_share = v; }); } }));
     }
   }
-  fields.push(F("deal.exit_noi_basis", "Sale priced on", "select", null, [["trailing", "Final hold year's NOI"], ["forward", "Next year's NOI"]]));
-  fields.push(F("deal.reserves_returned_at_sale", "Reserves returned at sale", "usd"));
+  sec.innerHTML = `<h3>Your investment</h3>${fields.map(fieldHTML).join("")}<div class="readout" id="investorReadout"></div>`;
+  fields.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
+  if (results) updateExtrasReadout();
+  markChanged();
+}
+// The deal: costs at sale, how the sale is priced, and any income below NOI (TIF) and its value at sale
+function renderSale() {
+  const sec = document.getElementById("sec-sale"), d = inputs.deal, b = d.below_noi_income, hasB = b.amounts.length > 0;
+  const rr = (f) => Object.assign(f, { rerender: true, after: renderSale });
+  const fields = [F("deal.selling_cost_pct", "Selling costs", "pct"),
+                  F("deal.disposition_fee_pct", "Disposition fee", "pct", "OA §9.8: “market” — not fixed"),
+                  F("deal.annual_capex_reserves", "CapEx / reserves per year", "usd"),
+                  F("deal.exit_noi_basis", "Sale priced on", "select", null, [["trailing", "Final hold year's NOI"], ["forward", "Next year's NOI"]]),
+                  F("deal.reserves_returned_at_sale", "Reserves returned at sale", "usd")];
   if (hasB) {
     fields.push(rr(F("deal.below_noi_income.sale_value", `${b.label || "Below-NOI income"} at sale`, "select", null, [["npv", "Buyer pays the NPV of what's left"], ["none", "Nothing"]])));
     if (b.sale_value === "npv") fields.push(F("deal.below_noi_income.npv_rate", "Discount rate", "pct"));
     fields.push(F("deal.below_noi_income.factor", `${b.label || "Below-NOI income"} paid`, "pct", "100% = as scheduled; 50% = half of every payment"));
     fields.push(Object.assign(F("deal.below_noi_income.delay_years", "Starts late by", "select", null, [0, 1, 2, 3, 4, 5].map((y) => [y, y ? `${y} year${y > 1 ? "s" : ""}` : "No delay"])), { num: true }));
   }
-  sec.innerHTML = `<h3>${hasSL ? "Side letter &amp; sale" : "Sale"}</h3>${fields.map(fieldHTML).join("")}<div class="readout" id="extrasReadout"></div>`;
+  sec.innerHTML = `<h3>Costs &amp; sale</h3>${fields.map(fieldHTML).join("")}<div class="readout" id="extrasReadout"></div>`;
   fields.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
   if (results) updateExtrasReadout();
   markChanged();
 }
 function updateExtrasReadout() {
-  const el = document.getElementById("extrasReadout");
-  if (!el) return;
+  const el = document.getElementById("extrasReadout"), elI = document.getElementById("investorReadout");
+  if (!el || !elI) return;
   const c = results.cases[PRIMARY], inv = c.investor, sl = inv.side_letter, ex = c.exit, b = inputs.deal.below_noi_income;
-  const bits = [];
-  if (sl) bits.push(`${esc(c.label)}: our check <b>${fmt.pct(inv.irr)}</b> with the side letter vs ${fmt.pct(sl.regular_irr)} regular · ${fmt.signedk(sl.uplift)} more, all from the sponsor's promote`);
+  const bits = [], mine = [];
+  if (sl) mine.push(`${esc(c.label)}: our check <b>${fmt.pct(inv.irr)}</b> with the side letter vs ${fmt.pct(sl.regular_irr)} regular · ${fmt.signedk(sl.uplift)} more, all from the sponsor's promote`);
   if (b.amounts.length) bits.push(`${esc(b.label || "Below-NOI income")}: ${fmt.usd(c.operations.below_noi_income.reduce((x, y) => x + y, 0))} during the hold${ex.below_noi_sale_value ? ` + ${fmt.usd(ex.below_noi_sale_value)} at sale` : ""}`);
   el.innerHTML = bits.join("<br>");
+  elI.innerHTML = mine.join("<br>");
 }
 function renderDiligence() {
   const items = (META.diligence || []).filter((x) => x.status !== "closed");
@@ -1136,12 +1175,14 @@ function updateStructurePick() {
   if (se) { se.hidden = !ed; se.innerHTML = ed ? `<b>Changed from the template:</b> ${esc(ch.join("; "))}.` : ""; }
 }
 function renderWarehouseInputs() {
-  const w = inputs.warehouse, n = w.names, fx = whFields(), sec = document.getElementById("sec-wh");
+  const w = inputs.warehouse, n = w.names, fx = whFields(), secV = document.getElementById("sec-wh"), secL = document.getElementById("sec-ltec");
+  // fields live in two cards (the vehicle; the manager and its partners): look them up in either
+  const sec = { querySelector: (q) => secV.querySelector(q) || secL.querySelector(q) };
   const all = [];
   const block = (fields) => { all.push(...fields); return fields.map(fieldHTML).join(""); };
   const grp = (id, title, body) => `<div class="grp" data-grp="${id}"><div class="grp-head" role="button" tabindex="0"><span class="grp-title">${title}</span><span class="sec-badge"></span><span class="chev" aria-hidden="true"></span></div><div class="grp-sum"></div><div class="grp-body">${body}</div></div>`;
   const st = STRUCTURES && STRUCTURES.templates, cur = w.structure || "custom", edited = cur !== "custom" && structureEdited();
-  sec.innerHTML = `<h3>${esc(n.vehicle)}</h3>
+  secV.innerHTML = `<h3>${esc(n.vehicle)}</h3>
     ${st ? `<div class="structure-pick"><label for="structurePick"><b>How ${esc(n.manager)} holds this deal</b></label>
       <select id="structurePick">${Object.entries(st).map(([k, t]) => `<option value="${k}"${k === cur ? " selected" : ""}>${esc(t.label)}${k === cur && edited ? " · edited" : ""}</option>`).join("")}<option value="custom"${cur === "custom" ? " selected" : ""}>Set by hand</option></select>
       <span class="note" style="margin:0">${esc(cur !== "custom" ? E.templateNote(st[cur], inputs) : "The vehicle below was set up by hand.")}</span>
@@ -1150,11 +1191,17 @@ function renderWarehouseInputs() {
     ${grp("wh-names", "Names", block(fx.names))}
     ${grp("wh-raise", "The raise", block(fx.vehicle) + `<div class="readout" id="whRaised"></div>`)}
     ${grp("wh-fees", `${esc(n.manager)} fees &amp; promote`, block(fx.fees))}
+    ${grp("wh-sales", "Sell-down of the warehouse pool", block(fx.credit) + `
+    ${w.selldown.tranches.map((t, j) => `<div class="card"><div class="card-head"><span>Sale ${j + 1}</span><button class="link" type="button" data-remove-sale="${j}">Remove</button></div>${block(fx.sale(j))}</div>`).join("")}
+    <div class="sumline" id="saleSums"></div>
+    ${w.selldown.tranches.length < MAX_SALES ? `<div class="row"><button class="btn" type="button" id="addSale">+ Add sale</button></div>` : ""}`)}
     ${grp("wh-people", `People in ${esc(n.vehicle)}`, `
     <p class="note" style="margin:0">Fully subscribed? Make everyone “Keeps units”. Covering a shortfall to resell? “Warehouses to sell” or “Lends”.</p>
     ${w.people.map((p, i) => `<div class="card"><div class="card-head"><span>Person ${i + 1}</span>${w.people.length > 1 ? `<button class="link" type="button" data-remove-person="${i}">Remove</button>` : ""}</div>${block(fx.person(i))}</div>`).join("")}
     <div class="sumline" id="peopleSums"></div>
     ${w.people.length < MAX_PEOPLE ? `<div class="row"><button class="btn" type="button" id="addPerson">+ Add person</button></div>` : ""}`)}
+    <datalist id="buyerNames">${[n.buyers].concat(w.people.map((p) => p.name)).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>`;
+  secL.innerHTML = `<h3>${esc(n.manager)}'s own terms</h3>
     ${grp("wh-ltec", `${esc(n.manager)} between its partners`, `
     <p class="note" style="margin:0">How ${esc(n.manager)}'s own cash is shared when partners fund it unevenly. All off: each partner gets their capital share of ${esc(n.manager)}'s units and reserve, and their share of its fees &amp; promote.</p>
     ${block(fx.split)}
@@ -1172,12 +1219,8 @@ function renderWarehouseInputs() {
     <p class="note" style="margin:0">Someone buys part of ${esc(n.manager)} from an owner later, e.g. when a commission comes in. The buyer pays the seller; ${esc(n.manager)}'s cash follows the new ownership from that date. Price is based on cost: the share of ${esc(n.manager)}'s ${fmt.usd(w.manager_commitment + (w.manager_reserve || 0))} of capital.</p>
     ${w.manager_transfers.map((x, q) => `<div class="card"><div class="card-head"><span>Buy-in ${q + 1}</span><button class="link" type="button" data-remove-xfer="${q}">Remove</button></div>${block(fx.xfer(q))}</div>`).join("")}
     <div class="sumline" id="xferSums"></div>
-    ${w.manager_transfers.length < 3 && w.people.length > 1 ? `<div class="row"><button class="btn" type="button" id="addXfer">+ Add buy-in</button></div>` : ""}`)}
-    ${grp("wh-sales", "Sell-down of the warehouse pool", block(fx.credit) + `
-    ${w.selldown.tranches.map((t, j) => `<div class="card"><div class="card-head"><span>Sale ${j + 1}</span><button class="link" type="button" data-remove-sale="${j}">Remove</button></div>${block(fx.sale(j))}</div>`).join("")}
-    <div class="sumline" id="saleSums"></div>
-    ${w.selldown.tranches.length < MAX_SALES ? `<div class="row"><button class="btn" type="button" id="addSale">+ Add sale</button></div>` : ""}`)}
-    <datalist id="buyerNames">${[n.buyers].concat(w.people.map((p) => p.name)).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>`;
+    ${w.manager_transfers.length < 3 && w.people.length > 1 ? `<div class="row"><button class="btn" type="button" id="addXfer">+ Add buy-in</button></div>` : ""}`)}`;
+  document.getElementById("stageLtec").textContent = `${n.manager} and its partners`;
   all.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
   const sp = document.getElementById("structurePick");
   updateStructurePick();
@@ -1241,7 +1284,7 @@ function sum(a) { return a.reduce((x, y) => x + y, 0); }
 
 /* ------------------------------------------------------------ collapsible rail */
 const RAIL_KEY = "deal-engine.rail.collapsed.v1";
-const RAIL_DEFAULT_CLOSED = ["sec-timing", "sec-redstone", "sec-loan", "sec-hold", "sec-direct", "sec-repo",
+const RAIL_DEFAULT_CLOSED = ["sec-timing", "sec-redstone", "sec-loan", "sec-hold", "sec-direct", "sec-repo", "sec-sale",
                              "wh-names", "wh-raise", "wh-fees", "wh-ltec", "wh-buyins", "wh-sales"];
 let railClosed;
 try { railClosed = new Set(JSON.parse(localStorage.getItem(RAIL_KEY)) || RAIL_DEFAULT_CLOSED); } catch (_) { railClosed = new Set(RAIL_DEFAULT_CLOSED); }
@@ -1254,8 +1297,8 @@ function toggleRail(id, open) {
 // Which section / SV26 group a changed input path belongs to (for the "changed" badges).
 function railHome(path) {
   const d = (k) => path === "deal." + k || path.startsWith("deal." + k + ".");
-  if (path.startsWith("investor.side_letter") || d("exit_noi_basis") || d("reserves_returned_at_sale") || d("below_noi_income")) return ["sec-extras"];
-  if (path.startsWith("investor.") || d("selling_cost_pct") || d("disposition_fee_pct") || d("annual_capex_reserves")) return ["sec-investor"];
+  if (path.startsWith("investor.")) return ["sec-investor"];
+  if (["exit_noi_basis", "reserves_returned_at_sale", "below_noi_income", "selling_cost_pct", "disposition_fee_pct", "annual_capex_reserves"].some(d)) return ["sec-sale"];
   if (path.startsWith("timing")) return ["sec-timing"];
   if (path.startsWith("waterfall") || d("asset_mgmt_fee_pct_of_income")) return ["sec-redstone"];
   if (["loan_amount", "loan_rate", "debt_service_method", "annual_debt_service", "assumption_fee_pct"].some(d)) return ["sec-loan"];
@@ -1268,7 +1311,7 @@ function railHome(path) {
     const g = k === "names" ? "wh-names" : k === "people" ? "wh-people" : k === "manager_transfers" ? "wh-buyins" : k === "selldown" ? "wh-sales"
       : ["manager_waterfall", "manager_loans", "manager_vesting"].includes(k) ? "wh-ltec"
       : ["close_date", "manager_commitment", "manager_reserve", "reserve", "unit_price"].includes(k) ? "wh-raise" : "wh-fees";
-    return ["sec-wh", g];
+    return [g === "wh-ltec" || g === "wh-buyins" ? "sec-ltec" : "sec-wh", g];
   }
   return [];
 }
@@ -1279,11 +1322,15 @@ function railSummaries() {
   const sold = sum(w.selldown.tranches.map((x) => x.share)), di = inputs.direct_investors;
   const wf = inputs.waterfall;
   return {
-    "sec-investor": `${fmt.usdk(inputs.investor.check)} check · ${ps(d.selling_cost_pct)} selling costs${d.disposition_fee_pct ? ` · ${ps(d.disposition_fee_pct)} dispo` : ""}`,
+    "sec-investor": `${fmt.usdk(inputs.investor.check)} check${Object.keys(DEFAULTS.investor.side_letter.terms).length ? ` · side letter ${inputs.investor.side_letter.enabled ? "on" : "off"}` : ""}`,
+    "sec-sale": `${ps(d.selling_cost_pct)} selling costs${d.disposition_fee_pct ? ` · ${ps(d.disposition_fee_pct)} dispo` : ""}${d.below_noi_income.amounts.length ? ` · ${d.below_noi_income.label || "below-NOI income"} ${ps(d.below_noi_income.factor)}${d.below_noi_income.delay_years ? `, ${d.below_noi_income.delay_years}y late` : ""}` : ""}`,
+    "sec-ltec": [w.manager_waterfall.enabled ? `capital + ${ps(w.manager_waterfall.pref)} back first` : "shared pro rata",
+                 w.manager_loans.length ? `${w.manager_loans.length} loan${w.manager_loans.length > 1 ? "s" : ""}` : "",
+                 w.manager_vesting.length ? `${w.manager_vesting.length} vesting` : "",
+                 w.manager_transfers.length ? `${w.manager_transfers.length} buy-in${w.manager_transfers.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · "),
     "sec-timing": t.mode === "schedule" ? `${UI.sponsor_short} schedule · ${UI.deal_short} ${freq[t.siena_frequency]} · ${n.vehicle} ${freq[t.vehicle_frequency]}` : "Annual (workbook convention)",
     "sec-redstone": `${ps(wf.pref_rate)} pref → ${wf.tiers.map((x) => `${Math.round(x.lp_share * 100)}/${100 - Math.round(x.lp_share * 100)} to ${ps(x.lp_irr_hurdle)}`).join(" → ")} → ${Math.round(wf.residual_lp_share * 100)}/${100 - Math.round(wf.residual_lp_share * 100)} · ${ps(d.asset_mgmt_fee_pct_of_income)} AM fee`,
     "sec-loan": `${fmt.usdk(d.loan_amount)} @ ${fmt.pct(d.loan_rate, 2)} · ${d.debt_service_method === "interest_only" ? "balance × rate" : "fixed debt service"}${d.assumption_fee_pct ? ` · ${ps(d.assumption_fee_pct)} assumption fee` : ""}`,
-    "sec-extras": `${inputs.investor.side_letter.enabled ? "Side letter on" : Object.keys(inputs.investor.side_letter.terms).length ? "Side letter off" : ""}${d.below_noi_income.amounts.length ? ` · ${d.below_noi_income.label || "below-NOI income"} ${d.below_noi_income.factor !== 1 ? fmt.pct(d.below_noi_income.factor, 0) + " paid, " : ""}${d.below_noi_income.delay_years ? d.below_noi_income.delay_years + "-yr delay, " : ""}${d.below_noi_income.sale_value === "npv" ? "valued at sale" : "not valued at sale"}` : ""}`.replace(/^ · /, ""),
     "sec-variants": activeVariant == null ? "Defaults" : E.fillLabel((META.alternatives[activeVariant] || {}).name, inputs),
     "sec-hold": `Sell end of Year ${d.hold_years} (${+inputs.warehouse.close_date.slice(0, 4) + d.hold_years})` + (rf.enabled && d.hold_years > 1 ? ` · refinance Year ${rf.year}${rf.crystallize ? " + crystallize" : ""}` : " · no refinance"),
     "sec-direct": di.length ? `${di.length} investor${di.length > 1 ? "s" : ""} · ${fmt.usdk(sum(di.map((x) => x.check)))}` : "None",
@@ -1329,7 +1376,103 @@ function decorateRail(changedPaths) {
     g.querySelector(".grp-head .sec-badge").textContent = badge(id);
     g.querySelector(".grp-sum").textContent = sums[id] || "";
   });
+  // "Show only what's changed": hide cards, groups, people cards and fields still at the deal file's value; the
+  // "Which version" stage always shows. A stage with nothing left to show hides its header too.
+  const only = document.querySelector("aside.rail").classList.contains("only-changed");
+  const keep = (el) => !!el.closest('.stage[data-stage="version"]');
+  document.querySelectorAll(".rail section[id]").forEach((sec) => sec.classList.toggle("no-changes", only && !keep(sec) && !counts[sec.id]));
+  document.querySelectorAll(".rail .grp").forEach((g) => g.classList.toggle("no-changes", only && !counts[g.dataset.grp]));
+  document.querySelectorAll(".rail .grp .card").forEach((c) => c.classList.toggle("no-changes", only && !c.querySelector(".is-changed")));
+  document.querySelectorAll(".rail .field").forEach((f) => f.classList.toggle("unchanged-hide", only && !keep(f) && !f.classList.contains("is-changed")));
+  document.querySelectorAll(".rail .stage").forEach((st) => {
+    st.hidden = ![...st.querySelectorAll(":scope > section[id]")].some((x) => !x.hidden && !x.classList.contains("no-changes"));
+  });
+  const nc = document.getElementById("noChanges");
+  if (nc) nc.hidden = !(only && !Object.keys(counts).length);
 }
+// Open a card (and a group in it), scroll to it, and focus a field: from the flow diagram and from "Find an input".
+function openRail(secId, grpId, focusPath) {
+  [secId, grpId].filter(Boolean).forEach((id) => railClosed.delete(id));
+  saveRail(); decorateRail();
+  let target = (focusPath && document.querySelector(`.rail [data-path="${focusPath}"]`)) || (grpId && document.querySelector(`.rail [data-grp="${grpId}"]`)) || document.getElementById(secId);
+  if (!target) return;
+  if (target.offsetParent === null && document.querySelector("aside.rail").classList.contains("only-changed")) setOnlyChanged(false);
+  target.scrollIntoView({ block: focusPath ? "center" : "start" });
+  target.classList.remove("flash"); void target.offsetWidth; target.classList.add("flash");
+  if (focusPath) { const i = target.querySelector("input, select"); if (i) i.focus({ preventScroll: true }); }
+}
+const ONLY_KEY = "deal-engine.rail.onlychanged.v1";
+function setOnlyChanged(on) {
+  document.querySelector("aside.rail").classList.toggle("only-changed", on);
+  document.getElementById("onlyChanged").checked = on;
+  try { localStorage.setItem(ONLY_KEY, on ? "1" : ""); } catch (_) {}
+  if (on) {  // open what changed so it's in view
+    const c = decorateRail.counts || {};
+    railIds().forEach((id) => { if (c[id]) railClosed.delete(id); });
+    saveRail();
+  }
+  decorateRail();
+}
+document.getElementById("onlyChanged").addEventListener("change", (e) => setOnlyChanged(e.target.checked));
+try { if (localStorage.getItem(ONLY_KEY)) { document.querySelector("aside.rail").classList.add("only-changed"); document.getElementById("onlyChanged").checked = true; } } catch (_) {}
+// flow diagram boxes open the cards that control them (data-open = "section/group/field path")
+document.addEventListener("click", (e) => {
+  const nd = e.target.closest("#whFlow .node[data-open]");
+  if (nd) { const [a, g, f] = nd.dataset.open.split("|"); openRail(a, g || null, f || null); }
+});
+document.addEventListener("keydown", (e) => {
+  const nd = e.target.closest && e.target.closest("#whFlow .node[data-open]");
+  if (nd && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); const [a, g, f] = nd.dataset.open.split("|"); openRail(a, g || null, f || null); }
+});
+
+/* ------------------------------------------------------------ find an input */
+// Every field in the panel, by its label, where it sits and its path; typing filters, Enter or a click jumps to it.
+function findIndex() {
+  return [...document.querySelectorAll(".rail [data-path]")].filter((el) => !el.closest("[hidden]") && el.querySelector("label")).map((el) => {
+    const l = el.querySelector("label"), sec = el.closest("section[id]"), grp = el.closest(".grp"), card = el.closest(".card");
+    const label = [...l.childNodes].filter((x) => x.nodeType === 3).map((x) => x.textContent).join("").trim() || el.dataset.path;
+    const hintTxt = (l.querySelector(".src") || {}).textContent || "";
+    const where = [sec && sec.querySelector(".sec-title") ? sec.querySelector(".sec-title").textContent : "", grp ? grp.querySelector(".grp-title").textContent : "",
+      card ? (card.querySelector(".card-head span") || {}).textContent || "" : ""].filter(Boolean).join(" › ");
+    return { path: el.dataset.path, label, where, sec: sec && sec.id, grp: grp && grp.dataset.grp,
+      hay: `${label} ${where} ${el.dataset.path.replace(/[._]/g, " ")}`.toLowerCase(), hint: hintTxt.toLowerCase() };
+  });
+}
+let findHits = [], findActive = 0;
+function renderFind() {
+  const box = document.getElementById("railFindResults"), inp = document.getElementById("railFind"), q = inp.value.trim().toLowerCase();
+  if (!q) { box.hidden = true; inp.setAttribute("aria-expanded", "false"); return; }
+  const words = q.split(/\s+/);
+  const idx = findIndex();
+  let hits = idx.filter((x) => words.every((wd) => x.hay.includes(wd)));
+  if (!hits.length) hits = idx.filter((x) => words.every((wd) => `${x.hay} ${x.hint}`.includes(wd)));  // source notes only as a fallback
+  findHits = hits
+    .sort((a, b) => (b.label.toLowerCase().startsWith(q) - a.label.toLowerCase().startsWith(q)) || (b.label.toLowerCase().includes(q) - a.label.toLowerCase().includes(q)))
+    .slice(0, 8);
+  findActive = 0;
+  box.innerHTML = findHits.length ? findHits.map((x, i) => `<button type="button" role="option" data-find="${i}" class="${i === findActive ? "active" : ""}">${esc(x.label)}<span class="where">${esc(x.where)}</span></button>`).join("")
+    : `<div class="none">No input matches “${esc(q)}”.</div>`;
+  box.hidden = false; inp.setAttribute("aria-expanded", "true");
+}
+function chooseFind(i) {
+  const x = findHits[i];
+  if (!x) return;
+  document.getElementById("railFindResults").hidden = true;
+  openRail(x.sec, x.grp, x.path);
+}
+document.getElementById("railFind").addEventListener("input", renderFind);
+document.getElementById("railFind").addEventListener("keydown", (e) => {
+  const box = document.getElementById("railFindResults");
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    if (!findHits.length) return;
+    findActive = (findActive + (e.key === "ArrowDown" ? 1 : findHits.length - 1)) % findHits.length;
+    box.querySelectorAll("[data-find]").forEach((b, i) => b.classList.toggle("active", i === findActive));
+  } else if (e.key === "Enter") { e.preventDefault(); chooseFind(findActive); }
+  else if (e.key === "Escape") { box.hidden = true; }
+});
+document.getElementById("railFindResults").addEventListener("click", (e) => { const b = e.target.closest("[data-find]"); if (b) chooseFind(+b.dataset.find); });
+document.addEventListener("click", (e) => { if (!e.target.closest(".rail-find")) document.getElementById("railFindResults").hidden = true; });
 const railIds = () => [...document.querySelectorAll(".rail section[id]")].map((s) => s.id).concat([...document.querySelectorAll(".rail .grp")].map((g) => g.dataset.grp));
 document.addEventListener("click", (e) => {
   const h = e.target.closest(".rail section[id] > h3");
@@ -1553,7 +1696,10 @@ function renderFlow() {
   // boxes: name, what it is, and its cash over the hold; columns run left to right in the direction money goes in
   const BW = 190, BH = 58, GX = 46, GY = 12, X = (c) => 10 + c * (BW + GX);
   const nodes = [], edges = [];
-  const node = (id, col, row, t, sub, cash, hub) => nodes.push({ id, x: X(col), y: 10 + row * (BH + GY), t, sub, cash, hub });
+  // each box opens the panel cards that control it: section | group | field
+  const opens = (id) => id === "deal" ? "sec-cases" : id === "veh" ? "sec-wh" : id === "mgr" ? "sec-ltec|wh-ltec"
+    : id[0] === "g" ? "sec-wh|wh-sales" : `sec-wh|wh-people|warehouse.people.${id.slice(1)}.name`;
+  const node = (id, col, row, t, sub, cash, hub) => nodes.push({ id, x: X(col), y: 10 + row * (BH + GY), t, sub, cash, hub, open: opens(id) });
   node("deal", 0, 0, DEALS[META.slug].meta.name, UI.sponsor_short || META.sponsor || "LP interest", `${fmt.usdk(check)} in → ${fmt.usdk(back)} back`);
   const pcol = direct ? 2 : 3;
   let mRow = 0;
@@ -1579,7 +1725,7 @@ function renderFlow() {
     const A = at(a), B = at(b), x1 = A.x + BW, y1 = A.y + BH / 2, x2 = B.x, y2 = B.y + BH / 2, mx = (x1 + x2) / 2;
     svg.push(`<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`);
   });
-  nodes.forEach((d) => svg.push(`<g class="node${d.hub ? " hub" : ""}"><rect x="${d.x}" y="${d.y}" width="${BW}" height="${BH}" rx="6"/>` +
+  nodes.forEach((d) => svg.push(`<g class="node${d.hub ? " hub" : ""}" data-open="${d.open}" role="button" tabindex="0" aria-label="Edit ${esc(d.t)} in the panel"><title>Edit in the panel</title><rect x="${d.x}" y="${d.y}" width="${BW}" height="${BH}" rx="6"/>` +
     `<text class="t" x="${d.x + 10}" y="${d.y + 18}">${esc(cut(d.t, 22))}</text><text class="s" x="${d.x + 10}" y="${d.y + 33}">${esc(cut(d.sub, 27))}</text>` +
     `<text class="lab" x="${d.x + 10}" y="${d.y + 48}">${esc(cut(d.cash, 27))}</text></g>`));
   svg.push(`<text class="cap" x="10" y="${H - 8}">${esc(cs.label)} case, totals over the hold; “back” includes capital returned.</text></svg>`);
