@@ -859,7 +859,49 @@
              warehouse: warehouse(inp, cases) };
   }
 
-  const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths };
+  // ---- structure templates (see core.py apply_structure; lib = engine/structures.json)
+  function structurePartners(inp, lib) {
+    const w = inp.warehouse, mgr = nameKey(w.names.manager);
+    const ps = w.people.filter((p) => (p.manager_capital > 0 || p.manager_share > 0) && nameKey(p.name) !== mgr);
+    const tc = sum(ps.map((p) => p.manager_capital)), tp = sum(ps.map((p) => p.manager_share));
+    if (!ps.length || tp <= 0) return lib.partners.map((p) => Object.assign({}, p));
+    return ps.map((p) => ({ name: p.name, capital_share: tc > 0 ? p.manager_capital / tc : p.manager_share / tp, promote_share: p.manager_share / tp }));
+  }
+  function applyStructure(inp, key, lib, partners) {
+    const t = lib.templates[key];
+    const out = JSON.parse(JSON.stringify(inp));
+    const w0 = inp.warehouse;
+    const ps = partners || structurePartners(inp, lib);
+    const check = inp.investor.check;
+    const reserve = check * t.reserve_pct;
+    const mc = check * t.manager_commitment_pct;
+    const outside = check + reserve - mc;
+    const meta = inp.meta || {};
+    const dealName = (meta.ui || {}).deal_short || meta.name || "Deal";
+    const people = ps.map((p) => ({ name: p.name, amount: 0, role: "member", manager_capital: mc * p.capital_share,
+      manager_share: p.promote_share, loan_rate: 0.08 }));
+    let tranches = [];
+    if (t.outside === "members" && outside > 0.005) {
+      people.push({ name: w0.names.buyers, amount: outside, role: "member", manager_capital: 0, manager_share: 0, loan_rate: 0.08 });
+    } else if (t.outside === "warehouse" && outside > 0.005) {
+      people[0].amount = outside;
+      people[0].role = "warehouse";
+      tranches = [{ date: addMonths(w0.close_date, t.sale_months), share: 1, pricing: "carry_simple", rate: t.sale_carry, buyer: w0.names.buyers }];
+    }
+    Object.assign(out.warehouse, {
+      structure: key,
+      names: { vehicle: t.vehicle_name.replace("{deal}", dealName), manager: w0.names.manager, buyers: w0.names.buyers },
+      unit_price: 1000, reserve, manager_commitment: mc, manager_reserve: 0,
+      admin_cost_per_year: t.admin_cost_per_year, admin_cost_method: "fixed",
+      acq_fee_pct: t.acq_fee_pct, mgmt_fee_pct: t.mgmt_fee_pct,
+      member_hurdle_irr: t.member_hurdle_irr, hurdle_type: "compound", hurdle_basis: "pooled",
+      promote: t.promote, warehouse_promote: t.promote, promote_on_manager_units: true,
+      people,
+      selldown: { credit_distributions: true, tranches },
+    });  // LTEC's own terms (buy-ins, waterfall, loans, vesting) stay
+    return out;
+  }
+  const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths, applyStructure, structurePartners };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DealEngine = api;
 })(typeof window !== "undefined" ? window : this);

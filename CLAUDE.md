@@ -33,6 +33,10 @@
   capital, capped at it; repaid from the borrower's manager cash first; recourse or forgiven) and `manager_vesting`
   (promote share vests; on `leaves` the unvested part goes to the others). All off by default = results unchanged.
   Siena's variants "LTEC A–E" are the worked examples; `tests/test_manager_split.py` holds the hand calculations.
+- Structure (#12): how LTEC holds a deal comes from `engine/structures.json` templates (direct / spv / spv_warehouse),
+  built by `apply_structure` (core.py) = `applyStructure` (core.js); `warehouse.structure` records it (schema 6). Set it
+  with `python scripts/apply_structure.py <slug> <template> [--variant NAME]`. House terms for SPVs live in that file.
+  The dashboard's flow diagram is drawn from the same inputs and results (never hand-placed numbers).
 - New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from
   the sponsor case; defaults in `engine/standard_cases.json`), then tune them to the deal's diligence and source them.
 - Tests: `python -m pytest` runs engine, deal-file, tie-out AND page tests (`tests/web/*.test.js` in headless Chromium,

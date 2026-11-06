@@ -21,7 +21,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 5
+      "const": 6
     },
     "meta": {
       "type": "object",
@@ -561,7 +561,8 @@
         "promote",
         "warehouse_promote",
         "people",
-        "selldown"
+        "selldown",
+        "structure"
       ],
       "properties": {
         "names": {
@@ -781,6 +782,15 @@
               }
             }
           }
+        },
+        "structure": {
+          "enum": [
+            "direct",
+            "spv",
+            "spv_warehouse",
+            "custom"
+          ],
+          "description": "Which structure template (engine/structures.json) the vehicle was built from; 'custom' = set by hand. Informational: the engine reads the vehicle fields."
         }
       }
     },
