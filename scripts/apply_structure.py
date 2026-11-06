@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from engine.core import apply_structure, load_structures  # noqa: E402
+from engine.core import apply_structure, load_structures, template_note  # noqa: E402
 
 
 def main(argv):
@@ -21,13 +21,13 @@ def main(argv):
         raise SystemExit(f"template must be one of: {', '.join(lib['templates'])}")
     path = ROOT / "deals" / slug / "deal.json"
     deal = json.loads(path.read_text())
-    new = apply_structure(deal, key, lib)["warehouse"]
     if variant:
+        # a variant names the template, so it is built for the deal's check, names and partners when applied (#14)
         alts = deal["meta"].setdefault("alternatives", [])
         alts[:] = [a for a in alts if a["name"] != variant]
-        alts.append({"name": variant, "note": lib["templates"][key]["note"], "changes": {"warehouse": new}})
+        alts.append({"name": variant, "note": template_note(lib["templates"][key], deal), "structure": key})
     else:
-        deal["warehouse"] = new
+        deal["warehouse"] = apply_structure(deal, key, lib)["warehouse"]
     path.write_text(json.dumps(deal, indent=2, ensure_ascii=False) + "\n")
     print(f"{slug}: {'variant ' + repr(variant) if variant else 'vehicle'} set to {lib['templates'][key]['label']}")
 

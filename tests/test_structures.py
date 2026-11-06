@@ -64,3 +64,18 @@ def test_direct_partners_split_ltec_by_capital():
     for k, r in res["warehouse"].items():
         got = sum(p["from_manager"] for p in r["summary"]["people"])
         assert got == pytest.approx(sum(res["cases"][k]["investor"]["payments"]), abs=0.05)
+
+
+def test_template_notes_use_their_own_numbers():
+    """#16: a template's description is filled from its own values (and the manager's name), never fixed text."""
+    from engine.core import template_note
+    inp = load_deal("siena-villas")
+    for k, t in LIB["templates"].items():
+        note = template_note(t, inp)
+        assert "{" not in note, (k, note)
+    t = dict(LIB["templates"]["spv_warehouse"], sale_carry=0.075, sale_months=9)
+    note = template_note(t, inp)
+    assert "par plus 7.5% simple carry" in note and "9 months later" in note and "LTEC commits 35.0%" in note
+    js = subprocess.run(["node", "-e", 'const E=require(process.argv[1]);let b="";process.stdin.on("data",d=>b+=d);process.stdin.on("end",()=>{const{t,inp}=JSON.parse(b);process.stdout.write(E.templateNote(t,inp))})',
+                         str(ROOT / "engine" / "core.js")], input=json.dumps({"t": t, "inp": inp}), capture_output=True, text=True, check=True).stdout
+    assert js == note

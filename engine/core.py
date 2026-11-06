@@ -1181,6 +1181,19 @@ def structure_partners(inp: dict, lib: dict) -> list:
              "promote_share": p["manager_share"] / tp} for p in ps]
 
 
+def template_note(t: dict, inp: dict) -> str:
+    """A structure template's description with its own numbers and the manager's name filled in: {manager}; rates and
+    shares ({sale_carry}, {promote}, {reserve_pct}, ...) as percentages; {sale_months} as a whole number."""
+    def val(k):
+        if k == "manager":
+            return inp["warehouse"]["names"]["manager"]
+        v = t.get(k)
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        return str(int(round(v))) if k.endswith("months") else f"{v * 100:.1f}%"
+    return re.sub(r"\{([a-z_]+)\}", lambda m: val(m.group(1)) or m.group(0), t.get("note", ""))
+
+
 def apply_structure(inp: dict, key: str, lib: dict | None = None, partners: list | None = None) -> dict:
     """The deal's inputs with the vehicle (warehouse) rebuilt from a structure template, keeping the check, the vehicle
     close date, the names of the manager and buyers, LTEC's partners and LTEC's own terms. Nothing else changes."""
