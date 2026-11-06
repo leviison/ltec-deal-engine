@@ -27,5 +27,11 @@
   New engine outputs a partner would ask about should be exposed through these tools.
 - New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from
   the sponsor case; defaults in `engine/standard_cases.json`), then tune them to the deal's diligence and source them.
+- Tests: `python -m pytest` runs engine, deal-file, tie-out AND page tests (`tests/web/*.test.js` in headless Chromium,
+  via `tests/test_web.py`; needs `npm install` once for the export libraries; `-m "not web"` skips them). Page fixtures
+  are generated from the deal files by `tests/web/fixtures.py`. Every UI bug gets a page test that fails before the fix
+  (e.g. `rail_layout.test.js`). Run the full suite before republishing.
+- Backlog: bugs, ideas and deferred work are GitHub Issues on leviison/ltec-deal-engine (labels: bug, enhancement,
+  diligence, deferred). Reference the issue in the commit (`Fixes #n`). The project doc keeps deal context, not a to-do list.
 - Context and diligence: claude.ai Project "deal engine" (doc `claude/deal-engine-context.md`); Siena's own context is
   in the "Siena Villas" project.

@@ -152,18 +152,20 @@ button.link { border: 0; background: none; color: var(--accent); font: inherit; 
 input.text { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: 13px var(--f-body); padding: 7px 8px; }
 input.text:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .saved { display: grid; gap: 6px; }
-.saved .item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+/* the rail is narrow: name on its own line, actions below it, then details */
+.saved .item { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
 .saved .item.active { border-color: var(--accent); background: var(--accent-soft); }
 .saved .item .nm { font-weight: 500; overflow-wrap: anywhere; }
 .saved .item .meta { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
 .saved .item .note { grid-column: 1 / -1; font-size: 11.5px; color: var(--fg); opacity: .85; }
 .saved .item .flag { grid-column: 1 / -1; font-size: 11.5px; color: var(--warn-fg); background: var(--warn-bg); border-radius: 4px; padding: 3px 6px; }
 .saved .item .flag.info { color: var(--muted); background: var(--sunk); }
-.saved .item .acts { display: flex; flex-wrap: wrap; gap: 2px 8px; justify-content: flex-end; }
+.saved .item .acts { display: flex; flex-wrap: wrap; gap: 2px 12px; justify-content: flex-start; font-size: 12.5px; }
 .saved .item .rename { grid-column: 1 / -1; display: flex; gap: 6px; }
 .saved .item .rename input { flex: 1; min-width: 0; }
-.editing { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); font-size: 13px; }
-.editing span { flex: 1; min-width: 0; }
+.editing { display: grid; gap: 8px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); font-size: 13px; }
+.editing span { min-width: 0; overflow-wrap: anywhere; }
+.editing .btn { justify-self: start; }
 .saved .acts { display: flex; gap: 10px; font-size: 12px; }
 .note { font-size: 12px; color: var(--muted); }
 .toast { font-size: 12px; color: var(--good); min-height: 1em; }
@@ -1623,7 +1625,7 @@ function updateScenarioChip() {
     row.hidden = !sc || !db;
     if (sc) {
       document.getElementById("editingText").innerHTML = edited ? `Editing <b>${esc(sc.name)}</b>: you've changed it since loading.` : `Loaded <b>${esc(sc.name)}</b>. Change anything, then update it.`;
-      document.getElementById("updateBtn").textContent = `Update “${sc.name.length > 28 ? sc.name.slice(0, 27) + "…" : sc.name}”`;
+      document.getElementById("updateBtn").textContent = "Update scenario";
       document.getElementById("updateBtn").disabled = !edited;
     }
     document.getElementById("saveBtn").textContent = sc ? "Save as new" : "Save";

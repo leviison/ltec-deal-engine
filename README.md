@@ -93,7 +93,9 @@ tests/test_cases.py         derived cases reproduce their source when neutral; o
 ## Everyday use
 
 ```bash
-python -m pytest                              # everything (needs node, jsonschema, openpyxl)
+npm install                                    # once: PDF/Excel libraries for the export page tests
+python -m pytest                              # everything, incl. dashboard page tests (needs node, playwright, jsonschema, openpyxl)
+python -m pytest -m "not web"                 # engine, deal-file and tie-out tests only
 python -m engine.core siena-villas            # print returns for a deal
 python scripts/build_web.py siena-villas      # rebuild that deal's page
 python scripts/export_excel.py siena-villas   # Excel export
