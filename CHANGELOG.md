@@ -5,7 +5,7 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
-## 2.1.0 — unreleased (feature/12-structure-templates)
+## 2.1.0 — 2026-11-06
 
 - Structure templates (#12): how LTEC holds a deal is now a choice: "Direct: LTEC invests", "SPV, fully subscribed" or
   "SPV with warehouse & sell-down (SV26-style)" (`engine/structures.json`, house terms in one place). Applied from the
@@ -16,6 +16,8 @@ they are off; patch = fixes.
 - The Bend: the deal file now holds it directly through LTEC with Levi and Thaxter as LTEC's partners (50/50, an
   assumption to confirm) instead of "LTEC" as a single member; two SPV variants. Deal results are unchanged; the
   vehicle now shows each partner.
+- The flow diagram follows "Case to show" with its own case buttons; tables with every case mark that column, and the
+  vehicle callout describes that case.
 
 ## 2.0.0 — 2026-11-06
 
