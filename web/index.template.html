@@ -44,6 +44,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
+.preview-bar { position: sticky; top: 0; z-index: 50; padding: 6px 16px; background: #7a4b00; color: #fff; font-size: 12.5px; text-align: center; }
 .wrap { max-width: 1320px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 48px; }
 h1, h2, h3 { font-family: var(--f-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: 0.005em; }
 h1 { font-size: 28px; line-height: 1.1; }
@@ -267,6 +268,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
 @media (prefers-reduced-motion: no-preference) { .case, .panel { transition: border-color .15s; } }
 </style>
 
+<div class="preview-bar" id="previewBar" hidden></div>
 <div class="wrap" id="wrap">
   <header class="top">
     <div class="compare-only">
@@ -415,6 +417,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
       </section>
 
       <p class="foot" id="footNote"></p>
+      <p class="foot muted small" id="buildNote"></p>
     </main>
   </div>
 
@@ -467,6 +470,9 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
 <script>
 // Every deal on this page, by slug (one for a single-deal build). The picker and #slug links switch between them.
 const DEALS = /*__DEALS__*/null;
+// Which engine release and commit built this page (engine/version.json, git); preview builds show a banner.
+const BUILD = /*__BUILD__*/null || { engine: "dev", commit: "", branch: "", built: "", preview: false };
+const ENGINE_LABEL = `LTEC Deal Engine v${BUILD.engine}`;
 const SLUGS = Object.keys(DEALS);
 const E = window.DealEngine;
 let DEFAULTS, META, UI, PRIMARY, CASES, DEFAULT_RESULTS;
@@ -774,6 +780,10 @@ function renderDiligence() {
   document.getElementById("dilSub").textContent = `${items.length} open · as of ${DEFAULTS.as_of}`;
   document.getElementById("dilList").innerHTML = items.map((x) => `<li><b>${esc(x.item)}</b>${x.note ? ` — ${esc(x.note)}` : ""}</li>`).join("");
   document.getElementById("footNote").textContent = UI.footnote;
+  const pv = document.getElementById("previewBar");
+  pv.hidden = !BUILD.preview;
+  if (BUILD.preview) pv.textContent = `Preview of ${BUILD.branch || "a branch"} (build ${BUILD.commit}) · not the live dashboard · saved scenarios here are separate from the live ones`;
+  document.getElementById("buildNote").textContent = `${ENGINE_LABEL}${BUILD.commit ? ` · build ${BUILD.commit}${BUILD.dirty ? "+" : ""}` : ""}${BUILD.built ? ` · ${BUILD.built}` : ""}`;
   document.getElementById("dirTitle").textContent = `Investors in ${UI.deal_short}`;
 }
 
@@ -1673,7 +1683,7 @@ function scenarioSummary(inp, slug) {
 function scenarioIssues(inp) { try { return vehicleIssues(inp, null); } catch (_) { return []; } }
 function scenarioDoc(inp, slug, extra) {
   return Object.assign({ deal: slug, diff_json: JSON.stringify(scenarioDiff(inp, slug)), base_version: DEALS[slug].version, base_as_of: DEALS[slug].as_of,
-    changes: diffPaths(inp, DEALS[slug]).length, model_version: DEALS[slug].version, summary: scenarioSummary(inp, slug) }, extra || {});
+    changes: diffPaths(inp, DEALS[slug]).length, model_version: DEALS[slug].version, engine_version: BUILD.engine, summary: scenarioSummary(inp, slug) }, extra || {});
 }
 async function whoAmI() { try { const u = await claude.use("user"); return u ? await u.id() : null; } catch (_) { return null; } }
 async function addScenario(inp, slug, name, extra) {
@@ -2735,12 +2745,12 @@ const XL = {
 const TAB = { sponsor: "FF7A8796", base: "FF2B5797", downside: "FFB7791F", stress: "FFB4432F", custom: "FF6A4C9C" };
 async function buildXlsx(st) {
   const wb = new window.ExcelJS.Workbook();
-  wb.creator = "LTEC Deal Engine"; wb.created = new Date();
+  wb.creator = ENGINE_LABEL; wb.created = new Date();
   const font = (o) => Object.assign({ name: "Calibri", size: 10, color: { argb: "FF1E2833" } }, o || {});
   const sheetName = (name) => { let n = String(name).replace(/[\\/?*[\]:]/g, " ").slice(0, 31), i = 2; while (wb.getWorksheet(n)) n = `${String(name).slice(0, 27)} ${i++}`; return n; };
   const newSheet = (name, opts) => wb.addWorksheet(sheetName(name), Object.assign({
     pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
-    headerFooter: { oddFooter: "&8LTEC Deal Engine · &D · page &P of &N" } }, opts || {}));
+    headerFooter: { oddFooter: `&8${ENGINE_LABEL} · &D · page &P of &N` } }, opts || {}));
   // the title block: name, subtitle, note; returns the next row number
   const title = (ws, t, sub, note, span) => {
     ws.addRow([t]).font = font({ size: 16, bold: true, color: { argb: XL.navy } });
@@ -2780,7 +2790,7 @@ async function buildXlsx(st) {
     const m = DEALS[slug].meta, d = inp.deal;
     ws.properties.tabColor = { argb: XL.navy };
     title(ws, name, `${m.sponsor} · ${(m.ui && m.ui.location) || ""} · ${m.status} · ${version}`,
-      `Exported ${today()} from LTEC Deal Engine. LP returns on the deal's waterfall, annual periods. Our cases are LTEC assumptions. Analysis, not investment advice.`);
+      `Exported ${today()} from ${ENGINE_LABEL}. LP returns on the deal's waterfall, annual periods. Our cases are LTEC assumptions. Analysis, not investment advice.`);
     const facts = [["Units", d.units, XL.N], ["Price", d.purchase_price, XL.D], ["Price per unit", d.purchase_price / d.units, XL.D], ["Loan", d.loan_amount, XL.D],
       ["Loan rate", d.loan_rate, XL.P2], ["LP equity", d.lp_equity, XL.D], ["Waterfall", waterfallText(inp.waterfall)], ["Our check", inp.investor.check, XL.D],
       ["Side letter on our check", inp.investor.side_letter && inp.investor.side_letter.enabled ? waterfallText(Object.assign({}, inp.waterfall, inp.investor.side_letter.terms)) : "No"]];
@@ -2898,7 +2908,7 @@ async function buildXlsx(st) {
   } else {
     const cols = st.cols, n = cols.length + 1;
     const ws = newSheet("Comparison", { properties: { tabColor: { argb: XL.navy } } });
-    title(ws, "Deal comparison", cols.map((d) => `${d.meta.name} (${d.version})`).join(" · "), `Exported ${today()} from LTEC Deal Engine. LP returns on each deal's waterfall, annual periods. Our cases are LTEC assumptions.`);
+    title(ws, "Deal comparison", cols.map((d) => `${d.meta.name} (${d.version})`).join(" · "), `Exported ${today()} from ${ENGINE_LABEL}. LP returns on each deal's waterfall, annual periods. Our cases are LTEC assumptions.`);
     const hr = ws.addRow(["", ...cols.map((d) => `${d.meta.name}\n${d.version}`)]); styleHead(hr, n); hr.height = 34;
     CMP_ROLES.forEach(([k, name]) => {
       styleGroup(ws.addRow([name]), n);
@@ -2974,7 +2984,7 @@ function buildPdf(st) {
     const m = st.meta, d = st.inp.deal, ui = Object.assign({}, m.ui || {});
     const version = st.scenario ? `Saved scenario "${st.scenario}"` : st.edits.length ? `As on the dashboard (${st.edits.length} change${st.edits.length > 1 ? "s" : ""} from the deal file)` : "As underwritten";
     header(m.name, `${m.sponsor} · ${ui.location || ""} · ${d.units} units · price ${fmt.usdk(d.purchase_price)} (${fmt.usdk(d.purchase_price / d.units)}/unit) · loan ${fmt.usdk(d.loan_amount)} at ${fmt.pct(d.loan_rate, 2)} · LP equity ${fmt.usdk(d.lp_equity)}`,
-      `${m.status} · ${version} · ${today()} · LTEC Deal Engine`);
+      `${m.status} · ${version} · ${today()} · ${ENGINE_LABEL}`);
     if (m.summary) para(m.summary, 9);
     h2(`Returns by case (our check ${fmt.usdk(st.inp.investor.check)})`);
     const rows = st.runs.map(({ k, r }) => caseRow(k, r, st.inp));
@@ -3000,7 +3010,7 @@ function buildPdf(st) {
     if (ui.footnote) { y += 4; para(ui.footnote, 7.5, 120); }
   } else {
     const cols = st.cols;
-    header("Deal comparison", cols.map((c) => `${c.meta.name} (${c.version})`).join(" · "), `${today()} · LTEC Deal Engine · LP returns on each deal's waterfall, annual periods`);
+    header("Deal comparison", cols.map((c) => `${c.meta.name} (${c.version})`).join(" · "), `${today()} · ${ENGINE_LABEL} · LP returns on each deal's waterfall, annual periods`);
     const head = ["", ...cols.map((c) => `${c.meta.name}${cmpCols.filter((x) => x.slug === c.slug).length > 1 ? "\n" + c.version : ""}`)];
     const body = [];
     st.roles.forEach(([k, name]) => {
@@ -3032,7 +3042,7 @@ function buildPdf(st) {
     y += 4; para("Our cases (Adjusted Base, Downside, Stress) are LTEC assumptions, recorded with sources in each deal file. Analysis, not legal, tax or investment advice.", 7.5, 120);
   }
   const pages = doc.getNumberOfPages();
-  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFontSize(7); doc.setTextColor(140); doc.text(`LTEC Deal Engine · ${today()} · page ${i} of ${pages}`, W - M, Hh - 20, { align: "right" }); }
+  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFontSize(7); doc.setTextColor(140); doc.text(`${ENGINE_LABEL} · ${today()} · page ${i} of ${pages}`, W - M, Hh - 20, { align: "right" }); }
   return doc.output("blob");
 }
 (() => {

@@ -140,3 +140,14 @@ timing) is the Siena README at `siena-v1.0`; it still applies; the v2 additions 
 6. Intake as a reusable skill (deck + OA + sponsor model -> draft deal file with citations -> tie-out -> publish).
 
 Not legal, tax or investment advice.
+
+## Releases, branches and the preview dashboard
+
+- **Branches:** each issue is built on `feature/<issue>-<name>` and merged by pull request. GitHub Actions
+  (`.github/workflows/tests.yml`) runs the full suite on every push and pull request.
+- **Preview:** `python scripts/build_web.py --preview` builds `dist/preview/index.html` with a banner naming the branch
+  and commit. It is published to the separate "LTEC Deal Engine (preview)" artifact, so a feature can be tried before it
+  reaches the live dashboard. Saved scenarios on the preview are its own.
+- **Release:** bump `engine/version.json`, add the CHANGELOG.md entry, merge to `main`, tag `vX.Y.Z`, rebuild and
+  republish the live dashboard. The version and build commit show at the page foot, on every export, and on each saved
+  scenario, so any number can be traced to the engine that produced it.

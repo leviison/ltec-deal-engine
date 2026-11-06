@@ -39,6 +39,13 @@
   via `tests/test_web.py`; needs `npm install` once for the export libraries; `-m "not web"` skips them). Page fixtures
   are generated from the deal files by `tests/web/fixtures.py`. Every UI bug gets a page test that fails before the fix
   (e.g. `rail_layout.test.js`). Run the full suite before republishing.
+- Releases and previews: work happens on a branch (`feature/<issue>-<name>`) with a pull request; GitHub Actions runs
+  the full suite on every push. Try a branch on the preview dashboard: `python scripts/build_web.py --preview` and publish
+  `dist/preview/index.html` to the "LTEC Deal Engine (preview)" artifact (URL in README; its saved scenarios are separate).
+  Only merged, tagged releases go to the live dashboard: bump `engine/version.json`, add a CHANGELOG.md entry
+  (tests/test_release.py checks they match), merge, tag `vX.Y.Z`, push the tag, then rebuild and republish the live page.
+  The page footer, both exports and each saved scenario (`engine_version`) carry the release and build commit.
+  Never publish a branch to the live dashboard.
 - Backlog: bugs, ideas and deferred work are GitHub Issues on leviison/ltec-deal-engine (labels: bug, enhancement,
   diligence, deferred, structure). Entity-structure work follows the roadmap in issue #11
   (options on top of today's deal → vehicle → LTEC shape; off = unchanged results). Reference the issue in the commit (`Fixes #n`). The project doc keeps deal context, not a to-do list.
