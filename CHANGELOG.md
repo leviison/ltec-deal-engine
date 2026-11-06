@@ -5,6 +5,18 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.2.0 — 2026-11-06
+
+- Stable ids (#14): every person in a vehicle has an `id` (schema 7); names are labels only. Partner loans, vesting,
+  buy-ins and person sales refer to people by id, so renaming Levi → Bob or LTEC → another entity changes labels and
+  nothing else. Older files and saves that use names still work (the engines resolve ids first, then names).
+- Variants state only what they change: `set` paths address people by id (`warehouse.people[levi].manager_capital`)
+  and `structure` names a template built for the current check and partners. Titles and notes fill in current names
+  (`{manager} C · {levi} lends {thaxter}…`). Siena's LTEC A–E and The Bend's SPV variants give identical results.
+- Saved scenarios store people changes by id; older saves get ids and id references when they load.
+- `reference_issues` / `referenceIssues`: a check that every reference resolves, run by the tests (deal files and every
+  variant, after a rename too) and shown on the page.
+
 ## 2.1.0 — 2026-11-06
 
 - Structure templates (#12): how LTEC holds a deal is now a choice: "Direct: LTEC invests", "SPV, fully subscribed" or

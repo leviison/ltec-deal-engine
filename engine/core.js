@@ -570,7 +570,9 @@
     });
     const unitsSold = shares.map((s) => s * wTot);
 
+    // people are referred to by id (stable; names are labels) or, in older files, by name; ids win
     const pidx = {}; people.forEach((p, i) => { pidx[nameKey(p.name)] = i; });
+    people.forEach((p, i) => { if (p.id) pidx[nameKey(p.id)] = i; });
     const buyerNames = trs.map((tr) => ((tr.buyer || "").trim() || w.names.buyers));
     const buyerPerson = buyerNames.map((b) => (nameKey(b) in pidx ? pidx[nameKey(b)] : null));
     // per-unit cash on bought units (their own hurdle in member-by-member mode) and on lender-converted units
@@ -712,7 +714,7 @@
         const bo = nameKey(ln.borrower) in pidx ? pidx[nameKey(ln.borrower)] : null;
         // a loan funds the borrower's own manager capital, so it is capped at that
         const aL = bo !== null ? Math.min(ln.amount, people[bo].manager_capital) : 0;
-        const rec = { lender: ln.lender, borrower: ln.borrower, amount: aL, repaid: 0, interest: 0, owed_end: 0, settled: "invalid" };
+        const rec = { lender: lo !== null ? people[lo].name : ln.lender, borrower: bo !== null ? people[bo].name : ln.borrower, amount: aL, repaid: 0, interest: 0, owed_end: 0, settled: "invalid" };
         loansOut.push(rec);
         if (lo === null || bo === null || lo === bo || aL <= 0) return;
         lent[lo] += aL;
@@ -813,7 +815,7 @@
     return {
       dates: allDates, sv26_distributable: distCash, manager_promote: promote, manager_fees: fee.map((f) => -f),
       member_distributions: members, per_unit: puS, per_unit_warehouse: puW,
-      tranches: trs.map((tr, j) => ({ date: tr.date, share: shares[j], units: unitsSold[j], price: prices[j], buyer: buyerNames[j] })),
+      tranches: trs.map((tr, j) => ({ date: tr.date, share: shares[j], units: unitsSold[j], price: prices[j], buyer: buyerPerson[j] !== null ? people[buyerPerson[j]].name : buyerNames[j] })),
       people: outPeople,
       buyers: groups,
       manager_transfers: xfers.map((x) => ({ date: x.date, index: x.index,
@@ -865,7 +867,7 @@
     const ps = w.people.filter((p) => (p.manager_capital > 0 || p.manager_share > 0) && nameKey(p.name) !== mgr);
     const tc = sum(ps.map((p) => p.manager_capital)), tp = sum(ps.map((p) => p.manager_share));
     if (!ps.length || tp <= 0) return lib.partners.map((p) => Object.assign({}, p));
-    return ps.map((p) => ({ name: p.name, capital_share: tc > 0 ? p.manager_capital / tc : p.manager_share / tp, promote_share: p.manager_share / tp }));
+    return ps.map((p) => ({ id: p.id || personId(p.name), name: p.name, capital_share: tc > 0 ? p.manager_capital / tc : p.manager_share / tp, promote_share: p.manager_share / tp }));
   }
   function applyStructure(inp, key, lib, partners) {
     const t = lib.templates[key];
@@ -878,11 +880,11 @@
     const outside = check + reserve - mc;
     const meta = inp.meta || {};
     const dealName = (meta.ui || {}).deal_short || meta.name || "Deal";
-    const people = ps.map((p) => ({ name: p.name, amount: 0, role: "member", manager_capital: mc * p.capital_share,
-      manager_share: p.promote_share, loan_rate: 0.08 }));
+    const people = ps.map((p) => ({ id: p.id || personId(p.name), name: p.name, amount: 0, role: "member",
+      manager_capital: mc * p.capital_share, manager_share: p.promote_share, loan_rate: 0.08 }));
     let tranches = [];
     if (t.outside === "members" && outside > 0.005) {
-      people.push({ name: w0.names.buyers, amount: outside, role: "member", manager_capital: 0, manager_share: 0, loan_rate: 0.08 });
+      people.push({ id: "outside_members", name: w0.names.buyers, amount: outside, role: "member", manager_capital: 0, manager_share: 0, loan_rate: 0.08 });
     } else if (t.outside === "warehouse" && outside > 0.005) {
       people[0].amount = outside;
       people[0].role = "warehouse";
@@ -901,7 +903,86 @@
     });  // LTEC's own terms (buy-ins, waterfall, loans, vesting) stay
     return out;
   }
-  const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths, applyStructure, structurePartners };
+  // ---- ids, paths and variants (see core.py)
+  function personId(name, taken) {
+    const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "person";
+    const t = new Set(taken || []);
+    let pid = base, n = 2;
+    while (t.has(pid)) { pid = `${base}_${n}`; n += 1; }
+    return pid;
+  }
+  const ID_SEG = /^([^\[\]]+)\[([^\]]+)\]$/;
+  function getPath(obj, path) {
+    let cur = obj;
+    for (const seg of path.split(".")) {
+      const m = seg.match(ID_SEG);
+      if (m) {
+        const lst = cur && typeof cur === "object" && !Array.isArray(cur) ? cur[m[1]] : null;
+        cur = (lst || []).find((x) => x && typeof x === "object" && x.id === m[2]);
+      } else if (Array.isArray(cur)) cur = /^\d+$/.test(seg) ? cur[+seg] : undefined;
+      else if (cur && typeof cur === "object") cur = cur[seg];
+      else return null;
+      if (cur === undefined || cur === null) return null;
+    }
+    return cur;
+  }
+  function setPath(obj, path, value) {
+    const segs = path.split(".");
+    let cur = obj;
+    for (let n = 0; n < segs.length; n++) {
+      const seg = segs[n], last = n === segs.length - 1, m = seg.match(ID_SEG);
+      if (m) {
+        const lst = cur[m[1]], iid = m[2];
+        const idx = lst.findIndex((x) => x && typeof x === "object" && x.id === iid);
+        if (last) {
+          if (value === null || value === undefined) { if (idx >= 0) lst.splice(idx, 1); }
+          else if (idx < 0) lst.push(Object.assign({}, value, { id: iid }));
+          else lst[idx] = Object.assign({}, value, { id: iid });
+          return;
+        }
+        if (idx < 0) throw new Error(`${path}: no item with id ${iid}`);
+        cur = lst[idx];
+      } else {
+        const key = Array.isArray(cur) ? +seg : seg;
+        if (last) { cur[key] = value; return; }
+        cur = cur[key];
+      }
+    }
+  }
+  function mergeDeep(base, changes) {
+    const out = JSON.parse(JSON.stringify(base));
+    Object.entries(changes).forEach(([k, v]) => {
+      const isObj = (x) => x && typeof x === "object" && !Array.isArray(x);
+      out[k] = isObj(v) && isObj(out[k]) ? mergeDeep(out[k], v) : JSON.parse(JSON.stringify(v));
+    });
+    return out;
+  }
+  function applyVariant(inp, alt, lib) {
+    let out = JSON.parse(JSON.stringify(inp));
+    if (alt.structure) out = applyStructure(out, alt.structure, lib);
+    if (alt.changes) out = mergeDeep(out, alt.changes);
+    Object.entries(alt.set || {}).forEach(([p, v]) => setPath(out, p, JSON.parse(JSON.stringify(v))));
+    return out;
+  }
+  function referenceIssues(inp, strict) {
+    const w = inp.warehouse, ids = w.people.map((p) => p.id), out = [];
+    if (ids.some((i) => !i)) out.push("a person has no id");
+    const dup = [...new Set(ids.filter((i, k) => i && ids.indexOf(i) !== k))].sort();
+    if (dup.length) out.push(`duplicate ids: ${dup.join(", ")}`);
+    const known = new Set(ids.filter(Boolean).concat(strict ? [] : w.people.map((p) => nameKey(p.name))));
+    const ok = (r) => !!r && (known.has(r) || (!strict && known.has(nameKey(r))));
+    (w.manager_loans || []).forEach((ln, q) => ["lender", "borrower"].forEach((role) => { if (!ok(ln[role])) out.push(`partner loan ${q + 1}: ${role} '${ln[role]}' is not a person`); }));
+    (w.manager_vesting || []).forEach((v, q) => { if (!ok(v.person)) out.push(`vesting ${q + 1}: '${v.person}' is not a person`); });
+    (w.manager_transfers || []).forEach((x, q) => ["buyer", "seller"].forEach((role) => { if (!ok(x[role])) out.push(`buy-in ${q + 1}: ${role} '${x[role]}' is not a person`); }));
+    return out;
+  }
+  function fillLabel(text, inp) {
+    const w = inp.warehouse, names = Object.assign({}, w.names);
+    w.people.forEach((p) => { if (p.id) names[p.id] = p.name; });
+    return (text || "").replace(/\{([a-z0-9_]+)\}/g, (m0, k) => (k in names ? names[k] : m0));
+  }
+  const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths, applyStructure, structurePartners,
+    personId, getPath, setPath, mergeDeep, applyVariant, fillLabel, referenceIssues };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DealEngine = api;
 })(typeof window !== "undefined" ? window : this);

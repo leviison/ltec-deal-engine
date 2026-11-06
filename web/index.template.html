@@ -520,8 +520,9 @@ let inputs = clone(DEFAULTS);
 let editCase = PRIMARY, detailCase = PRIMARY, activeScenario = null, scenarios = [], db = null, results = null;
 
 function clone(x) { return JSON.parse(JSON.stringify(x)); }
-function get(obj, path) { return path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj); }
-function set(obj, path, v) { const ks = path.split("."); const last = ks.pop(); ks.reduce((o, k) => o[k], obj)[last] = v; }
+// paths: dotted fields and list positions, or list items by id (warehouse.people[levi].manager_capital; engine helpers)
+function get(obj, path) { return path.includes("[") ? E.getPath(obj, path) : path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj); }
+function set(obj, path, v) { if (path.includes("[")) { E.setPath(obj, path, v); return; } const ks = path.split("."); const last = ks.pop(); ks.reduce((o, k) => o[k], obj)[last] = v; }
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
 const fmt = {
@@ -746,11 +747,13 @@ function renderVariants() {
   if (!alts.length) return;
   const btn = (i, name, note) => `<button type="button" class="btn${activeVariant === i ? " primary" : ""}" data-v="${i}" aria-pressed="${activeVariant === i}"><b>${esc(name)}</b>${note ? `<br><span class="muted small">${esc(note)}</span>` : ""}</button>`;
   sec.innerHTML = `<h3>Variants</h3><p class="note" style="margin:0">Named alternatives: from the documents, or structures to test. Each starts from the defaults; then edit anything.</p>
-    <div class="variants">${btn(-1, "Defaults", "The sponsor model as underwritten")}${alts.map((a, i) => btn(i, a.name, a.note)).join("")}</div>`;
+    <div class="variants">${btn(-1, "Defaults", "The sponsor model as underwritten")}${alts.map((a, i) => btn(i, E.fillLabel(a.name, DEFAULTS), E.fillLabel(a.note, DEFAULTS))).join("")}</div>`;
   sec.querySelectorAll("[data-v]").forEach((b) => b.addEventListener("click", () => {
     const i = +b.dataset.v;
     activeVariant = i < 0 ? null : i;
-    inputs = i < 0 ? clone(DEFAULTS) : mergeDeep(DEFAULTS, alts[i].changes);
+    // a variant states only what it changes (list items by id) and may name a structure template, so it applies
+    // cleanly to the current deal file: renames, a new check, new partners
+    inputs = i < 0 ? clone(DEFAULTS) : E.applyVariant(DEFAULTS, alts[i], STRUCTURES);
     activeScenario = null; renderAllFields(); recompute(); renderSaved(); updateScenarioChip();
   }));
 }
@@ -1056,7 +1059,7 @@ function whFields() {
                   rr(F(`${P}selldown.tranches.${j}.pricing`, "Price", "select", null, [["carry_simple", "Par + simple carry"], ["carry_compound", "Par + compound carry"], ["premium", "Par ± premium"]])),
                   F(`${P}selldown.tranches.${j}.rate`, w.selldown.tranches[j].pricing === "premium" ? "Premium (− = discount)" : "Carry rate, annual", "pct")],
     xfer: (q) => {
-      const x = w.manager_transfers[q], names = w.people.map((p) => [p.name, p.name]), Q = `${P}manager_transfers.${q}.`;
+      const x = w.manager_transfers[q], names = w.people.map((p) => [p.id || p.name, p.name]), Q = `${P}manager_transfers.${q}.`;
       return [F(Q + "date", "Date", "date"),
               F(Q + "buyer", "Buyer", "select", null, names),
               F(Q + "seller", "Seller", "select", null, names),
@@ -1077,7 +1080,7 @@ function whFields() {
     tier: (k) => [F(`${P}manager_waterfall.tiers.${k}.capital_share`, "To capital holders", "pct", "The rest by fees & promote shares"),
                   F(`${P}manager_waterfall.tiers.${k}.to_irr`, "Until their IRR reaches", "pct")],
     loan: (q) => {
-      const names = w.people.map((p) => [p.name, p.name]), Q = `${P}manager_loans.${q}.`;
+      const names = w.people.map((p) => [p.id || p.name, p.name]), Q = `${P}manager_loans.${q}.`;
       return [F(Q + "lender", "Lender", "select", null, names), F(Q + "borrower", "Borrower", "select", null, names),
               F(Q + "amount", "Lends", "usd", `Funds the borrower's own ${n.manager} capital (set under People), up to all of it`),
               F(Q + "rate", "Interest rate", "pct"),
@@ -1085,7 +1088,7 @@ function whFields() {
               F(Q + "recourse", "Borrower repays any balance at the end", "bool", "Off: what's left is forgiven")];
     },
     vest: (q) => {
-      const names = w.people.map((p) => [p.name, p.name]), Q = `${P}manager_vesting.${q}.`;
+      const names = w.people.map((p) => [p.id || p.name, p.name]), Q = `${P}manager_vesting.${q}.`;
       return [F(Q + "person", "Partner", "select", null, names),
               Object.assign(F(Q + "years", "Fees & promote share vests over", "num", "From close; 0 = fully vested"), { unit: "yrs" }),
               Object.assign(F(Q + "cliff_years", "Nothing vests before", "num"), { unit: "yrs" }),
@@ -1255,7 +1258,7 @@ function railSummaries() {
     "sec-redstone": `${ps(wf.pref_rate)} pref → ${wf.tiers.map((x) => `${Math.round(x.lp_share * 100)}/${100 - Math.round(x.lp_share * 100)} to ${ps(x.lp_irr_hurdle)}`).join(" → ")} → ${Math.round(wf.residual_lp_share * 100)}/${100 - Math.round(wf.residual_lp_share * 100)} · ${ps(d.asset_mgmt_fee_pct_of_income)} AM fee`,
     "sec-loan": `${fmt.usdk(d.loan_amount)} @ ${fmt.pct(d.loan_rate, 2)} · ${d.debt_service_method === "interest_only" ? "balance × rate" : "fixed debt service"}${d.assumption_fee_pct ? ` · ${ps(d.assumption_fee_pct)} assumption fee` : ""}`,
     "sec-extras": `${inputs.investor.side_letter.enabled ? "Side letter on" : Object.keys(inputs.investor.side_letter.terms).length ? "Side letter off" : ""}${d.below_noi_income.amounts.length ? ` · ${d.below_noi_income.label || "below-NOI income"} ${d.below_noi_income.factor !== 1 ? fmt.pct(d.below_noi_income.factor, 0) + " paid, " : ""}${d.below_noi_income.delay_years ? d.below_noi_income.delay_years + "-yr delay, " : ""}${d.below_noi_income.sale_value === "npv" ? "valued at sale" : "not valued at sale"}` : ""}`.replace(/^ · /, ""),
-    "sec-variants": activeVariant == null ? "Defaults" : (META.alternatives[activeVariant] || {}).name,
+    "sec-variants": activeVariant == null ? "Defaults" : E.fillLabel((META.alternatives[activeVariant] || {}).name, inputs),
     "sec-hold": `Sell end of Year ${d.hold_years} (${+inputs.warehouse.close_date.slice(0, 4) + d.hold_years})` + (rf.enabled && d.hold_years > 1 ? ` · refinance Year ${rf.year}${rf.crystallize ? " + crystallize" : ""}` : " · no refinance"),
     "sec-direct": di.length ? `${di.length} investor${di.length > 1 ? "s" : ""} · ${fmt.usdk(sum(di.map((x) => x.check)))}` : "None",
     "sec-cases": `Editing ${inputs.cases[editCase].label}`,
@@ -1324,13 +1327,21 @@ document.addEventListener("keydown", (e) => {
 });
 
 /* ------------------------------------------------------------ change tracking */
-function diffPaths(a, b, pre = "", out = []) {
+function diffPaths(a, b, pre = "", out = [], byId = false) {
   if (Array.isArray(a)) {
-    if (a.length && a[0] && typeof a[0] === "object" && Array.isArray(b) && b.length === a.length) { a.forEach((x, i) => diffPaths(x, b[i], pre + "." + i, out)); return out; }
+    // saved scenarios address list items by id (people), so a person stays the same person whatever their name or
+    // position; a new item is stored whole and a removed one as null
+    const ided = (x) => Array.isArray(x) && x.length > 0 && x.every((y) => y && typeof y === "object" && y.id);
+    if (byId && ided(a) && ided(b)) {
+      a.forEach((x) => { const y = b.find((z) => z.id === x.id); if (y) diffPaths(x, y, `${pre}[${x.id}]`, out, true); else out.push(`${pre}[${x.id}]`); });
+      b.forEach((y) => { if (!a.some((x) => x.id === y.id)) out.push(`${pre}[${y.id}]`); });
+      return out;
+    }
+    if (a.length && a[0] && typeof a[0] === "object" && Array.isArray(b) && b.length === a.length) { a.forEach((x, i) => diffPaths(x, b[i], pre + "." + i, out, byId)); return out; }
     if (JSON.stringify(a) !== JSON.stringify(b)) out.push(pre);
     return out;
   }
-  if (a && typeof a === "object") { for (const k of Object.keys(a)) if (!k.startsWith("_")) diffPaths(a[k], b ? b[k] : undefined, pre ? pre + "." + k : k, out); return out; }
+  if (a && typeof a === "object") { for (const k of Object.keys(a)) if (!k.startsWith("_")) diffPaths(a[k], b ? b[k] : undefined, pre ? pre + "." + k : k, out, byId); return out; }
   if (a !== b && !(typeof a === "number" && typeof b === "number" && Math.abs(a - b) < 1e-12)) out.push(pre);
   return out;
 }
@@ -1692,7 +1703,8 @@ document.addEventListener("click", (e) => {
   const rs = e.target.closest("button[data-remove-sale]");
   if (rs) { w.selldown.tranches.splice(+rs.dataset.removeSale, 1); renderWarehouseInputs(); recompute(); return; }
   if (e.target.closest("#addPerson")) {
-    w.people.push({ name: "Person " + (w.people.length + 1), amount: 0, role: "member", manager_capital: 0, manager_share: 0, loan_rate: 0.08 });
+    const nm = "Person " + (w.people.length + 1);
+    w.people.push({ id: E.personId(nm, w.people.map((p) => p.id)), name: nm, amount: 0, role: "member", manager_capital: 0, manager_share: 0, loan_rate: 0.08 });
     renderWarehouseInputs(); recompute(); document.getElementById(fieldId(`warehouse.people.${w.people.length - 1}.name`)).focus(); return;
   }
   const rd = e.target.closest("button[data-remove-direct]");
@@ -1762,7 +1774,7 @@ document.getElementById("copyBtn").addEventListener("click", () => {
 const HISTORY_KEEP = 5;
 function scenarioDiff(inp, slug) {
   const base = DEALS[slug], out = {};
-  diffPaths(inp, base).forEach((pp) => { if (!pp.startsWith("meta") && !pp.startsWith("sources")) out[pp] = get(inp, pp); });
+  diffPaths(inp, base, "", [], true).forEach((pp) => { if (!pp.startsWith("meta") && !pp.startsWith("sources")) { const v = get(inp, pp); out[pp] = v === undefined ? null : v; } });
   return out;
 }
 function applyDiff(slug, diff) {
@@ -1772,8 +1784,22 @@ function applyDiff(slug, diff) {
 }
 function scenarioInputs(sc, slug) {
   slug = slug || sc.deal || SLUGS[0];
-  if (sc.diff_json) return applyDiff(slug, JSON.parse(sc.diff_json));
-  return mergeDeep(DEALS[slug], JSON.parse(sc.inputs));
+  if (sc.diff_json) return withPeopleIds(applyDiff(slug, JSON.parse(sc.diff_json)), DEALS[slug]);
+  return withPeopleIds(mergeDeep(DEALS[slug], JSON.parse(sc.inputs)), DEALS[slug]);
+}
+// Older saves name people instead of giving ids: give each person an id (the deal file's id for the same name, else
+// one made from the name) and point loans, vesting, buy-ins and person sales at ids. Changes inp in place.
+function withPeopleIds(inp, base) {
+  const w = inp.warehouse, bw = (base || DEFAULTS).warehouse, taken = [];
+  w.people.forEach((p) => {
+    if (!p.id) { const m = bw.people.find((q) => q.id && q.name.trim().toLowerCase() === p.name.trim().toLowerCase() && !taken.includes(q.id)); p.id = m ? m.id : E.personId(p.name, taken.concat(w.people.map((q) => q.id).filter(Boolean))); }
+    taken.push(p.id);
+  });
+  const toId = (r) => { if (!r || w.people.some((p) => p.id === r)) return r; const m = w.people.find((p) => p.name.trim().toLowerCase() === String(r).trim().toLowerCase()); return m ? m.id : r; };
+  (w.manager_loans || []).forEach((x) => { x.lender = toId(x.lender); x.borrower = toId(x.borrower); });
+  (w.manager_vesting || []).forEach((x) => { x.person = toId(x.person); });
+  (w.manager_transfers || []).forEach((x) => { x.buyer = toId(x.buyer); x.seller = toId(x.seller); });
+  return inp;
 }
 // what to put on the dashboard for a scenario (old full-input saves go through upgradeInputs, as before)
 function loadScenarioInputs(sc) { return sc.diff_json ? scenarioInputs(sc, META.slug) : upgradeInputs(JSON.parse(sc.inputs)); }
@@ -1941,6 +1967,7 @@ function upgradeInputs(saved) {
   if (!w2.manager_loans) w2.manager_loans = [];
   if (!w2.manager_vesting) w2.manager_vesting = [];
   if (!w2.structure) w2.structure = "custom";
+  withPeopleIds(o, DEFAULTS);
   if (w2.manager_reserve == null) w2.manager_reserve = 0;
   w2.people.forEach((p) => { if (p.manager_capital == null) p.manager_capital = p.manager_share * (w2.manager_commitment + w2.manager_reserve); });
   w2.manager_transfers.forEach((x) => { if (x.interest == null) x.interest = "both"; if (x.price == null) x.price = 0; });
@@ -2071,10 +2098,13 @@ function renderCompare() {
     body += row("Profit on $1M", cs.map((c, i) => c && c.investor.profit * per(c, data[i].inp)), fmt.signedk);
     // our vehicle: each person (matched by name across columns), profit with what came from the manager under it
     const vs = data.map((d) => d.veh && d.veh[k]);
-    const names = [...new Set(vs.flatMap((v) => (v ? v.people.map((p) => p.name) : [])))];
-    if (names.length) body += `<tr class="vsub"><td class="lbl" colspan="${data.length + 1}">In our vehicle · profit, and cash from the manager</td></tr>`;
-    names.forEach((nm) => {
-      const sm = vs.map((v, i) => { if (!v) return null; const j = v.people.findIndex((p) => p.name === nm); return j < 0 ? null : { s: v.summary.people[j], mgr: data[i].inp.warehouse.names.manager }; });
+    // people match by id across columns (a renamed person stays one row), labelled with the latest name
+    const pkey = (d, j) => d.inp.warehouse.people[j].id || d.inp.warehouse.people[j].name;
+    const keys = [...new Set(vs.flatMap((v, i) => (v ? v.people.map((_, j) => pkey(data[i], j)) : [])))];
+    if (keys.length) body += `<tr class="vsub"><td class="lbl" colspan="${data.length + 1}">In our vehicle · profit, and cash from the manager</td></tr>`;
+    keys.forEach((key) => {
+      let nm = key;
+      const sm = vs.map((v, i) => { if (!v) return null; const j = v.people.findIndex((_, jj) => pkey(data[i], jj) === key); if (j < 0) return null; nm = v.people[j].name; return { s: v.summary.people[j], mgr: data[i].inp.warehouse.names.manager }; });
       body += `<tr><td class="lbl">${esc(nm)}</td>${sm.map((x) => `<td class="n">${x ? `${fmt.signedk(x.s.profit)}<br><span class="muted small">${fmt.usdk(x.s.from_manager)} from ${esc(x.mgr)}</span>` : "—"}</td>`).join("")}</tr>`;
     });
   });
@@ -2271,7 +2301,8 @@ const VEH_METRICS = ["person_profit", "person_irr", "person_from_manager"];
 function probeMetric(ck, inp, M, person) {
   if (!VEH_METRICS.includes(M)) return caseResult(E.runCase(ck, inp), inp)[M];
   const v = E.warehouse(inp, { [ck]: E.runCase(ck, inp) })[ck];
-  const i = v.people.findIndex((p) => p.name.trim().toLowerCase() === String(person || "").trim().toLowerCase());
+  const key = String(person || "").trim().toLowerCase();
+  const i = v.people.findIndex((p, j) => inp.warehouse.people[j].id === key || p.name.trim().toLowerCase() === key);
   if (i < 0) throw new Error(`${M} needs person: one of ${v.people.map((p) => p.name).join(", ")}`);
   const sm = v.summary.people[i];
   return M === "person_profit" ? sm.profit : M === "person_irr" ? sm.irr : sm.from_manager;
@@ -2279,7 +2310,7 @@ function probeMetric(ck, inp, M, person) {
 // Each vehicle person's results for a case (for what-ifs that change the vehicle or the manager's terms).
 function vehiclePeople(ck, inp) {
   const v = E.warehouse(inp, { [ck]: E.runCase(ck, inp) })[ck];
-  return v.people.map((pp, i) => ({ name: pp.name, cash_in: r0(v.summary.people[i].cash_in), from_manager: r0(v.summary.people[i].from_manager), profit: r0(v.summary.people[i].profit), irr: r4(v.summary.people[i].irr) }));
+  return v.people.map((pp, i) => ({ id: inp.warehouse.people[i].id, name: pp.name, cash_in: r0(v.summary.people[i].cash_in), from_manager: r0(v.summary.people[i].from_manager), profit: r0(v.summary.people[i].profit), irr: r4(v.summary.people[i].irr) }));
 }
 function changeWarnings(inp, changes, keys) {
   const w = [];
@@ -2322,15 +2353,18 @@ function vehicleIssues(inp, sm) {
   if (Math.abs(sM - 1) > 1e-6) out.push(`People's shares of ${n.manager} fees & promote total ${(sM * 100).toFixed(1)}%, so ${((1 - sM) * 100).toFixed(1)}% of the manager's fees and promote goes to no one. Fix under Our vehicle > People.`);
   if (Math.abs(sC - mcap) >= 0.5) out.push(`People put ${Math.round(sC).toLocaleString("en-US")} into ${n.manager} but its capital is ${Math.round(mcap).toLocaleString("en-US")}.`);
   if (Math.abs(gap) >= 0.5) out.push(`${n.vehicle} is ${gap > 0 ? Math.round(gap).toLocaleString("en-US") + " short" : Math.round(-gap).toLocaleString("en-US") + " over"}: people's amounts plus the manager's commitment should equal the check plus the reserve.`);
-  const isP = (nm) => w.people.some((p) => (p.name || "").trim().toLowerCase() === (nm || "").trim().toLowerCase());
+  // references to people (by id; older saves by name) that point at nobody, from the engine's own check
+  E.referenceIssues(inp).forEach((t) => out.push(`${t.charAt(0).toUpperCase()}${t.slice(1)}${/is not a person$/.test(t) ? ` in ${n.manager}` : ""}.`));
+  const findP = (r) => w.people.find((p) => p.id === r) || w.people.find((p) => (p.name || "").trim().toLowerCase() === (r || "").trim().toLowerCase());
+  const nameOf = (r) => (findP(r) || {}).name || r;
   (w.manager_loans || []).forEach((x, q) => {
-    if (!isP(x.lender) || !isP(x.borrower) || (x.lender || "").trim().toLowerCase() === (x.borrower || "").trim().toLowerCase()) out.push(`Partner loan ${q + 1} needs a lender and a different borrower, both people in ${n.manager}.`);
-    else { const bp = w.people.find((p) => p.name.trim().toLowerCase() === x.borrower.trim().toLowerCase());
-      if (x.amount > bp.manager_capital + 0.5) out.push(`Partner loan ${q + 1} lends ${x.borrower} ${Math.round(x.amount).toLocaleString("en-US")} but they put only ${Math.round(bp.manager_capital).toLocaleString("en-US")} into ${n.manager}; the loan counts up to that.`); }
+    if (!findP(x.lender) || !findP(x.borrower)) return;
+    if (findP(x.lender) === findP(x.borrower)) out.push(`Partner loan ${q + 1} needs a lender and a different borrower.`);
+    else { const bp = findP(x.borrower);
+      if (x.amount > bp.manager_capital + 0.5) out.push(`Partner loan ${q + 1} lends ${bp.name} ${Math.round(x.amount).toLocaleString("en-US")} but they put only ${Math.round(bp.manager_capital).toLocaleString("en-US")} into ${n.manager}; the loan counts up to that.`); }
   });
   (w.manager_vesting || []).forEach((x, q) => {
-    if (!isP(x.person)) out.push(`Vesting ${q + 1} names ${x.person || "no one"}, who isn't in ${n.manager}.`);
-    else if (x.leaves && x.leaves <= w.close_date) out.push(`Vesting ${q + 1}: ${x.person} leaves on or before the close.`);
+    if (findP(x.person) && x.leaves && x.leaves <= w.close_date) out.push(`Vesting ${q + 1}: ${nameOf(x.person)} leaves on or before the close.`);
   });
   if ((w.manager_waterfall || {}).enabled && mcap <= 0) out.push(`${n.manager} has no capital, so "capital back first" has nothing to pay back.`);
   if (sm && Math.abs(sm.check) >= 0.05 && !out.length) out.push(`${n.vehicle}'s cash doesn't reconcile by ${Math.round(sm.check).toLocaleString("en-US")}.`);
@@ -2396,7 +2430,7 @@ const ASK_TOOLS = [
         using: scenario ? `saved scenario "${findScenario(slug, scenario).name}"` : isEdited(slug) ? "the viewer's current edits on the dashboard (changed inputs: " + diffPaths(baseInputs(slug, scenario), DEALS[slug]).slice(0, 20).join(", ") + ")" : "the deal file as underwritten",
         inputs: inputDigest(inp),
         cases: Object.keys(inp.cases).map((k) => Object.assign({ kind: inp.cases[k].kind, note: inp.cases[k].note || "", from: inp.cases[k].from || null }, caseResult(E.runCase(k, inp), inp))),
-        variants: (m.alternatives || []).map((a) => ({ name: a.name, note: a.note, changes: a.changes })),
+        variants: (m.alternatives || []).map((a) => ({ name: E.fillLabel(a.name, DEALS[slug]), note: E.fillLabel(a.note, DEALS[slug]), structure: a.structure, changes: a.changes, set: a.set })),
         open_diligence: (m.diligence || []).filter((x) => x.status !== "closed").map((x) => x.item + (x.note ? ": " + x.note : "")),
       };
     } },
@@ -2427,7 +2461,7 @@ const ASK_TOOLS = [
         waterfall: Object.fromEntries(inputLeaves(inp.waterfall, "waterfall")),
         investor: Object.fromEntries(inputLeaves(inp.investor, "investor")),
         vehicle: Object.fromEntries(inputLeaves(inp.warehouse, "warehouse").filter(([pp]) => !pp.startsWith("warehouse.names."))),
-        vehicle_how_to_change: "our SPV and the manager: people by index (warehouse.people.0.manager_capital, .manager_share), or lists whole (warehouse.manager_loans, warehouse.manager_vesting, warehouse.manager_waterfall.tiers); results via get_vehicle, or person_* metrics in sweep / solve_for",
+        vehicle_how_to_change: "our SPV and the manager: people by id (warehouse.people[levi].manager_capital, .manager_share; a whole warehouse.people[new_id] adds a person); loans, vesting and buy-ins refer to people by id, or lists whole (warehouse.manager_loans, warehouse.manager_vesting, warehouse.manager_waterfall.tiers); results via get_vehicle, or person_* metrics in sweep / solve_for",
         cases: keys.map((c) => {
           const cs = inp.cases[c], f = {};
           inputLeaves(cs, `cases.${c}`).forEach(([pp, v]) => { if (!/\.(label|note|built_from)$/.test(pp)) f[pp] = v; });

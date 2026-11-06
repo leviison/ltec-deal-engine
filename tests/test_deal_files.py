@@ -87,9 +87,23 @@ def change_paths(x, path=""):
 
 @pytest.mark.parametrize("slug", list_deals())
 def test_alternatives_point_at_inputs(slug):
+    """Each variant names a known structure template, merges only existing inputs (`changes`), and sets paths whose
+    parent exists after its structure is applied (`set`; list items by id, a whole item may be new)."""
+    from engine.core import apply_structure, get_path, load_structures
+    lib = load_structures()
     d = load_deal(slug)
     for alt in d["meta"].get("alternatives", []):
-        bad = [p for p in change_paths(alt["changes"]) if p.split(".")[0] in NOT_INPUTS or not resolves(d, p)]
+        assert not alt.get("structure") or alt["structure"] in lib["templates"], alt["name"]
+        base = apply_structure(d, alt["structure"], lib) if alt.get("structure") else d
+        bad = [p for p in (change_paths(alt["changes"]) if alt.get("changes") else [])
+               if p.split(".")[0] in NOT_INPUTS or not resolves(base, p)]
+        for p in alt.get("set", {}):
+            parent = p.rsplit(".", 1)[0]
+            last = p.rsplit(".", 1)[-1]
+            if p.split(".")[0] in NOT_INPUTS or get_path(base, parent) is None:
+                bad.append(p)
+            elif "[" not in last and get_path(base, p) is None:
+                bad.append(p)  # a plain field must already exist; only whole list items (key[id]) may be new
         assert not bad, (alt["name"], bad)
 
 

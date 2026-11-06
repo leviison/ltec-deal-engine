@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "meta": {
     "slug": "siena-villas",
     "name": "Siena Villas",
@@ -83,219 +83,112 @@
     ],
     "alternatives": [
       {
-        "name": "LTEC A · Levi funds it, promote 50/50",
-        "note": "Levi puts in all of LTEC's capital and keeps everything it earns on that capital; fees & promote split 50/50 from day one.",
-        "changes": {
-          "warehouse": {
-            "people": [
-              {
-                "name": "Levi",
-                "amount": 700000.0,
-                "role": "warehouse",
-                "manager_capital": 350000,
-                "manager_share": 0.5,
-                "loan_rate": 0.08
-              },
-              {
-                "name": "Thaxter",
-                "amount": 0.0,
-                "role": "member",
-                "manager_capital": 0.0,
-                "manager_share": 0.5,
-                "loan_rate": 0.08
-              }
-            ],
-            "manager_waterfall": {
-              "enabled": false,
-              "pref": 0.08,
-              "pref_type": "compound",
-              "tiers": [],
-              "residual_capital_share": 0.0
-            },
-            "manager_loans": [],
-            "manager_vesting": []
-          }
+        "name": "{manager} A · {levi} funds it, promote 50/50",
+        "note": "{levi} puts in all of {manager}'s capital and keeps everything it earns on that capital; fees & promote split 50/50 from day one.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 350000,
+          "warehouse.people[levi].manager_share": 0.5,
+          "warehouse.people[thaxter].manager_capital": 0.0,
+          "warehouse.people[thaxter].manager_share": 0.5
         }
       },
       {
-        "name": "LTEC B · Levi's capital + 8% back first",
-        "note": "All LTEC cash (units, fees, promote) repays Levi's capital plus an 8% IRR first; after that everything splits 50/50 by promote share.",
-        "changes": {
-          "warehouse": {
-            "people": [
-              {
-                "name": "Levi",
-                "amount": 700000.0,
-                "role": "warehouse",
-                "manager_capital": 350000,
-                "manager_share": 0.5,
-                "loan_rate": 0.08
-              },
-              {
-                "name": "Thaxter",
-                "amount": 0.0,
-                "role": "member",
-                "manager_capital": 0.0,
-                "manager_share": 0.5,
-                "loan_rate": 0.08
-              }
-            ],
-            "manager_waterfall": {
-              "enabled": true,
-              "pref": 0.08,
-              "pref_type": "compound",
-              "tiers": [],
-              "residual_capital_share": 0.0
-            },
-            "manager_loans": [],
-            "manager_vesting": []
-          }
+        "name": "{manager} B · {levi}'s capital + 8% back first",
+        "note": "All {manager} cash (units, fees, promote) repays {levi}'s capital plus an 8% IRR first; after that everything splits 50/50 by promote share.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 350000,
+          "warehouse.people[levi].manager_share": 0.5,
+          "warehouse.people[thaxter].manager_capital": 0.0,
+          "warehouse.people[thaxter].manager_share": 0.5,
+          "warehouse.manager_waterfall.enabled": true,
+          "warehouse.manager_waterfall.pref": 0.08,
+          "warehouse.manager_waterfall.pref_type": "compound",
+          "warehouse.manager_waterfall.tiers": [],
+          "warehouse.manager_waterfall.residual_capital_share": 0.0
         }
       },
       {
-        "name": "LTEC C · Levi lends Thaxter his half at 8%",
-        "note": "Levi advances all the cash; Thaxter owns 50/50 but his LTEC cash repays Levi's $175k loan plus 8% simple first. Recourse: any balance is due at the end.",
-        "changes": {
-          "warehouse": {
-            "people": [
-              {
-                "name": "Levi",
-                "amount": 700000.0,
-                "role": "warehouse",
-                "manager_capital": 175000.0,
-                "manager_share": 0.5,
-                "loan_rate": 0.08
-              },
-              {
-                "name": "Thaxter",
-                "amount": 0.0,
-                "role": "member",
-                "manager_capital": 175000.0,
-                "manager_share": 0.5,
-                "loan_rate": 0.08
-              }
-            ],
-            "manager_waterfall": {
-              "enabled": false,
-              "pref": 0.08,
-              "pref_type": "compound",
-              "tiers": [],
-              "residual_capital_share": 0.0
-            },
-            "manager_vesting": [],
-            "manager_loans": [
-              {
-                "lender": "Levi",
-                "borrower": "Thaxter",
-                "amount": 175000.0,
-                "rate": 0.08,
-                "rate_type": "simple",
-                "recourse": true
-              }
-            ]
-          }
+        "name": "{manager} C · {levi} lends {thaxter} his half at 8%",
+        "note": "{levi} advances all the cash; {thaxter} owns 50/50 but his {manager} cash repays {levi}'s loan for his half plus 8% simple first. Recourse: any balance is due at the end.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 175000.0,
+          "warehouse.people[levi].manager_share": 0.5,
+          "warehouse.people[thaxter].manager_capital": 175000.0,
+          "warehouse.people[thaxter].manager_share": 0.5,
+          "warehouse.manager_loans": [
+            {
+              "lender": "levi",
+              "borrower": "thaxter",
+              "amount": 175000.0,
+              "rate": 0.08,
+              "rate_type": "simple",
+              "recourse": true
+            }
+          ]
         }
       },
       {
-        "name": "LTEC D · add a GP partner, 4-year vesting",
-        "note": "As B, with a third partner on 20% of fees & promote (Levi and Thaxter 40% each), vesting over 4 years after a 1-year cliff. Stays the whole hold.",
-        "changes": {
-          "warehouse": {
-            "people": [
-              {
-                "name": "Levi",
-                "amount": 700000.0,
-                "role": "warehouse",
-                "manager_capital": 350000,
-                "manager_share": 0.4,
-                "loan_rate": 0.08
-              },
-              {
-                "name": "Thaxter",
-                "amount": 0.0,
-                "role": "member",
-                "manager_capital": 0.0,
-                "manager_share": 0.4,
-                "loan_rate": 0.08
-              },
-              {
-                "name": "GP partner",
-                "amount": 0.0,
-                "role": "member",
-                "manager_capital": 0.0,
-                "manager_share": 0.2,
-                "loan_rate": 0.08
-              }
-            ],
-            "manager_waterfall": {
-              "enabled": true,
-              "pref": 0.08,
-              "pref_type": "compound",
-              "tiers": [],
-              "residual_capital_share": 0.0
-            },
-            "manager_loans": [],
-            "manager_vesting": [
-              {
-                "person": "GP partner",
-                "years": 4,
-                "cliff_years": 1,
-                "leaves": "",
-                "terms": "keep_vested"
-              }
-            ]
-          }
+        "name": "{manager} D · add a GP partner, 4-year vesting",
+        "note": "As B, with a third partner on 20% of fees & promote ({levi} and {thaxter} 40% each), vesting over 4 years after a 1-year cliff. Stays the whole hold.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 350000,
+          "warehouse.people[levi].manager_share": 0.4,
+          "warehouse.people[thaxter].manager_capital": 0.0,
+          "warehouse.people[thaxter].manager_share": 0.4,
+          "warehouse.people[gp_partner]": {
+            "name": "GP partner",
+            "amount": 0.0,
+            "role": "member",
+            "manager_capital": 0.0,
+            "manager_share": 0.2,
+            "loan_rate": 0.08
+          },
+          "warehouse.manager_waterfall.enabled": true,
+          "warehouse.manager_waterfall.pref": 0.08,
+          "warehouse.manager_waterfall.pref_type": "compound",
+          "warehouse.manager_waterfall.tiers": [],
+          "warehouse.manager_waterfall.residual_capital_share": 0.0,
+          "warehouse.manager_vesting": [
+            {
+              "person": "gp_partner",
+              "years": 4,
+              "cliff_years": 1,
+              "leaves": "",
+              "terms": "keep_vested"
+            }
+          ]
         }
       },
       {
-        "name": "LTEC E · GP partner leaves after 2 years",
-        "note": "As D, but the GP partner leaves on Nov 5, 2028 with half of their 20% vested; the other 10% goes to Levi and Thaxter.",
-        "changes": {
-          "warehouse": {
-            "people": [
-              {
-                "name": "Levi",
-                "amount": 700000.0,
-                "role": "warehouse",
-                "manager_capital": 350000,
-                "manager_share": 0.4,
-                "loan_rate": 0.08
-              },
-              {
-                "name": "Thaxter",
-                "amount": 0.0,
-                "role": "member",
-                "manager_capital": 0.0,
-                "manager_share": 0.4,
-                "loan_rate": 0.08
-              },
-              {
-                "name": "GP partner",
-                "amount": 0.0,
-                "role": "member",
-                "manager_capital": 0.0,
-                "manager_share": 0.2,
-                "loan_rate": 0.08
-              }
-            ],
-            "manager_waterfall": {
-              "enabled": true,
-              "pref": 0.08,
-              "pref_type": "compound",
-              "tiers": [],
-              "residual_capital_share": 0.0
-            },
-            "manager_loans": [],
-            "manager_vesting": [
-              {
-                "person": "GP partner",
-                "years": 4,
-                "cliff_years": 1,
-                "leaves": "2028-11-05",
-                "terms": "keep_vested"
-              }
-            ]
-          }
+        "name": "{manager} E · GP partner leaves after 2 years",
+        "note": "As D, but the GP partner leaves on Nov 5, 2028 with half of their 20% vested; the other 10% goes to {levi} and {thaxter}.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 350000,
+          "warehouse.people[levi].manager_share": 0.4,
+          "warehouse.people[thaxter].manager_capital": 0.0,
+          "warehouse.people[thaxter].manager_share": 0.4,
+          "warehouse.people[gp_partner]": {
+            "name": "GP partner",
+            "amount": 0.0,
+            "role": "member",
+            "manager_capital": 0.0,
+            "manager_share": 0.2,
+            "loan_rate": 0.08
+          },
+          "warehouse.manager_waterfall.enabled": true,
+          "warehouse.manager_waterfall.pref": 0.08,
+          "warehouse.manager_waterfall.pref_type": "compound",
+          "warehouse.manager_waterfall.tiers": [],
+          "warehouse.manager_waterfall.residual_capital_share": 0.0,
+          "warehouse.manager_vesting": [
+            {
+              "person": "gp_partner",
+              "years": 4,
+              "cliff_years": 1,
+              "leaves": "2028-11-05",
+              "terms": "keep_vested"
+            }
+          ]
         }
       }
     ]
@@ -603,6 +496,7 @@
     "promote": 0.4,
     "people": [
       {
+        "id": "levi",
         "name": "Levi",
         "amount": 700000.0,
         "role": "warehouse",
@@ -611,6 +505,7 @@
         "loan_rate": 0.08
       },
       {
+        "id": "thaxter",
         "name": "Thaxter",
         "amount": 0.0,
         "role": "member",

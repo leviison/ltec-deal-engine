@@ -1,36 +1,60 @@
 {
   "_about": "How LTEC holds a deal. A template builds the deal's warehouse (vehicle) inputs from the deal's check (investor.check) and the vehicle close date, with LTEC's partners. Applied by apply_structure (core.py) / applyStructure (core.js), or scripts/apply_structure.py. Amounts in a template are fractions of the check (reserve_pct, manager_commitment_pct); everything else is copied. Defaults follow SV26 (Siena, Nov 3 memo) as LTEC's precedent; change them here to change the house terms.",
   "partners": [
-    {"name": "Levi", "capital_share": 0.5, "promote_share": 0.5},
-    {"name": "Thaxter", "capital_share": 0.5, "promote_share": 0.5}
+    {
+      "id": "levi",
+      "name": "Levi",
+      "capital_share": 0.5,
+      "promote_share": 0.5
+    },
+    {
+      "id": "thaxter",
+      "name": "Thaxter",
+      "capital_share": 0.5,
+      "promote_share": 0.5
+    }
   ],
   "templates": {
     "direct": {
       "label": "Direct: LTEC invests",
       "note": "LTEC itself writes the check into the deal. No SPV, no SPV fees or promote. LTEC's partners own LTEC by their capital, and LTEC's terms between its partners apply.",
       "vehicle_name": "LTEC (direct)",
-      "reserve_pct": 0.0, "manager_commitment_pct": 1.0,
-      "acq_fee_pct": 0.0, "mgmt_fee_pct": 0.0, "admin_cost_per_year": 0.0,
-      "member_hurdle_irr": 0.08, "promote": 0.0,
+      "reserve_pct": 0.0,
+      "manager_commitment_pct": 1.0,
+      "acq_fee_pct": 0.0,
+      "mgmt_fee_pct": 0.0,
+      "admin_cost_per_year": 0.0,
+      "member_hurdle_irr": 0.08,
+      "promote": 0.0,
       "outside": "none"
     },
     "spv": {
       "label": "SPV, fully subscribed",
       "note": "An SPV invests the check; LTEC commits part of it and manages it, outside members put in the rest at close. LTEC earns an acquisition fee and a promote above the members' hurdle.",
       "vehicle_name": "{deal} SPV",
-      "reserve_pct": 0.05, "manager_commitment_pct": 0.35,
-      "acq_fee_pct": 0.01, "mgmt_fee_pct": 0.0, "admin_cost_per_year": 15000.0,
-      "member_hurdle_irr": 0.10, "promote": 0.40,
+      "reserve_pct": 0.05,
+      "manager_commitment_pct": 0.35,
+      "acq_fee_pct": 0.01,
+      "mgmt_fee_pct": 0.0,
+      "admin_cost_per_year": 15000.0,
+      "member_hurdle_irr": 0.1,
+      "promote": 0.4,
       "outside": "members"
     },
     "spv_warehouse": {
       "label": "SPV with warehouse & sell-down (SV26-style)",
       "note": "As the fully subscribed SPV, but the lead partner funds the outside share at close (warehouses it) and sells it to new members six months later at par plus 6% simple carry.",
       "vehicle_name": "{deal} SPV",
-      "reserve_pct": 0.05, "manager_commitment_pct": 0.35,
-      "acq_fee_pct": 0.01, "mgmt_fee_pct": 0.0, "admin_cost_per_year": 15000.0,
-      "member_hurdle_irr": 0.10, "promote": 0.40,
-      "outside": "warehouse", "sale_months": 6, "sale_carry": 0.06
+      "reserve_pct": 0.05,
+      "manager_commitment_pct": 0.35,
+      "acq_fee_pct": 0.01,
+      "mgmt_fee_pct": 0.0,
+      "admin_cost_per_year": 15000.0,
+      "member_hurdle_irr": 0.1,
+      "promote": 0.4,
+      "outside": "warehouse",
+      "sale_months": 6,
+      "sale_carry": 0.06
     }
   }
 }

@@ -70,7 +70,7 @@ def randomized(base, seed):
     inp["direct_investors"] = [{"name": "D", "check": r.uniform(0, 5e5)}] if r.random() < 0.3 else []
     w = inp["warehouse"]
     # LTEC's own split between its partners (issue #9)
-    pn = [p["name"] for p in w["people"]]
+    pn = [r.choice([p["id"], p["name"]]) for p in w["people"]]  # people by id, or by name as older files do
     w["manager_waterfall"] = {"enabled": r.random() < 0.5, "pref": r.choice([0.0, 0.06, 0.08, 0.1]),
                               "pref_type": r.choice(["compound", "simple"]),
                               "tiers": [{"capital_share": r.choice([0.0, 0.3, 0.5, 1.0]), "to_irr": r.choice([0.12, 0.15, 0.2])}

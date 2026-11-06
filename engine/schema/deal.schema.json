@@ -21,7 +21,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 6
+      "const": 7
     },
     "meta": {
       "type": "object",
@@ -112,13 +112,13 @@
         },
         "alternatives": {
           "type": "array",
-          "description": "Named sets of input changes worth comparing (documents that disagree, offers). Merged over the defaults.",
+          "description": "Named variants worth comparing. Each starts from the defaults: `structure` (a structure template, built for the current check, names and partners), then `changes` (merged; older variants), then `set` (dotted paths; list items by id, e.g. warehouse.people[levi].manager_capital; a whole item path adds or replaces it, null removes it). `name` and `note` may use {manager}, {vehicle}, {buyers} and {<person id>} for current names.",
           "items": {
             "type": "object",
             "required": [
-              "name",
-              "changes"
+              "name"
             ],
+            "additionalProperties": false,
             "properties": {
               "name": {
                 "type": "string"
@@ -126,7 +126,13 @@
               "note": {
                 "type": "string"
               },
+              "structure": {
+                "type": "string"
+              },
               "changes": {
+                "type": "object"
+              },
+              "set": {
                 "type": "object"
               }
             }
@@ -600,6 +606,7 @@
           "items": {
             "type": "object",
             "required": [
+              "id",
               "name",
               "amount",
               "role",
@@ -614,6 +621,11 @@
                   "warehouse",
                   "loan"
                 ]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]+$",
+                "description": "Stable id (never changes when the name does). Loans, vesting, buy-ins and sales refer to people by id."
               }
             }
           }
