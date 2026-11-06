@@ -19,7 +19,7 @@ they are off; patch = fixes.
 
 ## 2.0.0 — 2026-11-06
 
-First tagged release of the multi-deal engine (Siena Villas v1 lives on in leviison/siena-villas-model, `siena-v1.0`).
+Tagged `v.2.0.0` on GitHub (commit f729dbd; later releases use `vX.Y.Z`). First tagged release of the multi-deal engine (Siena Villas v1 lives on in leviison/siena-villas-model, `siena-v1.0`).
 
 - One engine (Python reference + JS port, kept identical by parity tests) and one deal file per deal; Siena Villas
   migrated identical to v1; The Bend added and tied to the sponsor model to the cent.
