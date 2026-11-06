@@ -50,6 +50,12 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
   check(/^Downside/.test(f1.cap) && f1.det === 'downside', `diagram tabs should set the case everywhere: ${JSON.stringify(f1)}`);
   const f2 = await p.evaluate(() => { document.querySelector('#detailTabs [data-k="sponsor"]').click(); return { cap: document.querySelector('#whFlow .cap').textContent, sel: document.querySelector('#flowTabs [aria-pressed="true"]').dataset.k, lab: document.querySelector('#whFlow .node .lab').textContent, want: fmt.usdk(results.cases.sponsor.investor.payments.reduce((a, b) => a + b, 0)) }; });
   check(f2.sel === 'sponsor' && f2.lab.includes(f2.want), `"Case to show" should move the diagram: ${JSON.stringify(f2)}`);
+  // the tables with every case point at the case shown
+  await p.evaluate(() => document.querySelector('#flowTabs [data-k="downside"]').click()); await p.waitForTimeout(200);
+  const hl = await p.evaluate(() => ({ th: [...document.querySelectorAll('#whTable th.shown')].map((x) => x.textContent), cells: document.querySelectorAll('#whTable td.shown').length,
+    rows: document.querySelectorAll('#whTable tbody tr:not(.grp)').length, label: results.cases.downside.label }));
+  check(await p.evaluate(() => document.getElementById('whCallout').textContent.includes(results.cases.downside.label)), 'the callout should describe the case shown');
+  check(hl.th.length === 1 && hl.th[0] === hl.label && hl.cells > 5, `vehicle table should mark the Downside column: ${JSON.stringify(hl)}`);
   errs.forEach((e) => fail.push('page error: ' + e));
   await b.close();
   if (fail.length) { console.log('FAIL\n' + fail.join('\n')); process.exitCode = 1; } else console.log('ok');

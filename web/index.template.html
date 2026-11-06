@@ -117,6 +117,8 @@ aside.rail { position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); 
 .sumline { font-size: 12px; color: var(--muted); }
 #whPersonTabs button { white-space: nowrap; padding: 6px 10px; }
 .sumline.warn { color: var(--warn-fg); background: var(--warn-bg); border-radius: 5px; padding: 4px 8px; }
+th.shown, td.shown { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+th.shown { color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
 th.hl, td.hl { background: color-mix(in srgb, var(--c-custom) 9%, transparent); }
 th.hl { color: var(--c-custom); }
 .case.hl { box-shadow: 0 0 0 2px var(--c-custom); }
@@ -725,7 +727,9 @@ function copyIntoCustom(inp, k) {
   return inp;
 }
 // While the Custom case is being edited, its column is highlighted everywhere.
-function hl(k) { return k === "custom" && editCase === "custom" ? " hl" : ""; }
+// column classes for a case: "hl" while editing Custom; "shown" for the case picked in "Case to show" (the detail,
+// chart, exit and flow diagram follow it), so tables with every case point at the one the panels above describe
+function hl(k) { return (k === "custom" && editCase === "custom" ? " hl" : "") + (k === detailCase ? " shown" : ""); }
 function shortLabel(k) { return { sponsor: "Sponsor", base: "Base", downside: "Downside", stress: "Stress", custom: "Custom" }[k] || inputs.cases[k].label; }
 function renderAllFields() { Object.keys(sections()).forEach(renderSection); renderVariants(); renderDealExtras(); renderTimingInputs(); renderRedstoneInputs(); renderLoanInputs(); renderHoldInputs(); renderCaseFields(); renderDirectInputs(); renderWarehouseInputs(); }
 
@@ -1590,7 +1594,8 @@ function renderWarehouse() {
   });
   sb.buyers.forEach((g, gi) => {
     if (g.units < 1e-9) return;
-    body += `<tr class="grp"><td colspan="${cols}">${esc(R(PRIMARY).buyers[gi].name)} <span>· outside buyer, ${fmt.usd(g.cost)} for ${Math.round(g.units)} units in the ${esc(results.cases[PRIMARY].label)} case</span></td></tr>`;
+    const shownK = results.warehouse[detailCase] ? detailCase : PRIMARY, gs = R(shownK).summary.buyers[gi] || g;
+    body += `<tr class="grp"><td colspan="${cols}">${esc(R(PRIMARY).buyers[gi].name)} <span>· outside buyer, ${fmt.usd(gs.cost)} for ${Math.round(gs.units)} units in the ${esc(results.cases[shownK].label)} case</span></td></tr>`;
     body += `<tr class="total"><td class="lbl">Total profit</td>${cells((k) => money(R(k).summary.buyers[gi].profit))}</tr>`;
     body += `<tr><td class="lbl">IRR from purchase</td>${cells((k) => fmt.pct(R(k).summary.buyers[gi].irr))}</tr>`;
   });
@@ -1632,15 +1637,17 @@ function renderWarehouse() {
     `<table><thead><tr><th>Sold</th>${CASES.map((k) => `<th class="n${hl(k)}">${shortLabel(k)}</th>`).join("")}</tr></thead><tbody>
     ${pcts.map((p) => `<tr><td class="num">${Math.round(+p * 100)}%</td>${CASES.map((k) => { const v = R(k).by_pct_sold[p][whPerson].profit; return `<td class="n ${v >= 0 ? "pos" : "neg"}${hl(k)}">${fmt.usdk(v)}</td>`; }).join("")}</tr>`).join("")}</tbody></table>
     ${nSales ? "" : `<p class="note">No sale is scheduled, so every row is the same. Add a sale to see the effect of selling.</p>`}`;
-  const b = R(PRIMARY), bp = b.by_pct_sold, mine = sb.people[whPerson];
-  const raisedAmt = inputs.investor.check + w.reserve, adm = sb.admin_per_year;
+  // the callout describes the case shown (like the diagram and the highlighted column)
+  const SK = results.warehouse[detailCase] ? detailCase : PRIMARY;
+  const b = R(SK), bp = b.by_pct_sold, mine = b.summary.people[whPerson];
+  const raisedAmt = inputs.investor.check + w.reserve, adm = b.summary.admin_per_year;
   const adminNote = ` Admin of ${fmt.usd(adm)}/yr (${fmt.pct(adm / raisedAmt, 1)} of the raise) is an assumption${adm / raisedAmt > 0.025 ? ` and is a big drag at this size; try “% of the raise”` : ""}.`;
   if (pool < 0.5) {
-    document.getElementById("whCallout").innerHTML = `<strong>Fully subscribed:</strong> everyone keeps their units, so each person's return is the ${esc(n.vehicle)} member return on their cash (${fmt.pct(mine.irr)} for ${esc(me.name)} in the ${esc(results.cases[PRIMARY].label)} case) plus their share of ${esc(n.manager)}'s fees and promote. ${adminNote}`;
+    document.getElementById("whCallout").innerHTML = `<strong>Fully subscribed:</strong> everyone keeps their units, so each person's return is the ${esc(n.vehicle)} member return on their cash (${fmt.pct(mine.irr)} for ${esc(me.name)} in the ${esc(results.cases[SK].label)} case) plus their share of ${esc(n.manager)}'s fees and promote. ${adminNote}`;
     return;
   }
   const swing = bp["1.0"][whPerson].profit - bp["0"][whPerson].profit;
-  document.getElementById("whCallout").innerHTML = `<strong>What drives ${esc(me.name)}'s result:</strong> in the ${esc(results.cases[PRIMARY].label)} case, ${esc(me.name)} makes ${fmt.usd(mine.profit)}${mine.at_risk > 0.5 ? ` with ${fmt.usd(mine.at_risk)} still at risk after the sales` : mine.cash_in > 0 ? ", with all of their money back by the last sale" : ""}. Selling all of the pool instead of none changes that by ${fmt.signedk(swing)}. Buyers expect ${fmt.pct(sb.buyers_irr)} from their purchase date, so a full sell-down isn't assured.${anyLoan ? ` ${esc(n.manager)} owes ${fmt.usd(sb.loan_interest_total)} of interest to lenders, which its owners bear.` : ""} ${adminNote}`;
+  document.getElementById("whCallout").innerHTML = `<strong>What drives ${esc(me.name)}'s result:</strong> in the ${esc(results.cases[SK].label)} case, ${esc(me.name)} makes ${fmt.usd(mine.profit)}${mine.at_risk > 0.5 ? ` with ${fmt.usd(mine.at_risk)} still at risk after the sales` : mine.cash_in > 0 ? ", with all of their money back by the last sale" : ""}. Selling all of the pool instead of none changes that by ${fmt.signedk(swing)}. Buyers expect ${fmt.pct(sb.buyers_irr)} from their purchase date, so a full sell-down isn't assured.${anyLoan ? ` ${esc(n.manager)} owes ${fmt.usd(sb.loan_interest_total)} of interest to lenders, which its owners bear.` : ""} ${adminNote}`;
 }
 
 /* ------------------------------------------------------------ direct investors */
@@ -1734,7 +1741,7 @@ document.addEventListener("click", (e) => {
   if (!t) return;
   const group = t.parentElement.id;
   if (group === "caseTabs") { editCase = t.dataset.k; renderCaseFields(); recompute(); }
-  if (group === "detailTabs" || group === "flowTabs") { detailCase = t.dataset.k; renderDetail(); renderChart(); renderExit(); renderFlow(); }
+  if (group === "detailTabs" || group === "flowTabs") { detailCase = t.dataset.k; renderDetail(); renderChart(); renderExit(); renderWarehouse(); renderDirect(); }
 });
 document.getElementById("cbpParty").addEventListener("change", (e) => { cbpParty = e.target.value; renderCashByPerson(); });
 document.getElementById("resetBtn").addEventListener("click", () => { inputs = clone(DEFAULTS); activeScenario = null; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); });
