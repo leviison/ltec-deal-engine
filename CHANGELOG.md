@@ -5,7 +5,7 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
-## 2.2.0 — unreleased (feature/14-stable-ids)
+## 2.2.0 — 2026-11-06
 
 - Stable ids (#14): every person in a vehicle has an `id` (schema 7); names are labels only. Partner loans, vesting,
   buy-ins and person sales refer to people by id, so renaming Levi → Bob or LTEC → another entity changes labels and
