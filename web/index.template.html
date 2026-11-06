@@ -1496,7 +1496,9 @@ let whPerson = 0;
 function renderFlow() {
   const el = document.getElementById("whFlow");
   if (!el) return;
-  const w = inputs.warehouse, n = w.names, R = results.warehouse[PRIMARY], sm = R.summary, cs = results.cases[PRIMARY];
+  // the case shown follows "Case to show" (detailCase), like the detail, chart and exit; its own buttons set it too
+  const K = results.warehouse[detailCase] ? detailCase : PRIMARY;
+  const w = inputs.warehouse, n = w.names, R = results.warehouse[K], sm = R.summary, cs = results.cases[K];
   const check = inputs.investor.check, raised = check + w.reserve, mc = w.manager_commitment, mcap = mc + (w.manager_reserve || 0);
   const direct = mc >= raised - 0.5 && w.promote === 0 && w.acq_fee_pct === 0;
   const mk = n.manager.trim().toLowerCase();
@@ -1540,7 +1542,9 @@ function renderFlow() {
     `<text class="t" x="${d.x + 10}" y="${d.y + 18}">${esc(cut(d.t, 22))}</text><text class="s" x="${d.x + 10}" y="${d.y + 33}">${esc(cut(d.sub, 27))}</text>` +
     `<text class="lab" x="${d.x + 10}" y="${d.y + 48}">${esc(cut(d.cash, 27))}</text></g>`));
   svg.push(`<text class="cap" x="10" y="${H - 8}">${esc(cs.label)} case, totals over the hold; “back” includes capital returned.</text></svg>`);
-  el.innerHTML = svg.join("");
+  const tabs = `<div class="seg" id="flowTabs" role="group" aria-label="Case shown in the diagram" style="margin-bottom:6px">${CASES.map((k) =>
+    `<button type="button" data-k="${k}" aria-pressed="${k === K}">${shortLabel(k)}</button>`).join("")}</div>`;
+  el.innerHTML = tabs + svg.join("");
 }
 function renderWarehouse() {
   renderFlow();
@@ -1730,7 +1734,7 @@ document.addEventListener("click", (e) => {
   if (!t) return;
   const group = t.parentElement.id;
   if (group === "caseTabs") { editCase = t.dataset.k; renderCaseFields(); recompute(); }
-  if (group === "detailTabs") { detailCase = t.dataset.k; renderDetail(); renderChart(); renderExit(); }
+  if (group === "detailTabs" || group === "flowTabs") { detailCase = t.dataset.k; renderDetail(); renderChart(); renderExit(); renderFlow(); }
 });
 document.getElementById("cbpParty").addEventListener("change", (e) => { cbpParty = e.target.value; renderCashByPerson(); });
 document.getElementById("resetBtn").addEventListener("click", () => { inputs = clone(DEFAULTS); activeScenario = null; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); });

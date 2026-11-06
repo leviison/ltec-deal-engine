@@ -43,6 +43,13 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
     await p.waitForTimeout(250);
     check(ok && await p.evaluate(() => inputs.warehouse.structure.startsWith('spv') && Math.abs(results.warehouse.base.summary.check) < 0.05), `The Bend variant "${v}" missing or not reconciling`);
   }
+  // the diagram follows the case shown: its own buttons and "Case to show" stay in step
+  await p.evaluate(() => document.querySelector('#flowTabs [data-k="downside"]').click()); await p.waitForTimeout(200);
+  const f1 = await p.evaluate(() => ({ cap: document.querySelector('#whFlow .cap').textContent, det: document.querySelector('#detailTabs [aria-pressed="true"]').dataset.k,
+    back: document.querySelector('#whFlow .node .lab').textContent, want: results.cases.downside.investor.payments.reduce((a, b) => a + b, 0) }));
+  check(/^Downside/.test(f1.cap) && f1.det === 'downside', `diagram tabs should set the case everywhere: ${JSON.stringify(f1)}`);
+  const f2 = await p.evaluate(() => { document.querySelector('#detailTabs [data-k="sponsor"]').click(); return { cap: document.querySelector('#whFlow .cap').textContent, sel: document.querySelector('#flowTabs [aria-pressed="true"]').dataset.k, lab: document.querySelector('#whFlow .node .lab').textContent, want: fmt.usdk(results.cases.sponsor.investor.payments.reduce((a, b) => a + b, 0)) }; });
+  check(f2.sel === 'sponsor' && f2.lab.includes(f2.want), `"Case to show" should move the diagram: ${JSON.stringify(f2)}`);
   errs.forEach((e) => fail.push('page error: ' + e));
   await b.close();
   if (fail.length) { console.log('FAIL\n' + fail.join('\n')); process.exitCode = 1; } else console.log('ok');
