@@ -32,6 +32,7 @@
   are generated from the deal files by `tests/web/fixtures.py`. Every UI bug gets a page test that fails before the fix
   (e.g. `rail_layout.test.js`). Run the full suite before republishing.
 - Backlog: bugs, ideas and deferred work are GitHub Issues on leviison/ltec-deal-engine (labels: bug, enhancement,
-  diligence, deferred). Reference the issue in the commit (`Fixes #n`). The project doc keeps deal context, not a to-do list.
+  diligence, deferred, structure). Entity-structure work follows the roadmap in issue #11
+  (options on top of today's deal → vehicle → LTEC shape; off = unchanged results). Reference the issue in the commit (`Fixes #n`). The project doc keeps deal context, not a to-do list.
 - Context and diligence: claude.ai Project "deal engine" (doc `claude/deal-engine-context.md`); Siena's own context is
   in the "Siena Villas" project.
