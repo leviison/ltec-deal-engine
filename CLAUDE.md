@@ -45,9 +45,12 @@
   (e.g. `rail_layout.test.js`). Run the full suite before republishing.
 - Releases and previews: work happens on a branch (`feature/<issue>-<name>`) with a pull request; GitHub Actions runs
   the full suite on every push. Try a branch on the preview dashboard: `python scripts/build_web.py --preview` and publish
-  `dist/preview/index.html` to the "LTEC Deal Engine (preview)" artifact (URL in README; its saved scenarios are separate).
+  `dist/preview/index.html` to https://claude.ai/artifact/QrvazH63jz8LgVT9ujoCSk ("LTEC Deal Engine (preview)"; omit
+  `capabilities` on republish; its saved scenarios are separate from the live ones).
   Only merged, tagged releases go to the live dashboard: bump `engine/version.json`, add a CHANGELOG.md entry
-  (tests/test_release.py checks they match), merge, tag `vX.Y.Z`, push the tag, then rebuild and republish the live page.
+  (tests/test_release.py checks they match), merge, tag `vX.Y.Z`, then rebuild from main and republish the live page.
+  Claude Code sessions can't push tags or create releases (the GitHub proxy refuses): Levi creates the release on
+  GitHub (Releases > Draft a new release > tag vX.Y.Z on the merge commit).
   The page footer, both exports and each saved scenario (`engine_version`) carry the release and build commit.
   Never publish a branch to the live dashboard.
 - Backlog: bugs, ideas and deferred work are GitHub Issues on leviison/ltec-deal-engine (labels: bug, enhancement,
