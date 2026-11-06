@@ -11,7 +11,10 @@ def randomized(base, seed):
     inp = copy.deepcopy(base)
     d, wf, inv = inp["deal"], inp["waterfall"], inp["investor"]
     inv["check"] = r.choice([250000, 1000000, 2000000])
-    inp["warehouse"]["people"][0]["amount"] = inv["check"]  # the pass-through vehicle's one member funds the check
+    # rebuild the vehicle for the new check from a random structure template (direct, SPV, SPV + warehouse)
+    from engine.core import apply_structure
+    inp = apply_structure(inp, r.choice(["direct", "direct", "spv", "spv_warehouse"]))
+    d, wf, inv = inp["deal"], inp["waterfall"], inp["investor"]
     d["exit_noi_basis"] = r.choice(["trailing", "trailing", "forward"])
     d["reserves_returned_at_sale"] = r.choice([0, d["reserves_returned_at_sale"], r.uniform(0, 5e5)])
     b = d["below_noi_income"]

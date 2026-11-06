@@ -146,7 +146,8 @@ Not legal, tax or investment advice.
 - **Branches:** each issue is built on `feature/<issue>-<name>` and merged by pull request. GitHub Actions
   (`.github/workflows/tests.yml`) runs the full suite on every push and pull request.
 - **Preview:** `python scripts/build_web.py --preview` builds `dist/preview/index.html` with a banner naming the branch
-  and commit. It is published to the separate "LTEC Deal Engine (preview)" artifact, so a feature can be tried before it
+  and commit. It is published to the separate "LTEC Deal Engine (preview)" artifact
+  (https://claude.ai/artifact/QrvazH63jz8LgVT9ujoCSk), so a feature can be tried before it
   reaches the live dashboard. Saved scenarios on the preview are its own.
 - **Release:** bump `engine/version.json`, add the CHANGELOG.md entry, merge to `main`, tag `vX.Y.Z`, rebuild and
   republish the live dashboard. The version and build commit show at the page foot, on every export, and on each saved

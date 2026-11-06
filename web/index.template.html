@@ -44,6 +44,17 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
+.flow { overflow-x: auto; margin: 4px 0 14px; }
+.flow svg { display: block; min-width: 600px; width: 100%; height: auto; font-family: var(--f-body); }
+.flow .node rect { fill: var(--surface, #fff); stroke: var(--line); stroke-width: 1.2; }
+.flow .node.hub rect { fill: var(--accent-soft); stroke: var(--accent); }
+.flow .node .t { font-size: 12.5px; font-weight: 600; fill: var(--fg); }
+.flow .node .s { font-size: 10.5px; fill: var(--muted); }
+.flow path { fill: none; stroke: var(--accent); stroke-width: 1.6; opacity: .55; }
+.flow .lab { font-size: 10.5px; fill: var(--fg); }
+.flow .cap { font-size: 11px; fill: var(--muted); }
+.structure-pick { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; margin: 4px 0 10px; }
+.structure-pick select { width: 100%; }
 .preview-bar { position: sticky; top: 0; z-index: 50; padding: 6px 16px; background: #7a4b00; color: #fff; font-size: 12.5px; text-align: center; }
 .wrap { max-width: 1320px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 48px; }
 h1, h2, h3 { font-family: var(--f-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: 0.005em; }
@@ -106,6 +117,8 @@ aside.rail { position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); 
 .sumline { font-size: 12px; color: var(--muted); }
 #whPersonTabs button { white-space: nowrap; padding: 6px 10px; }
 .sumline.warn { color: var(--warn-fg); background: var(--warn-bg); border-radius: 5px; padding: 4px 8px; }
+th.shown, td.shown { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+th.shown { color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
 th.hl, td.hl { background: color-mix(in srgb, var(--c-custom) 9%, transparent); }
 th.hl { color: var(--c-custom); }
 .case.hl { box-shadow: 0 0 0 2px var(--c-custom); }
@@ -388,6 +401,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
 
       <section class="panel">
         <header><h2 id="whTitle"></h2><span class="muted small" id="whSub"></span></header>
+        <div class="flow" id="whFlow"></div>
         <div class="tablewrap" id="whTable"></div>
         <div style="margin-top:16px" class="two">
           <div style="min-width:0">
@@ -473,6 +487,8 @@ const DEALS = /*__DEALS__*/null;
 // Which engine release and commit built this page (engine/version.json, git); preview builds show a banner.
 const BUILD = /*__BUILD__*/null || { engine: "dev", commit: "", branch: "", built: "", preview: false };
 const ENGINE_LABEL = `LTEC Deal Engine v${BUILD.engine}`;
+// How LTEC can hold a deal (engine/structures.json): templates that build the vehicle inputs.
+const STRUCTURES = /*__STRUCTURES__*/null;
 const SLUGS = Object.keys(DEALS);
 const E = window.DealEngine;
 let DEFAULTS, META, UI, PRIMARY, CASES, DEFAULT_RESULTS;
@@ -711,7 +727,9 @@ function copyIntoCustom(inp, k) {
   return inp;
 }
 // While the Custom case is being edited, its column is highlighted everywhere.
-function hl(k) { return k === "custom" && editCase === "custom" ? " hl" : ""; }
+// column classes for a case: "hl" while editing Custom; "shown" for the case picked in "Case to show" (the detail,
+// chart, exit and flow diagram follow it), so tables with every case point at the one the panels above describe
+function hl(k) { return (k === "custom" && editCase === "custom" ? " hl" : "") + (k === detailCase ? " shown" : ""); }
 function shortLabel(k) { return { sponsor: "Sponsor", base: "Base", downside: "Downside", stress: "Stress", custom: "Custom" }[k] || inputs.cases[k].label; }
 function renderAllFields() { Object.keys(sections()).forEach(renderSection); renderVariants(); renderDealExtras(); renderTimingInputs(); renderRedstoneInputs(); renderLoanInputs(); renderHoldInputs(); renderCaseFields(); renderDirectInputs(); renderWarehouseInputs(); }
 
@@ -1076,12 +1094,31 @@ function whFields() {
     },
   };
 }
+// Has the vehicle been changed since its structure template was applied? (Compares what the template would build now.)
+function structureEdited() {
+  const w = inputs.warehouse;
+  if (!STRUCTURES || !w.structure || w.structure === "custom" || !STRUCTURES.templates[w.structure]) return false;
+  const t = E.applyStructure(inputs, w.structure, STRUCTURES).warehouse;
+  return ["names", "reserve", "manager_commitment", "acq_fee_pct", "mgmt_fee_pct", "admin_cost_per_year", "member_hurdle_irr", "promote", "people", "selldown"]
+    .some((k) => diffPaths(t[k], w[k]).length > 0);
+}
+// keep the structure picker's "· edited" mark current as inputs change
+function updateStructurePick() {
+  const sp = document.getElementById("structurePick");
+  if (!sp || !STRUCTURES) return;
+  const cur = inputs.warehouse.structure || "custom", ed = cur !== "custom" && structureEdited();
+  [...sp.options].forEach((o) => { const t = STRUCTURES.templates[o.value]; if (t) o.textContent = t.label + (o.value === cur && ed ? " · edited" : ""); });
+}
 function renderWarehouseInputs() {
   const w = inputs.warehouse, n = w.names, fx = whFields(), sec = document.getElementById("sec-wh");
   const all = [];
   const block = (fields) => { all.push(...fields); return fields.map(fieldHTML).join(""); };
   const grp = (id, title, body) => `<div class="grp" data-grp="${id}"><div class="grp-head" role="button" tabindex="0"><span class="grp-title">${title}</span><span class="sec-badge"></span><span class="chev" aria-hidden="true"></span></div><div class="grp-sum"></div><div class="grp-body">${body}</div></div>`;
+  const st = STRUCTURES && STRUCTURES.templates, cur = w.structure || "custom", edited = cur !== "custom" && structureEdited();
   sec.innerHTML = `<h3>${esc(n.vehicle)}</h3>
+    ${st ? `<div class="structure-pick"><label for="structurePick"><b>How ${esc(n.manager)} holds this deal</b></label>
+      <select id="structurePick">${Object.entries(st).map(([k, t]) => `<option value="${k}"${k === cur ? " selected" : ""}>${esc(t.label)}${k === cur && edited ? " · edited" : ""}</option>`).join("")}<option value="custom"${cur === "custom" ? " selected" : ""}>Set by hand</option></select>
+      <span class="note" style="margin:0">${esc(cur !== "custom" ? st[cur].note : "The vehicle below was set up by hand.")} Picking a structure rebuilds the vehicle from ${esc(n.manager)}'s templates for this check, keeping ${esc(n.manager)}'s partners and terms; Defaults restores the deal file.</span></div>` : ""}
     ${grp("wh-names", "Names", block(fx.names))}
     ${grp("wh-raise", "The raise", block(fx.vehicle) + `<div class="readout" id="whRaised"></div>`)}
     ${grp("wh-fees", `${esc(n.manager)} fees &amp; promote`, block(fx.fees))}
@@ -1114,6 +1151,12 @@ function renderWarehouseInputs() {
     ${w.selldown.tranches.length < MAX_SALES ? `<div class="row"><button class="btn" type="button" id="addSale">+ Add sale</button></div>` : ""}`)}
     <datalist id="buyerNames">${[n.buyers].concat(w.people.map((p) => p.name)).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>`;
   all.forEach((f) => bindField(sec.querySelector(`[data-path="${f.path}"]`), f));
+  const sp = document.getElementById("structurePick");
+  if (sp) sp.addEventListener("change", () => {
+    if (sp.value === "custom") { inputs.warehouse.structure = "custom"; renderWarehouseInputs(); recompute(); return; }
+    inputs = E.applyStructure(inputs, sp.value, STRUCTURES);
+    renderWarehouseInputs(); recompute();
+  });
   w.people.forEach((p, i) => { const el = sec.querySelector(`[data-path="warehouse.people.${i}.loan_rate"]`); el.hidden = p.role !== "loan"; });
   sec.querySelector('[data-path="warehouse.admin_cost_per_year"]').hidden = w.admin_cost_method === "pct_raise";
   sec.querySelector('[data-path="warehouse.admin_cost_pct"]').hidden = w.admin_cost_method !== "pct_raise";
@@ -1192,6 +1235,7 @@ function railHome(path) {
   if (path.startsWith("cases")) return ["sec-cases"];
   if (path.startsWith("warehouse")) {
     const k = path.split(".")[1];
+    if (k === "structure") return ["sec-wh"];
     const g = k === "names" ? "wh-names" : k === "people" ? "wh-people" : k === "manager_transfers" ? "wh-buyins" : k === "selldown" ? "wh-sales"
       : ["manager_waterfall", "manager_loans", "manager_vesting"].includes(k) ? "wh-ltec"
       : ["close_date", "manager_commitment", "manager_reserve", "reserve", "unit_price"].includes(k) ? "wh-raise" : "wh-fees";
@@ -1292,6 +1336,7 @@ function diffPaths(a, b, pre = "", out = []) {
 }
 function markChanged() {
   refreshPicker();
+  updateStructurePick();
   if (typeof loadedScenario === "function" && activeScenario) updateScenarioChip();
   const changed = new Set(diffPaths(inputs, DEFAULTS));
   document.querySelectorAll("[data-path]").forEach((el) => {
@@ -1450,7 +1495,63 @@ function renderExit() {
 }
 
 let whPerson = 0;
+// How the deal is held, drawn from the same inputs and results as the table: deal -> vehicle -> its members and the
+// manager -> the manager's partners, with the primary case's cash over the hold on each line.
+function renderFlow() {
+  const el = document.getElementById("whFlow");
+  if (!el) return;
+  // the case shown follows "Case to show" (detailCase), like the detail, chart and exit; its own buttons set it too
+  const K = results.warehouse[detailCase] ? detailCase : PRIMARY;
+  const w = inputs.warehouse, n = w.names, R = results.warehouse[K], sm = R.summary, cs = results.cases[K];
+  const check = inputs.investor.check, raised = check + w.reserve, mc = w.manager_commitment, mcap = mc + (w.manager_reserve || 0);
+  const direct = mc >= raised - 0.5 && w.promote === 0 && w.acq_fee_pct === 0;
+  const mk = n.manager.trim().toLowerCase();
+  const partners = w.people.map((p, i) => ({ p, i })).filter(({ p }) => (p.manager_capital > 0 || p.manager_share > 0) && p.name.trim().toLowerCase() !== mk);
+  const members = w.people.map((p, i) => ({ p, i })).filter(({ p }) => p.amount > 0.5);
+  const groups = R.buyers.map((g, gi) => ({ g, gi })).filter(({ gi }) => sm.buyers[gi].units > 1e-9);
+  const back = sum(cs.investor.payments);
+  // a person's profit on their own units: their total less what they made through the manager (its cash, less the
+  // capital and partner loans they put in, and buy-ins)
+  const unitProfit = (i) => { const x = sm.people[i]; return x.profit - (x.from_manager - w.people[i].manager_capital - x.manager_loans_net) - x.at_buyins; };
+  // boxes: name, what it is, and its cash over the hold; columns run left to right in the direction money goes in
+  const BW = 190, BH = 58, GX = 46, GY = 12, X = (c) => 10 + c * (BW + GX);
+  const nodes = [], edges = [];
+  const node = (id, col, row, t, sub, cash, hub) => nodes.push({ id, x: X(col), y: 10 + row * (BH + GY), t, sub, cash, hub });
+  node("deal", 0, 0, DEALS[META.slug].meta.name, UI.sponsor_short || META.sponsor || "LP interest", `${fmt.usdk(check)} in → ${fmt.usdk(back)} back`);
+  const pcol = direct ? 2 : 3;
+  let mRow = 0;
+  if (direct) {
+    node("mgr", 1, 0, n.manager, "invests directly", `${fmt.usdk(check)} in → ${fmt.usdk(back)} back`, true);
+    edges.push(["deal", "mgr"]);
+  } else {
+    node("veh", 1, 0, n.vehicle, `raise ${fmt.usdk(raised)}`, w.promote ? `${fmt.pct(w.promote, 0)} promote over ${fmt.pct(w.member_hurdle_irr, 0)}` : "no promote", true);
+    edges.push(["deal", "veh"]);
+    members.forEach(({ p, i }) => { node("m" + i, 2, mRow++, p.name, p.role === "warehouse" ? "warehouses units to sell" : p.role === "loan" ? `lends at ${fmt.pct(p.loan_rate, 0)}` : "member", `${fmt.usdk(p.amount)} in · ${fmt.signedk(unitProfit(i))} profit`); edges.push(["veh", "m" + i]); });
+    groups.forEach(({ g, gi }) => { node("g" + gi, 2, mRow++, g.name, "buys in the sell-down", `${fmt.usdk(sm.buyers[gi].cost)} in · ${fmt.signedk(sm.buyers[gi].profit)} profit`); edges.push(["veh", "g" + gi]); });
+    node("mgr", 2, mRow, n.manager, `${fmt.usdk(mc)} of units`, `fees ${fmt.usdk(sm.manager_fees_total)} · promote ${fmt.usdk(sm.manager_promote_total)}`, true);
+    edges.push(["veh", "mgr"]);
+  }
+  partners.forEach(({ p, i }, k) => {
+    node("p" + i, pcol, (direct ? 0 : mRow) + k, p.name, `${fmt.pct(mcap > 0 ? p.manager_capital / mcap : 0, 0)} capital · ${fmt.pct(p.manager_share, 0)} promote`, `${fmt.usdk(p.manager_capital)} in → ${fmt.usdk(sm.people[i].from_manager)} back`);
+    edges.push(["mgr", "p" + i]);
+  });
+  const H = Math.max(...nodes.map((d) => d.y)) + BH + 30, W = X(Math.max(...nodes.map((d) => (d.x - 10) / (BW + GX)))) + BW + 10;
+  const at = (id) => nodes.find((d) => d.id === id), cut = (t, k) => (t.length > k ? t.slice(0, k - 1) + "…" : t);
+  const svg = [`<svg viewBox="0 0 ${W} ${H}" style="max-width:${W}px" role="img" aria-label="How ${esc(n.manager)} holds ${esc(DEALS[META.slug].meta.name)}">`];
+  edges.forEach(([a, b]) => {
+    const A = at(a), B = at(b), x1 = A.x + BW, y1 = A.y + BH / 2, x2 = B.x, y2 = B.y + BH / 2, mx = (x1 + x2) / 2;
+    svg.push(`<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`);
+  });
+  nodes.forEach((d) => svg.push(`<g class="node${d.hub ? " hub" : ""}"><rect x="${d.x}" y="${d.y}" width="${BW}" height="${BH}" rx="6"/>` +
+    `<text class="t" x="${d.x + 10}" y="${d.y + 18}">${esc(cut(d.t, 22))}</text><text class="s" x="${d.x + 10}" y="${d.y + 33}">${esc(cut(d.sub, 27))}</text>` +
+    `<text class="lab" x="${d.x + 10}" y="${d.y + 48}">${esc(cut(d.cash, 27))}</text></g>`));
+  svg.push(`<text class="cap" x="10" y="${H - 8}">${esc(cs.label)} case, totals over the hold; “back” includes capital returned.</text></svg>`);
+  const tabs = `<div class="seg" id="flowTabs" role="group" aria-label="Case shown in the diagram" style="margin-bottom:6px">${CASES.map((k) =>
+    `<button type="button" data-k="${k}" aria-pressed="${k === K}">${shortLabel(k)}</button>`).join("")}</div>`;
+  el.innerHTML = tabs + svg.join("");
+}
 function renderWarehouse() {
+  renderFlow();
   const w = inputs.warehouse, n = w.names, people = w.people;
   if (whPerson >= people.length) whPerson = 0;
   const R = (k) => results.warehouse[k];
@@ -1493,7 +1594,8 @@ function renderWarehouse() {
   });
   sb.buyers.forEach((g, gi) => {
     if (g.units < 1e-9) return;
-    body += `<tr class="grp"><td colspan="${cols}">${esc(R(PRIMARY).buyers[gi].name)} <span>· outside buyer, ${fmt.usd(g.cost)} for ${Math.round(g.units)} units in the ${esc(results.cases[PRIMARY].label)} case</span></td></tr>`;
+    const shownK = results.warehouse[detailCase] ? detailCase : PRIMARY, gs = R(shownK).summary.buyers[gi] || g;
+    body += `<tr class="grp"><td colspan="${cols}">${esc(R(PRIMARY).buyers[gi].name)} <span>· outside buyer, ${fmt.usd(gs.cost)} for ${Math.round(gs.units)} units in the ${esc(results.cases[shownK].label)} case</span></td></tr>`;
     body += `<tr class="total"><td class="lbl">Total profit</td>${cells((k) => money(R(k).summary.buyers[gi].profit))}</tr>`;
     body += `<tr><td class="lbl">IRR from purchase</td>${cells((k) => fmt.pct(R(k).summary.buyers[gi].irr))}</tr>`;
   });
@@ -1535,15 +1637,17 @@ function renderWarehouse() {
     `<table><thead><tr><th>Sold</th>${CASES.map((k) => `<th class="n${hl(k)}">${shortLabel(k)}</th>`).join("")}</tr></thead><tbody>
     ${pcts.map((p) => `<tr><td class="num">${Math.round(+p * 100)}%</td>${CASES.map((k) => { const v = R(k).by_pct_sold[p][whPerson].profit; return `<td class="n ${v >= 0 ? "pos" : "neg"}${hl(k)}">${fmt.usdk(v)}</td>`; }).join("")}</tr>`).join("")}</tbody></table>
     ${nSales ? "" : `<p class="note">No sale is scheduled, so every row is the same. Add a sale to see the effect of selling.</p>`}`;
-  const b = R(PRIMARY), bp = b.by_pct_sold, mine = sb.people[whPerson];
-  const raisedAmt = inputs.investor.check + w.reserve, adm = sb.admin_per_year;
+  // the callout describes the case shown (like the diagram and the highlighted column)
+  const SK = results.warehouse[detailCase] ? detailCase : PRIMARY;
+  const b = R(SK), bp = b.by_pct_sold, mine = b.summary.people[whPerson];
+  const raisedAmt = inputs.investor.check + w.reserve, adm = b.summary.admin_per_year;
   const adminNote = ` Admin of ${fmt.usd(adm)}/yr (${fmt.pct(adm / raisedAmt, 1)} of the raise) is an assumption${adm / raisedAmt > 0.025 ? ` and is a big drag at this size; try “% of the raise”` : ""}.`;
   if (pool < 0.5) {
-    document.getElementById("whCallout").innerHTML = `<strong>Fully subscribed:</strong> everyone keeps their units, so each person's return is the ${esc(n.vehicle)} member return on their cash (${fmt.pct(mine.irr)} for ${esc(me.name)} in the ${esc(results.cases[PRIMARY].label)} case) plus their share of ${esc(n.manager)}'s fees and promote. ${adminNote}`;
+    document.getElementById("whCallout").innerHTML = `<strong>Fully subscribed:</strong> everyone keeps their units, so each person's return is the ${esc(n.vehicle)} member return on their cash (${fmt.pct(mine.irr)} for ${esc(me.name)} in the ${esc(results.cases[SK].label)} case) plus their share of ${esc(n.manager)}'s fees and promote. ${adminNote}`;
     return;
   }
   const swing = bp["1.0"][whPerson].profit - bp["0"][whPerson].profit;
-  document.getElementById("whCallout").innerHTML = `<strong>What drives ${esc(me.name)}'s result:</strong> in the ${esc(results.cases[PRIMARY].label)} case, ${esc(me.name)} makes ${fmt.usd(mine.profit)}${mine.at_risk > 0.5 ? ` with ${fmt.usd(mine.at_risk)} still at risk after the sales` : mine.cash_in > 0 ? ", with all of their money back by the last sale" : ""}. Selling all of the pool instead of none changes that by ${fmt.signedk(swing)}. Buyers expect ${fmt.pct(sb.buyers_irr)} from their purchase date, so a full sell-down isn't assured.${anyLoan ? ` ${esc(n.manager)} owes ${fmt.usd(sb.loan_interest_total)} of interest to lenders, which its owners bear.` : ""} ${adminNote}`;
+  document.getElementById("whCallout").innerHTML = `<strong>What drives ${esc(me.name)}'s result:</strong> in the ${esc(results.cases[SK].label)} case, ${esc(me.name)} makes ${fmt.usd(mine.profit)}${mine.at_risk > 0.5 ? ` with ${fmt.usd(mine.at_risk)} still at risk after the sales` : mine.cash_in > 0 ? ", with all of their money back by the last sale" : ""}. Selling all of the pool instead of none changes that by ${fmt.signedk(swing)}. Buyers expect ${fmt.pct(sb.buyers_irr)} from their purchase date, so a full sell-down isn't assured.${anyLoan ? ` ${esc(n.manager)} owes ${fmt.usd(sb.loan_interest_total)} of interest to lenders, which its owners bear.` : ""} ${adminNote}`;
 }
 
 /* ------------------------------------------------------------ direct investors */
@@ -1637,7 +1741,7 @@ document.addEventListener("click", (e) => {
   if (!t) return;
   const group = t.parentElement.id;
   if (group === "caseTabs") { editCase = t.dataset.k; renderCaseFields(); recompute(); }
-  if (group === "detailTabs") { detailCase = t.dataset.k; renderDetail(); renderChart(); renderExit(); }
+  if (group === "detailTabs" || group === "flowTabs") { detailCase = t.dataset.k; renderDetail(); renderChart(); renderExit(); renderWarehouse(); renderDirect(); }
 });
 document.getElementById("cbpParty").addEventListener("change", (e) => { cbpParty = e.target.value; renderCashByPerson(); });
 document.getElementById("resetBtn").addEventListener("click", () => { inputs = clone(DEFAULTS); activeScenario = null; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); });
@@ -1836,6 +1940,7 @@ function upgradeInputs(saved) {
   if (!w2.manager_waterfall) w2.manager_waterfall = clone(DEFAULTS.warehouse.manager_waterfall || { enabled: false, pref: 0.08, pref_type: "compound", tiers: [], residual_capital_share: 0 });
   if (!w2.manager_loans) w2.manager_loans = [];
   if (!w2.manager_vesting) w2.manager_vesting = [];
+  if (!w2.structure) w2.structure = "custom";
   if (w2.manager_reserve == null) w2.manager_reserve = 0;
   w2.people.forEach((p) => { if (p.manager_capital == null) p.manager_capital = p.manager_share * (w2.manager_commitment + w2.manager_reserve); });
   w2.manager_transfers.forEach((x) => { if (x.interest == null) x.interest = "both"; if (x.price == null) x.price = 0; });

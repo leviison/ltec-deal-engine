@@ -1156,6 +1156,65 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
     }
 
 
+# ---------------------------------------------------------------- structure templates (engine/structures.json)
+
+def load_structures() -> dict:
+    return json.loads((Path(__file__).parent / "structures.json").read_text())
+
+
+def structure_partners(inp: dict, lib: dict) -> list:
+    """LTEC's partners: the people who own part of the manager (not the manager itself, not outside members), with their
+    capital and fees & promote shares; or the library's default partners."""
+    w = inp["warehouse"]
+    mgr = _key(w["names"]["manager"])
+    ps = [p for p in w["people"] if (p["manager_capital"] > 0 or p["manager_share"] > 0) and _key(p["name"]) != mgr]
+    tc, tp = sum(p["manager_capital"] for p in ps), sum(p["manager_share"] for p in ps)
+    if not ps or tp <= 0:
+        return [dict(p) for p in lib["partners"]]
+    return [{"name": p["name"], "capital_share": p["manager_capital"] / tc if tc > 0 else p["manager_share"] / tp,
+             "promote_share": p["manager_share"] / tp} for p in ps]
+
+
+def apply_structure(inp: dict, key: str, lib: dict | None = None, partners: list | None = None) -> dict:
+    """The deal's inputs with the vehicle (warehouse) rebuilt from a structure template, keeping the check, the vehicle
+    close date, the names of the manager and buyers, LTEC's partners and LTEC's own terms. Nothing else changes."""
+    lib = lib or load_structures()
+    t = lib["templates"][key]
+    out = json.loads(json.dumps(inp))
+    w0 = inp["warehouse"]
+    ps = partners or structure_partners(inp, lib)
+    check = inp["investor"]["check"]
+    reserve = check * t["reserve_pct"]
+    mc = check * t["manager_commitment_pct"]
+    outside = check + reserve - mc
+    deal_name = inp.get("meta", {}).get("ui", {}).get("deal_short") or inp.get("meta", {}).get("name", "Deal")
+    people = [{"name": p["name"], "amount": 0.0, "role": "member", "manager_capital": mc * p["capital_share"],
+               "manager_share": p["promote_share"], "loan_rate": 0.08} for p in ps]
+    tranches = []
+    if t["outside"] == "members" and outside > 0.005:
+        people.append({"name": w0["names"]["buyers"], "amount": outside, "role": "member", "manager_capital": 0.0,
+                       "manager_share": 0.0, "loan_rate": 0.08})
+    elif t["outside"] == "warehouse" and outside > 0.005:
+        people[0]["amount"] = outside
+        people[0]["role"] = "warehouse"
+        tranches = [{"date": add_months(date.fromisoformat(w0["close_date"]), t["sale_months"]).isoformat(), "share": 1.0,
+                     "pricing": "carry_simple", "rate": t["sale_carry"], "buyer": w0["names"]["buyers"]}]
+    w = out["warehouse"]
+    w.update({
+        "structure": key,
+        "names": {"vehicle": t["vehicle_name"].replace("{deal}", deal_name), "manager": w0["names"]["manager"],
+                  "buyers": w0["names"]["buyers"]},
+        "unit_price": 1000.0, "reserve": reserve, "manager_commitment": mc, "manager_reserve": 0.0,
+        "admin_cost_per_year": t["admin_cost_per_year"], "admin_cost_method": "fixed",
+        "acq_fee_pct": t["acq_fee_pct"], "mgmt_fee_pct": t["mgmt_fee_pct"],
+        "member_hurdle_irr": t["member_hurdle_irr"], "hurdle_type": "compound", "hurdle_basis": "pooled",
+        "promote": t["promote"], "warehouse_promote": t["promote"], "promote_on_manager_units": True,
+        "people": people,
+        "selldown": {"credit_distributions": True, "tranches": tranches},
+    })  # LTEC's own terms (buy-ins, waterfall, loans, vesting) belong to LTEC, not the vehicle, so they stay
+    return out
+
+
 def warehouse(inp: dict, cases: dict) -> dict:
     share = inp["investor"]["check"] / inp["deal"]["lp_equity"]
     out = {}

@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "meta": {
     "slug": "siena-villas",
     "name": "Siena Villas",
@@ -353,7 +353,8 @@
     "investor.side_letter": "Off (the LTEC side letter is modeled as deal.refi.side_letter_protects)",
     "warehouse.manager_waterfall": "Assumption: off. LTEC's operating agreement between its partners is not drafted yet; set from its terms (issue #9).",
     "warehouse.manager_loans": "Assumption: off. LTEC's operating agreement between its partners is not drafted yet; set from its terms (issue #9).",
-    "warehouse.manager_vesting": "Assumption: off. LTEC's operating agreement between its partners is not drafted yet; set from its terms (issue #9)."
+    "warehouse.manager_vesting": "Assumption: off. LTEC's operating agreement between its partners is not drafted yet; set from its terms (issue #9).",
+    "warehouse.structure": "SV26 memo (Nov 3): an SPV with LTEC's commitment and a warehouse sold down to new members; values are SV26's own."
   },
   "version": "v24-code",
   "as_of": "2026-11-04",
@@ -647,7 +648,8 @@
     },
     "manager_loans": [],
     "manager_vesting": [],
-    "_manager_split_note": "LTEC's own terms between its partners (issue #9), all off by default. manager_waterfall: all manager cash is pooled; capital holders get capital back plus `pref` first, then each tier gives capital_share to capital holders until they reach to_irr, residual_capital_share above that; the rest goes by fees & promote shares. manager_loans: a partner funds part of another's manager capital; the borrower's manager cash repays it first; recourse = any balance is paid at the end, else forgiven. manager_vesting: fees & promote share vests over `years` from close after `cliff_years`; on `leaves` the unvested part goes to the other partners pro rata."
+    "_manager_split_note": "LTEC's own terms between its partners (issue #9), all off by default. manager_waterfall: all manager cash is pooled; capital holders get capital back plus `pref` first, then each tier gives capital_share to capital holders until they reach to_irr, residual_capital_share above that; the rest goes by fees & promote shares. manager_loans: a partner funds part of another's manager capital; the borrower's manager cash repays it first; recourse = any balance is paid at the end, else forgiven. manager_vesting: fees & promote share vests over `years` from close after `cliff_years`; on `leaves` the unvested part goes to the other partners pro rata.",
+    "structure": "spv_warehouse"
   },
   "direct_investors": [],
   "_direct_investors_note": "Other LPs investing in Siena directly, e.g. {\"name\": \"Levi (direct)\", \"check\": 250000}. Same Preferred terms as everyone, so their cash scales with the check."
