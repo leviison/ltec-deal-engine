@@ -56,6 +56,17 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
     rows: document.querySelectorAll('#whTable tbody tr:not(.grp)').length, label: results.cases.downside.label }));
   check(await p.evaluate(() => document.getElementById('whCallout').textContent.includes(results.cases.downside.label)), 'the callout should describe the case shown');
   check(hl.th.length === 1 && hl.th[0] === hl.label && hl.cells > 5, `vehicle table should mark the Downside column: ${JSON.stringify(hl)}`);
+  // #16: the description shows the template's own numbers, and once the vehicle is edited it says what changed
+  await p.goto(PAGE + '#the-bend'); await p.waitForTimeout(400);
+  await p.selectOption('#structurePick', 'spv_warehouse'); await p.waitForTimeout(200);
+  const n0 = await p.evaluate(() => { STRUCTURES.templates.spv_warehouse.sale_carry = 0.07; renderWarehouseInputs(); return document.querySelector('.structure-pick').textContent; });
+  check(/7\.0% simple carry/.test(n0) && !/\{/.test(n0), `template description should use the template's carry: ${n0.slice(0, 300)}`);
+  await p.evaluate(() => { STRUCTURES.templates.spv_warehouse.sale_carry = 0.06; renderWarehouseInputs(); });
+  await p.evaluate(() => { const i = document.querySelector('[data-path="warehouse.selldown.tranches.0.rate"] input'); i.value = '8'; i.dispatchEvent(new Event('change', { bubbles: true })); i.dispatchEvent(new Event('input', { bubbles: true })); });
+  await p.waitForTimeout(200);
+  const n1 = await p.evaluate(() => document.querySelector('.structure-pick').textContent);
+  check(/sale carry 8\.0% \(template 6\.0%\)/.test(n1), `edited vehicle should list what changed from the template: ${n1.slice(0, 400)}`);
+  check(/resets/.test(n1), 'the picker should say picking again resets edits to the house terms');
   errs.forEach((e) => fail.push('page error: ' + e));
   await b.close();
   if (fail.length) { console.log('FAIL\n' + fail.join('\n')); process.exitCode = 1; } else console.log('ok');

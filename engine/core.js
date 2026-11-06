@@ -869,6 +869,15 @@
     if (!ps.length || tp <= 0) return lib.partners.map((p) => Object.assign({}, p));
     return ps.map((p) => ({ id: p.id || personId(p.name), name: p.name, capital_share: tc > 0 ? p.manager_capital / tc : p.manager_share / tp, promote_share: p.manager_share / tp }));
   }
+  function templateNote(t, inp) {
+    const val = (k) => {
+      if (k === "manager") return inp.warehouse.names.manager;
+      const v = t[k];
+      if (typeof v !== "number") return null;
+      return /months$/.test(k) ? String(Math.round(v)) : `${(v * 100).toFixed(1)}%`;
+    };
+    return (t.note || "").replace(/\{([a-z_]+)\}/g, (m0, k) => { const v = val(k); return v === null ? m0 : v; });
+  }
   function applyStructure(inp, key, lib, partners) {
     const t = lib.templates[key];
     const out = JSON.parse(JSON.stringify(inp));
@@ -982,7 +991,7 @@
     return (text || "").replace(/\{([a-z0-9_]+)\}/g, (m0, k) => (k in names ? names[k] : m0));
   }
   const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths, applyStructure, structurePartners,
-    personId, getPath, setPath, mergeDeep, applyVariant, fillLabel, referenceIssues };
+    personId, getPath, setPath, mergeDeep, applyVariant, fillLabel, referenceIssues, templateNote };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DealEngine = api;
 })(typeof window !== "undefined" ? window : this);

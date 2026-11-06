@@ -5,6 +5,14 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.2.1 — unreleased (feature/16-structure-notes)
+
+- Structure picker (#16): the description is filled from the template's own numbers (it said "6% carry" as fixed
+  text, so an edited carry looked ignored; the engine always used the edited rate). Once the vehicle is edited, the
+  picker lists what changed from the template ("sale carry 8.0% (template 6.0%)") and says that picking a structure
+  again resets to LTEC's house terms (`engine/structures.json`).
+- `scripts/apply_structure.py --variant` writes a patch-style variant (`structure` key) instead of a frozen copy.
+
 ## 2.2.0 — 2026-11-06
 
 - Stable ids (#14): every person in a vehicle has an `id` (schema 7); names are labels only. Partner loans, vesting,
