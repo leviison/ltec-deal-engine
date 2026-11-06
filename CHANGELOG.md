@@ -5,7 +5,7 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
-## 2.2.1 — unreleased (feature/16-structure-notes)
+## 2.2.1 — 2026-11-06
 
 - Structure picker (#16): the description is filled from the template's own numbers (it said "6% carry" as fixed
   text, so an edited carry looked ignored; the engine always used the edited rate). Once the vehicle is edited, the
