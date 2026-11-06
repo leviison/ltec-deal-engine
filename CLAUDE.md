@@ -18,7 +18,8 @@
   Do not republish over the Siena v1 dashboard (https://claude.ai/artifact/XXaQnEbg8T1by6PYY17osj); it stays on
   leviison/siena-villas-model until replaced.
 - Ask panel: Claude via `sample` with the engine as page tools (get_deal, get_case_years, list_inputs, run_what_if
-  with custom_from, solve_for, sweep, propose_scenario, compare_deals, get_sources) in `web/index.template.html`. Rules given to Claude: every number from a tool result;
+  with custom_from, solve_for, sweep, propose_scenario, compare_deals, get_sources, list_scenarios, get_vehicle); every
+  deal tool takes `scenario` (a saved scenario's name) to work from it in `web/index.template.html`. Rules given to Claude: every number from a tool result;
   Claude proposes scenarios, the viewer saves them (Save as scenario button); run_what_if warns on no-op or overridden changes.
   New engine outputs a partner would ask about should be exposed through these tools.
 - New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from

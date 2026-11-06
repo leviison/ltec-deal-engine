@@ -727,7 +727,7 @@
              warehouse: warehouse(inp, cases) };
   }
 
-  const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouseCase, runWaterfall, irr, xirr, addMonths };
+  const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DealEngine = api;
 })(typeof window !== "undefined" ? window : this);

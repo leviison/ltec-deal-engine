@@ -1662,6 +1662,7 @@ async function connect() {
     scenarios = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
     renderSaved(); updateScenarioChip();
     if (view === "compare") renderCompare();
+    if (sampleFn) renderAskChips();
   }, (e) => { clearTimeout(timer); document.getElementById("savedList").innerHTML = `<p class="note" style="margin:0">Couldn't load saved scenarios (${esc(e.code || "error")}).</p>`; });
 }
 
@@ -1855,7 +1856,7 @@ function renderAskChips() {
     "What would it take for our Downside to return our capital plus 5%?",
     "Build a Custom case that shows where we break even, and propose it as a scenario.",
     Object.keys(DEFAULTS.investor.side_letter.terms).length ? "Is the side-letter offer worth taking? What should we ask for instead?" : "What are the biggest risks in this deal, with numbers?",
-  ];
+  ].concat(scenariosFor(META.slug).length ? [`What does “${scenariosFor(META.slug)[0].name}” change, and what does each person in ${inputs.warehouse.names.vehicle} make in it?`] : []);
   el.innerHTML = qs.map((q) => `<button type="button">${esc(q)}</button>`).join("");
   el.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { if (!askBusy) ask(b.textContent); }));
 }
@@ -1900,10 +1901,22 @@ function setPath(obj, path, v) {
   else if (typeof old === "boolean") o[last] = v === true || v === "true";
   else o[last] = v;
 }
-// A what-if: start from the deal as on the dashboard, optionally rebuild Custom from another case (like "Start from"),
-// then apply the changes (dotted paths; array items by index, e.g. cases.custom.rents.0, or a whole array).
-function withChanges(slug, changes, customFrom) {
-  const inp = clone(dealInputs(slug));
+// Saved scenarios for Ask: find one of a deal's saved scenarios by id or name (exact, then partial, ignoring case).
+function findScenario(slug, ref) {
+  const list = scenariosFor(slug), q = String(ref).trim().toLowerCase();
+  const hit = list.find((x) => x.id === ref) || list.find((x) => (x.name || "").toLowerCase() === q) || list.find((x) => (x.name || "").toLowerCase().includes(q));
+  if (!hit) throw new Error(list.length ? `No saved scenario "${ref}" on ${DEALS[slug].meta.name}. Saved: ${list.map((x) => `"${x.name}"`).join(", ")}` : `${DEALS[slug].meta.name} has no saved scenarios${db ? "" : " (or this view can't read them)"}`);
+  return hit;
+}
+// The inputs a tool starts from: a saved scenario when named, else the deal as on the dashboard.
+function baseInputs(slug, scenario) {
+  if (!scenario) return dealInputs(slug);
+  return mergeDeep(DEALS[slug], JSON.parse(findScenario(slug, scenario).inputs));
+}
+// A what-if: start from the deal as on the dashboard (or a saved scenario), optionally rebuild Custom from another
+// case (like "Start from"), then apply the changes (dotted paths; array items by index, e.g. cases.custom.rents.0).
+function withChanges(slug, changes, customFrom, scenario) {
+  const inp = clone(baseInputs(slug, scenario));
   if (customFrom) {
     const k = String(customFrom);
     if (!inp.cases[k] || k === "custom") throw new Error(`custom_from must be another case: ${Object.keys(inp.cases).filter((c) => c !== "custom").join(", ")}`);
@@ -1952,16 +1965,70 @@ function caseInputs(c) {
   return out;
 }
 
+function vehicleIssues(inp, sm) {
+  const w = inp.warehouse, n = w.names, out = [];
+  const sM = w.people.reduce((a, x) => a + x.manager_share, 0), sC = w.people.reduce((a, x) => a + x.manager_capital, 0);
+  const mcap = w.manager_commitment + (w.manager_reserve || 0), put = w.people.reduce((a, x) => a + x.amount, 0);
+  const gap = inp.investor.check + w.reserve - w.manager_commitment - put;
+  if (Math.abs(sM - 1) > 1e-6) out.push(`People's shares of ${n.manager} fees & promote total ${(sM * 100).toFixed(1)}%, so ${((1 - sM) * 100).toFixed(1)}% of the manager's fees and promote goes to no one. Fix under Our vehicle > People.`);
+  if (Math.abs(sC - mcap) >= 0.5) out.push(`People put ${Math.round(sC).toLocaleString("en-US")} into ${n.manager} but its capital is ${Math.round(mcap).toLocaleString("en-US")}.`);
+  if (Math.abs(gap) >= 0.5) out.push(`${n.vehicle} is ${gap > 0 ? Math.round(gap).toLocaleString("en-US") + " short" : Math.round(-gap).toLocaleString("en-US") + " over"}: people's amounts plus the manager's commitment should equal the check plus the reserve.`);
+  if (sm && Math.abs(sm.check) >= 0.05 && !out.length) out.push(`${n.vehicle}'s cash doesn't reconcile by ${Math.round(sm.check).toLocaleString("en-US")}.`);
+  return out;
+}
 const ASK_TOOLS = [
+  { name: "list_scenarios",
+    description: "Saved scenarios (all deals, or one): name, who-saved-when, whether Ask built it, its note, which inputs it changed from the deal file, and LP IRR by case plus each vehicle person's profit in the main case. Use the name as `scenario` in other tools.",
+    inputSchema: { type: "object", properties: { deal: { type: "string", description: "optional deal slug" } } },
+    execute: ({ deal }) => {
+      const slugs = deal ? [needDeal(deal)] : SLUGS;
+      setAskStatus("Reading saved scenarios…");
+      if (!db) return { note: "Saved scenarios can't be read in this view (signed out or no access).", scenarios: [] };
+      return slugs.flatMap((slug) => scenariosFor(slug).map((x) => {
+        let inp, err = null;
+        try { inp = mergeDeep(DEALS[slug], JSON.parse(x.inputs)); } catch (e) { err = "unreadable"; }
+        const out = { deal: slug, name: x.name, saved: x.created_at, built_by_ask: x.source === "ask", note: x.note || "", summary: x.summary || "" };
+        if (err) return Object.assign(out, { error: err });
+        const prim = (DEALS[slug].meta.ui || {}).primary_case || Object.keys(inp.cases)[0];
+        out.changed_inputs = diffPaths(inp, DEALS[slug]).slice(0, 30);
+        out.lp_irr_by_case = Object.fromEntries(Object.keys(inp.cases).map((c) => [c, r4(E.runCase(c, inp).lp.irr)]));
+        try {
+          const v = E.warehouse(inp, { [prim]: E.runCase(prim, inp) })[prim];
+          out[`vehicle_profit_${prim}`] = Object.fromEntries(v.people.map((pp, i) => [pp.name, r0(v.summary.people[i].profit)]));
+          const iss = vehicleIssues(inp, v.summary); if (iss.length) out.vehicle_issues = iss;
+        } catch (_) {}
+        return out;
+      }));
+    } },
+  { name: "get_vehicle",
+    description: "Our own vehicle (SPV) for one deal and case: its settings (raise, fees, member hurdle, promote, reserve, sell-down tranches, manager buy-ins) and results per person (cash in, returned at sell-down, profit, IRR, multiple on money at risk, manager share at the end), outside buyers, and the manager's fees and promote. Works on the dashboard's inputs, a saved scenario, and/or changes.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name" },
+      changes: { type: "object", description: "optional: dotted path -> value" } }, required: ["deal", "case"] },
+    execute: ({ deal, case: k, scenario, changes }) => {
+      const slug = needDeal(deal), inp = changes ? withChanges(slug, changes, null, scenario) : baseInputs(slug, scenario), ck = needCase(inp, k);
+      setAskStatus(`Reading ${inp.warehouse.names.vehicle} for ${DEALS[slug].meta.name} · ${inp.cases[ck].label}…`);
+      const v = E.warehouse(inp, { [ck]: E.runCase(ck, inp) })[ck], sm = v.summary, wh = inp.warehouse;
+      return {
+        vehicle: wh.names.vehicle, manager: wh.names.manager, case: ck, label: inp.cases[ck].label,
+        settings: { check_into_deal: inp.investor.check, reserve: wh.reserve, manager_commitment: wh.manager_commitment, acq_fee_pct: wh.acq_fee_pct, mgmt_fee_pct: wh.mgmt_fee_pct,
+          admin_per_year: sm.admin_per_year, member_hurdle_irr: wh.member_hurdle_irr, hurdle_type: wh.hurdle_type, hurdle_basis: wh.hurdle_basis, promote: wh.promote,
+          people: wh.people, selldown: wh.selldown.tranches, manager_transfers: wh.manager_transfers || [], timing: inp.timing.mode },
+        people: v.people.map((pp, i) => { const x = sm.people[i]; return { name: pp.name, cash_in: r0(x.cash_in), returned_at_selldown: r0(x.returned_at_selldown), at_risk: r0(x.at_risk),
+          profit: r0(x.profit), irr: r4(x.irr), multiple_at_risk: r4(x.multiple_at_risk), manager_share_end: r4(x.manager_share_end) }; }),
+        buyers: (v.buyers || []).map((b, i) => Object.assign({ name: b.name || (wh.selldown.tranches[i] || {}).buyer || "buyer " + (i + 1) }, sm.buyers[i] ? { units: r0(sm.buyers[i].units), cost: r0(sm.buyers[i].cost), profit: r0(sm.buyers[i].profit), irr: r4(sm.buyers[i].irr) } : {})),
+        share_sold: r4(sm.share_sold), manager_fees_total: r0(sm.manager_fees_total), manager_promote_total: r0(sm.manager_promote_total), loan_interest_total: r0(sm.loan_interest_total),
+        reconciles: Math.abs(sm.check) < 0.05, unreconciled_dollars: r0(sm.check), issues: vehicleIssues(inp, sm),
+      };
+    } },
   { name: "get_deal",
     description: "One deal: facts, key inputs (price, loan, waterfall, fees, our check, side letter), named variants, open diligence, and every case with its assumptions note and results (LP IRR, multiple, cash yield, our check's IRR and profit, NOI, sale, debt coverage). Use first for any question about a deal.",
-    inputSchema: { type: "object", properties: { deal: { type: "string", description: "deal slug" } }, required: ["deal"] },
-    execute: ({ deal }) => {
-      const slug = needDeal(deal), inp = dealInputs(slug), m = DEALS[slug].meta;
+    inputSchema: { type: "object", properties: { deal: { type: "string", description: "deal slug" }, scenario: { type: "string", description: "optional: a saved scenario's name (see list_scenarios)" } }, required: ["deal"] },
+    execute: ({ deal, scenario }) => {
+      const slug = needDeal(deal), inp = baseInputs(slug, scenario), m = DEALS[slug].meta;
       setAskStatus(`Reading ${m.name}…`);
       return {
         deal: slug, name: m.name, sponsor: m.sponsor, status: m.status, summary: m.summary, location: (m.ui || {}).location,
-        using: isEdited(slug) ? "the viewer's current edits on the dashboard (changed inputs: " + diffPaths(dealInputs(slug), DEALS[slug]).slice(0, 20).join(", ") + ")" : "the deal file as underwritten",
+        using: scenario ? `saved scenario "${findScenario(slug, scenario).name}"` : isEdited(slug) ? "the viewer's current edits on the dashboard (changed inputs: " + diffPaths(baseInputs(slug, scenario), DEALS[slug]).slice(0, 20).join(", ") + ")" : "the deal file as underwritten",
         inputs: inputDigest(inp),
         cases: Object.keys(inp.cases).map((k) => Object.assign({ kind: inp.cases[k].kind, note: inp.cases[k].note || "", from: inp.cases[k].from || null }, caseResult(E.runCase(k, inp), inp))),
         variants: (m.alternatives || []).map((a) => ({ name: a.name, note: a.note, changes: a.changes })),
@@ -1970,10 +2037,10 @@ const ASK_TOOLS = [
     } },
   { name: "get_case_years",
     description: "Year-by-year rows for one case of one deal: rents, other income, expenses, NOI, reserves, debt service, below-NOI income, operating cash, sale proceeds, LP distributions, sponsor promote, unpaid pref, our check's cash, plus the case's own inputs. Pass `changes` (and optionally custom_from) to get the rows for a what-if, exactly as run_what_if would compute it.",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "case key, e.g. sponsor, base, downside, stress, custom" },
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string", description: "case key, e.g. sponsor, base, downside, stress, custom" },
       changes: { type: "object", description: "optional: dotted path -> value, as in run_what_if" }, custom_from: { type: "string" } }, required: ["deal", "case"] },
-    execute: ({ deal, case: k, changes, custom_from }) => {
-      const slug = needDeal(deal), inp = changes || custom_from ? withChanges(slug, changes || {}, custom_from) : dealInputs(slug), ck = needCase(inp, k);
+    execute: ({ deal, scenario, case: k, changes, custom_from }) => {
+      const slug = needDeal(deal), inp = changes || custom_from ? withChanges(slug, changes || {}, custom_from, scenario) : baseInputs(slug, scenario), ck = needCase(inp, k);
       setAskStatus(`Reading ${DEALS[slug].meta.name} · ${inp.cases[ck].label} by year…`);
       const r = E.runCase(ck, inp), o = r.operations, w = r.waterfall;
       const sale = o.noi.map((_, i) => (i === o.noi.length - 1 ? r0(r.exit.net_sale_proceeds) : 0));
@@ -1985,9 +2052,9 @@ const ASK_TOOLS = [
     } },
   { name: "list_inputs",
     description: "The inputs you can change for one deal, as dotted paths with current values: deal-level settings, the waterfall, our check and side letter, and for each case its kind and editable fields (our derived cases have factors, growth paths, one-off rent changes, an added expense, exit cap; Custom has year-by-year rows rents/other_income/opex/capex plus growth after them and its exit). Also lists each case's deal_overrides, which win over deal-level settings for that case. Call this before changing anything you haven't seen.",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "optional: one case" } }, required: ["deal"] },
-    execute: ({ deal, case: k }) => {
-      const slug = needDeal(deal), inp = dealInputs(slug);
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string", description: "optional: one case" } }, required: ["deal"] },
+    execute: ({ deal, scenario, case: k }) => {
+      const slug = needDeal(deal), inp = baseInputs(slug, scenario);
       const keys = k ? [needCase(inp, k)] : Object.keys(inp.cases);
       setAskStatus(`Listing inputs for ${DEALS[slug].meta.name}…`);
       return {
@@ -2008,16 +2075,16 @@ const ASK_TOOLS = [
     } },
   { name: "run_what_if",
     description: "Change inputs and recompute (the dashboard is not changed). `changes` maps dotted input paths to new values, e.g. {\"cases.downside.exit_cap\": 0.06, \"cases.base.rent_factor\": 0.95, \"investor.side_letter.enabled\": true, \"cases.base.deal_overrides.below_noi_income.sale_value\": \"none\"}. `custom_from` first rebuilds Custom from another case (like the dashboard's Start from), then applies changes. Rates are decimals. Returns before/after for the case (or every case with \"all\") and warnings for changes that had no effect or that a case overrides.",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "case key or \"all\"" },
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string", description: "case key or \"all\"" },
       changes: { type: "object", description: "dotted path -> new value" }, custom_from: { type: "string", description: "optional: rebuild Custom from this case first" },
       label: { type: "string", description: "a short name for this what-if, shown to the viewer" } }, required: ["deal", "case", "changes"] },
-    execute: ({ deal, case: k, changes, custom_from, label }) => {
-      const slug = needDeal(deal), base = dealInputs(slug);
+    execute: ({ deal, scenario, case: k, changes, custom_from, label }) => {
+      const slug = needDeal(deal), base = baseInputs(slug, scenario);
       const keys = String(k) === "all" ? Object.keys(base.cases) : [needCase(base, k)];
       const ch = changes && typeof changes === "object" ? changes : {};
       setAskStatus(`Running ${label || "a what-if"} on ${DEALS[slug].meta.name}…`);
-      const after = withChanges(slug, ch, custom_from);
-      askWhatIfs.push({ slug, changes: ch, customFrom: custom_from || null, label: String(label || Object.keys(ch).join(", ") || "Custom from " + custom_from).slice(0, 80) });
+      const after = withChanges(slug, ch, custom_from, scenario);
+      askWhatIfs.push({ slug, scenario: scenario ? findScenario(slug, scenario).name : null, changes: ch, customFrom: custom_from || null, label: String(label || Object.keys(ch).join(", ") || "Custom from " + custom_from).slice(0, 80) });
       const results = keys.map((c) => ({ before: caseResult(E.runCase(c, base), base), after: caseResult(E.runCase(c, after), after) }));
       const warnings = changeWarnings(after, ch, keys);
       if (results.every((x) => JSON.stringify(x.before) === JSON.stringify(Object.assign({}, x.after, { label: x.before.label })))) warnings.push("These changes did not move any result for the case(s) shown. Check list_inputs for the right path, or whether another case is the one affected.");
@@ -2025,41 +2092,41 @@ const ASK_TOOLS = [
     } },
   { name: "sweep",
     description: "Sensitivity probe: recompute one case across values of one input (or a grid of two inputs) and return a table of a metric (lp_irr, our_irr, lp_multiple, our_profit, min_dscr). E.g. exit cap 5.5-7.5% against rent_factor 0.9-1.05. At most 15 values per input. Optional other_changes and custom_from apply first.",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string" }, metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr"] },
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr"] },
       path: { type: "string" }, values: { type: "array", items: { type: "number" } }, path2: { type: "string" }, values2: { type: "array", items: { type: "number" } },
       other_changes: { type: "object" }, custom_from: { type: "string" } }, required: ["deal", "case", "metric", "path", "values"] },
-    execute: ({ deal, case: k, metric, path, values, path2, values2, other_changes, custom_from }) => {
-      const slug = needDeal(deal), ck = needCase(dealInputs(slug), k), M = String(metric);
+    execute: ({ deal, scenario, case: k, metric, path, values, path2, values2, other_changes, custom_from }) => {
+      const slug = needDeal(deal), ck = needCase(baseInputs(slug, scenario), k), M = String(metric);
       const v1 = (values || []).map(Number).filter(isFinite).slice(0, 15), v2 = path2 ? (values2 || []).map(Number).filter(isFinite).slice(0, 15) : [null];
       if (!v1.length || (path2 && !v2.length)) throw new Error("values (and values2) need numbers");
       setAskStatus(`Sweeping ${path}${path2 ? " × " + path2 : ""} on ${DEALS[slug].meta.name}…`);
-      const at = (a, b) => { const ch = Object.assign({}, other_changes || {}, { [path]: a }, path2 ? { [path2]: b } : {}); const inp = withChanges(slug, ch, custom_from); return caseResult(E.runCase(ck, inp), inp)[M]; };
+      const at = (a, b) => { const ch = Object.assign({}, other_changes || {}, { [path]: a }, path2 ? { [path2]: b } : {}); const inp = withChanges(slug, ch, custom_from, scenario); return caseResult(E.runCase(ck, inp), inp)[M]; };
       return { deal: slug, case: ck, metric: M, rows: path, columns: path2 || null, table: v1.map((a) => ({ [path]: a, results: v2.map((b) => (path2 ? { [path2]: b, value: at(a, b) } : { value: at(a, null) })) })) };
     } },
   { name: "propose_scenario",
     description: "Package a scenario for the viewer to keep: a name, a one-paragraph description of what it assumes and why, and the changes (plus optional custom_from). It is computed now and shown under your answer with buttons to open it on the dashboard or save it as a saved scenario; nothing is saved unless the viewer clicks Save. Use for cases or scenarios the viewer asked you to build.",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, name: { type: "string" }, description: { type: "string" },
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, name: { type: "string" }, description: { type: "string" },
       changes: { type: "object" }, custom_from: { type: "string" } }, required: ["deal", "name", "description", "changes"] },
-    execute: ({ deal, name, description, changes, custom_from }) => {
+    execute: ({ deal, scenario, name, description, changes, custom_from }) => {
       const slug = needDeal(deal), ch = changes && typeof changes === "object" ? changes : {};
       setAskStatus(`Building "${name}"…`);
-      const inp = withChanges(slug, ch, custom_from), base = dealInputs(slug);
+      const inp = withChanges(slug, ch, custom_from, scenario), base = baseInputs(slug, scenario);
       const res = Object.keys(inp.cases).map((c) => ({ case: c, label: inp.cases[c].label, before: caseResult(E.runCase(c, base), base).lp_irr, after: caseResult(E.runCase(c, inp), inp).lp_irr,
         our_irr_after: caseResult(E.runCase(c, inp), inp).our_irr }));
-      askWhatIfs.push({ slug, changes: ch, customFrom: custom_from || null, label: String(name).slice(0, 80), proposal: true, description: String(description || "").slice(0, 600), res });
+      askWhatIfs.push({ slug, scenario: scenario ? findScenario(slug, scenario).name : null, changes: ch, customFrom: custom_from || null, label: String(name).slice(0, 80), proposal: true, description: String(description || "").slice(0, 600), res });
       return { staged: true, name, lp_irr_by_case: res, warnings: changeWarnings(inp, ch, Object.keys(inp.cases)) };
     } },
   { name: "solve_for",
     description: "Find the value of one numeric input that makes a result hit a target, by search between low and high (the engine recomputes each try). metric: lp_irr, our_irr, lp_multiple, our_profit. E.g. the exit cap at which our Downside's LP IRR is 0, or the pref rate that gives our check 15%. Returns the value, the result achieved, and the result at both ends.",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string" }, path: { type: "string", description: "dotted input path" },
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, path: { type: "string", description: "dotted input path" },
       metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit"] }, target: { type: "number" }, low: { type: "number" }, high: { type: "number" },
       other_changes: { type: "object", description: "optional fixed changes applied first" }, custom_from: { type: "string", description: "optional: rebuild Custom from this case first" } }, required: ["deal", "case", "path", "metric", "target", "low", "high"] },
-    execute: ({ deal, case: k, path, metric, target, low, high, other_changes, custom_from }) => {
-      const slug = needDeal(deal), ck = needCase(dealInputs(slug), k), M = String(metric), T = Number(target);
+    execute: ({ deal, scenario, case: k, path, metric, target, low, high, other_changes, custom_from }) => {
+      const slug = needDeal(deal), ck = needCase(baseInputs(slug, scenario), k), M = String(metric), T = Number(target);
       let lo = Number(low), hi = Number(high);
       if (!isFinite(lo) || !isFinite(hi) || !isFinite(T)) throw new Error("low, high and target must be numbers");
       setAskStatus(`Solving ${path} on ${DEALS[slug].meta.name}…`);
-      const at = (v) => { const inp = withChanges(slug, Object.assign({}, other_changes || {}, { [path]: v }), custom_from); return caseResult(E.runCase(ck, inp), inp)[M]; };
+      const at = (v) => { const inp = withChanges(slug, Object.assign({}, other_changes || {}, { [path]: v }), custom_from, scenario); return caseResult(E.runCase(ck, inp), inp)[M]; };
       let flo = at(lo), fhi = at(hi);
       if (flo == null || fhi == null) throw new Error(`${M} is undefined at an end of the range (e.g. no IRR when everything is lost); narrow the range`);
       if ((flo - T) * (fhi - T) > 0) return { found: false, note: "target is outside what the range produces", at_low: { value: lo, result: flo }, at_high: { value: hi, result: fhi } };
@@ -2070,7 +2137,7 @@ const ASK_TOOLS = [
         if (Math.abs(hi - lo) < 1e-7 * Math.max(1, Math.abs(lo))) break;
       }
       const v = (lo + hi) / 2;
-      askWhatIfs.push({ slug, changes: Object.assign({}, other_changes || {}, { [path]: v }), customFrom: custom_from || null, label: `${path} = ${+v.toPrecision(5)}` });
+      askWhatIfs.push({ slug, scenario: scenario ? findScenario(slug, scenario).name : null, changes: Object.assign({}, other_changes || {}, { [path]: v }), customFrom: custom_from || null, label: `${path} = ${+v.toPrecision(5)}` });
       return { found: true, path, value: +v.toPrecision(6), metric: M, achieved: at(v), target: T };
     } },
   { name: "compare_deals",
@@ -2086,8 +2153,8 @@ const ASK_TOOLS = [
     } },
   { name: "get_sources",
     description: "Where inputs came from (deck page, model tab, email, T-12, or LTEC assumption) for one deal, optionally only paths starting with a prefix such as \"waterfall\" or \"cases.downside\".",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, prefix: { type: "string" } }, required: ["deal"] },
-    execute: ({ deal, prefix }) => {
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, prefix: { type: "string" } }, required: ["deal"] },
+    execute: ({ deal, scenario, prefix }) => {
       const slug = needDeal(deal), src = DEALS[slug].sources, pre = String(prefix || "");
       return Object.fromEntries(Object.entries(src).filter(([k]) => k.startsWith(pre)));
     } },
@@ -2107,9 +2174,13 @@ function askContext() {
     "- Before changing inputs you haven't seen, call list_inputs. A case's deal_overrides win over deal-level settings for that case; tools warn you, and you must tell the viewer about any warning.",
     "- To build or rebuild Custom from another case, use custom_from (then changes on cases.custom.*). For break-evens use solve_for; for sensitivity tables use sweep; for year-by-year rows of a what-if, get_case_years with changes.",
     "- A below-NOI income stream (e.g. a TIF rebate) has factor (share paid) and delay_years inputs; use them rather than editing its amounts list.",
+    "- If a tool reports issues or vehicle_issues (inputs that don't add up), tell the viewer first, in plain words, with the fix.",
+    "- Saved scenarios: list_scenarios shows them; pass a scenario's name as `scenario` to any tool to work from it (what-ifs then build on it). get_vehicle covers our SPV: each person's cash, profit and IRR, buyers, fees and promote.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
     "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),
+    (db ? "Saved scenarios: " + (scenarios.length ? SLUGS.map((k) => scenariosFor(k).length ? `${DEALS[k].meta.name}: ${scenariosFor(k).map((x) => `"${x.name}"`).join(", ")}` : "").filter(Boolean).join(" | ") : "none yet") +
+      (activeScenario && scenarios.find((x) => x.id === activeScenario) ? `. Loaded on the dashboard now: "${scenarios.find((x) => x.id === activeScenario).name}" (${META.name})${isEdited(META.slug) ? ", plus edits" : ""}.` : ".") : "Saved scenarios can't be read in this view.") + "\n" +
     "Deals: " + SLUGS.map((k) => `${DEALS[k].meta.name} (slug "${k}", ${DEALS[k].meta.status}, cases: ${Object.keys(dealInputs(k).cases).map((c) => `${c} = ${dealInputs(k).cases[c].label}`).join("; ")})`).join(" | "),
   ].join("\n");
 }
@@ -2206,7 +2277,7 @@ async function ask(q) {
 }
 function openWhatIf(w) {
   if (w.slug !== META.slug) openDeal(w.slug); else if (view !== "deal") { setHash(w.slug); setView("deal"); }
-  try { inputs = withChanges(w.slug, w.changes, w.customFrom); } catch (_) { return; }
+  try { inputs = withChanges(w.slug, w.changes, w.customFrom, w.scenario); } catch (_) { return; }
   activeScenario = null; activeVariant = null; renderAllFields(); recompute(); updateScenarioChip();
   window.scrollTo(0, 0);
 }
@@ -2214,11 +2285,11 @@ async function saveProposal(w, btn, thenCompare) {
   if (!db) { btn.textContent = "Saving needs a signed-in view"; return; }
   btn.disabled = true; btn.textContent = "Saving…";
   try {
-    const inp = withChanges(w.slug, w.changes, w.customFrom);
+    const inp = withChanges(w.slug, w.changes, w.customFrom, w.scenario);
     const doc = { name: w.label, deal: w.slug, inputs: JSON.stringify(inp), created_at: new Date().toISOString(),
       changes: diffPaths(inp, DEALS[w.slug]).length, model_version: DEALS[w.slug].version, source: "ask",
       summary: (w.res || []).filter((x) => Math.abs(x.after - x.before) > 1e-6 || x.case === "base").map((x) => `${x.label} ${fmt.pct(x.after)}`).join(" · "),
-      note: w.description || "" };
+      note: (w.description || "") + (w.scenario ? ` (built on saved scenario "${w.scenario}")` : "") };
     try { const u = await claude.use("user"); if (u) doc.created_by = await u.id(); } catch (_) {}
     const ref = await db.collection("scenarios").add(doc);
     btn.textContent = "Saved ✓";
@@ -2260,7 +2331,7 @@ function showWhatIfs(a) {
   plain.slice(0, 8).forEach((w) => {
     const row = document.createElement("div");
     row.className = "ask-wi";
-    row.innerHTML = `<span class="ask-wi-name">${esc(DEALS[w.slug].meta.name)} · ${esc(w.label)}</span>`;
+    row.innerHTML = `<span class="ask-wi-name">${esc(DEALS[w.slug].meta.name)}${w.scenario ? ` · on “${esc(w.scenario)}”` : ""} · ${esc(w.label)}</span>`;
     const open = document.createElement("button"); open.type = "button"; open.className = "link"; open.textContent = "Open on dashboard";
     open.addEventListener("click", () => openWhatIf(w));
     const save = document.createElement("button"); save.type = "button"; save.className = "link"; save.textContent = "Save as scenario";
