@@ -663,6 +663,44 @@ def _hurdle_pay(st: dict, cash: float, a: float, h: float, simple: bool) -> floa
     return paid
 
 
+def manager_waterfall_split(seq: list, capital: float, mw: dict) -> list:
+    """The manager's own waterfall between its partners (warehouse.manager_waterfall).
+    seq = [(years since the previous event, total manager cash)] in date order; capital = the manager's capital.
+    Capital holders first get capital back plus `pref` (pref_type compound = an IRR, or simple). Above that, each
+    tier gives capital_share of the cash to the capital holders until they reach the tier's to_irr (compounding),
+    then the next tier; residual_capital_share applies above the last tier. The rest goes to the fees & promote
+    holders. Negative cash is put in by the capital holders. Returns [(to_capital, to_promote)] per event."""
+    simple = mw.get("pref_type", "compound") == "simple"
+    pref = _hurdle_new(capital)
+    tiers = mw.get("tiers", [])
+    hs = [_hurdle_new(capital) for _ in tiers]
+    out = []
+    for a, x in seq:
+        to_c = _hurdle_pay(pref, x, a, mw["pref"], simple)  # accrues; pays nothing when x <= 0
+        for st, tr in zip(hs, tiers):
+            st["bal"] *= (1 + tr["to_irr"]) ** a
+        if x < 0:
+            for st in [pref] + hs:
+                st["bal"] -= x
+                st["cap"] -= x
+            out.append((x, 0.0))
+            continue
+        rem, to_p = x - to_c, 0.0
+        for st, tr in zip(hs, tiers):
+            need, c = max(0.0, st["bal"] - to_c), tr["capital_share"]
+            z = 0.0 if need <= 0 else (rem if c <= 0 else min(rem, need / c))
+            to_c += c * z
+            to_p += (1 - c) * z
+            rem -= z
+        c = mw.get("residual_capital_share", 0.0)
+        to_c += c * rem
+        to_p += (1 - c) * rem
+        for st in hs:
+            st["bal"] = max(0.0, st["bal"] - to_c)
+        out.append((to_c, to_p))
+    return out
+
+
 def _unit_series(gross_pu, dates, yfs, close, start, basis, rate, h, simple):
     """Per-unit net cash for units bought at `basis` on `start`, with their own hurdle (member-by-member mode)."""
     st, out = _hurdle_new(basis), []
@@ -857,7 +895,44 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
     pro0 = [p["manager_share"] for p in people]
     xs_in = w.get("manager_transfers", [])
     cap, pro, snaps, xfers = list(cap0), list(pro0), [], []
-    for q in sorted(range(len(xs_in)), key=lambda q: xs_in[q]["date"]):
+    # Partners leaving (manager_vesting): on `leaves`, a partner keeps the vested part of their fees & promote share
+    # (years to vest from close, nothing before the cliff; terms "forfeit" keeps none); the rest goes to the other
+    # partners pro rata to their fees & promote shares. Capital stays with them. Handled in date order with buy-ins.
+    vest_in = w.get("manager_vesting", [])
+    departures = []
+    evs = sorted([(x["date"], 0, q) for q, x in enumerate(xs_in)]
+                 + [(v["leaves"], 1, k) for k, v in enumerate(vest_in) if v.get("leaves")])
+    for _, kind_, q in evs:
+        if kind_ == 1:
+            v = vest_in[q]
+            d = date.fromisoformat(v["leaves"])
+            i = pidx.get(_key(v["person"]))
+            if i is None:
+                departures.append({"person": v["person"], "date": d.isoformat(), "vested": 0.0, "share_before": 0.0,
+                                   "share_kept": 0.0, "valid": False})
+                continue
+            yrs = (d - close).days / 365
+            vy, cl = v.get("years", 0.0), v.get("cliff_years", 0.0)
+            vested = 0.0 if yrs < cl else (1.0 if vy <= 0 else min(1.0, yrs / vy))
+            if v.get("terms", "keep_vested") == "forfeit":
+                vested = 0.0
+            before = pro[i]
+            others = [k for k in range(len(people)) if k != i]
+            base = [pro[k] for k in others]
+            if sum(base) <= 0:
+                base = [cap[k] for k in others]
+            if sum(base) <= 0:
+                base = [1.0] * len(others)
+            freed = before - before * vested
+            if others and freed > 0:
+                tb = sum(base)
+                for k, bk in zip(others, base):
+                    pro[k] += freed * bk / tb
+                pro[i] = before * vested
+            departures.append({"person": people[i]["name"], "date": d.isoformat(), "vested": vested,
+                               "share_before": before, "share_kept": pro[i], "valid": True})
+            snaps.append((d, list(cap), list(pro)))
+            continue
         x = xs_in[q]
         kind = x.get("interest", "both")
         d = date.fromisoformat(x["date"])
@@ -898,12 +973,89 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                 c, pr = sc, sp
         return c, pr
 
+    # ---- the manager's own split between its partners. Off (no manager_waterfall, no manager_loans): each
+    # partner gets their capital share of the capital side and their fees & promote share of the rest, as before.
+    mw = w.get("manager_waterfall") or {}
+    m_loans = w.get("manager_loans") or []
+    split_on = bool(mw.get("enabled"))
+    custom = split_on or bool(m_loans)
+    n_p = len(people)
+    ev = sorted([(t_dates[j], 0, j) for j in range(len(trs))] + [(dates[t], 1, t) for t in range(N)])
+    split_tot = {"enabled": split_on, "to_capital": 0.0, "to_promote": 0.0, "capital": mcap}
+    loans_out, lent = [], [0.0] * n_p
+    if custom:
+        m_tr = [[own_at(t_dates[j])[0][i] * mgr_tr[j] for i in range(n_p)] for j in range(len(trs))]
+        m_dist = [[own_at(dates[t])[0][i] * cap_dist[t] + own_at(dates[t])[1][i] * pro_dist[t] for i in range(n_p)]
+                  for t in range(N)]
+        if split_on:
+            prev, seq = close, []
+            for d, k, j in ev:
+                seq.append(((d - prev).days / 365, mgr_tr[j] if k == 0 else cap_dist[j] + pro_dist[j]))
+                prev = d
+            for (d, k, j), (to_c, to_p) in zip(ev, manager_waterfall_split(seq, mcap, mw)):
+                oc, op = own_at(d)
+                row = [oc[i] * to_c + op[i] * to_p for i in range(n_p)]
+                if k == 0:
+                    m_tr[j] = row
+                else:
+                    m_dist[j] = row
+                split_tot["to_capital"] += to_c
+                split_tot["to_promote"] += to_p
+        # Partner loans: the lender pays part of the borrower's capital at close; the borrower's manager cash repays
+        # it first (interest simple or compound). Left owing at the end: the borrower pays it (recourse) or it is
+        # forgiven.
+        for ln in m_loans:
+            lo, bo = pidx.get(_key(ln["lender"])), pidx.get(_key(ln["borrower"]))
+            # a loan funds the borrower's own manager capital, so it is capped at that
+            a_l = min(ln["amount"], people[bo]["manager_capital"]) if bo is not None else 0.0
+            rec = {"lender": ln["lender"], "borrower": ln["borrower"], "amount": a_l, "repaid": 0.0, "interest": 0.0,
+                   "owed_end": 0.0, "settled": "invalid"}
+            loans_out.append(rec)
+            if lo is None or bo is None or lo == bo or a_l <= 0:
+                continue
+            lent[lo] += a_l
+            lent[bo] -= a_l
+            simple_l = ln.get("rate_type", "simple") == "simple"
+            prin, acc, bal, prev = a_l, 0.0, a_l, close
+            for d, k, j in ev:
+                a = (d - prev).days / 365
+                prev = d
+                if simple_l:
+                    acc += prin * ln["rate"] * a
+                else:
+                    bal *= (1 + ln["rate"]) ** a
+                row = m_tr[j] if k == 0 else m_dist[j]
+                pay = min(max(0.0, row[bo]), prin + acc if simple_l else bal)
+                row[bo] -= pay
+                row[lo] += pay
+                rec["repaid"] += pay
+                if simple_l:
+                    ti = min(pay, acc)
+                    acc -= ti
+                    prin -= pay - ti
+                else:
+                    bal -= pay
+            owed = max(0.0, prin + acc if simple_l else bal)
+            rec["interest"] = rec["repaid"] + owed - a_l
+            rec["owed_end"] = owed
+            if owed > 1e-9 and ln.get("recourse", True) and ev:
+                d, k, j = ev[-1]
+                row = m_tr[j] if k == 0 else m_dist[j]
+                row[bo] -= owed
+                row[lo] += owed
+                rec["settled"] = "paid_at_end"
+            else:
+                rec["settled"] = "repaid" if owed <= 1e-9 else "forgiven"
+
     # ---- people
     all_dates = [close] + t_dates + [x["date"] for x in xfers] + dates
     out_people = []
     for i, p in enumerate(people):
         c0 = -(P[i] + p["manager_capital"])
+        if custom:
+            c0 -= lent[i]
         mine = [bp == i for bp in buyer_person]
+        from_mgr = 0.0
         tr_flows = []
         for j in range(len(trs)):
             if role[i] == "loan":
@@ -916,7 +1068,12 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                 v = 0.0
             if mine[j]:
                 v -= units_sold[j] * prices[j]
-            tr_flows.append(v + own_at(t_dates[j])[0][i] * mgr_tr[j])
+            if custom:
+                tr_flows.append(v + m_tr[j][i])
+                from_mgr += m_tr[j][i]
+            else:
+                tr_flows.append(v + own_at(t_dates[j])[0][i] * mgr_tr[j])
+                from_mgr += own_at(t_dates[j])[0][i] * mgr_tr[j]
         dist = []
         for t in range(N):
             if role[i] == "loan":
@@ -926,7 +1083,12 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
             else:
                 v = pu_s[t] * W[i]
             oc, op = own_at(dates[t])
-            dist.append(v + bought_cash(mine, t) + oc[i] * cap_dist[t] + op[i] * pro_dist[t])
+            if custom:
+                dist.append(v + bought_cash(mine, t) + m_dist[t][i])
+                from_mgr += m_dist[t][i]
+            else:
+                dist.append(v + bought_cash(mine, t) + oc[i] * cap_dist[t] + op[i] * pro_dist[t])
+                from_mgr += oc[i] * cap_dist[t] + op[i] * pro_dist[t]
         x_flows = [(x["paid"] if x["seller"] == i else 0.0) - (x["paid"] if x["buyer"] == i else 0.0) for x in xfers]
         flows = [c0] + tr_flows + x_flows + dist
         cash_in, at_sales, at_buyins = -c0, sum(tr_flows), sum(x_flows)
@@ -936,7 +1098,8 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
             "summary": {"cash_in": cash_in, "returned_at_selldown": at_sales, "at_buyins": at_buyins,
                         "at_risk": at_risk, "manager_share_end": pro[i], "manager_capital_share_end": cap[i],
                         "profit": sum(flows), "irr": xirr(flows, all_dates),
-                        "multiple_at_risk": sum(dist) / at_risk if at_risk > 0 else None},
+                        "multiple_at_risk": sum(dist) / at_risk if at_risk > 0 else None,
+                        "from_manager": from_mgr, "manager_loans_net": lent[i]},
         })
 
     # ---- outside buyer groups (sales whose buyer isn't a person)
@@ -977,6 +1140,7 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                                "seller": people[x["seller"]]["name"] if x["seller"] is not None else None,
                                "interest": x["interest"], "share": x["share"], "paid": x["paid"],
                                "price_100": x["price_100"]} for x in xfers],
+        "manager_split": split_tot, "manager_loans": loans_out, "manager_departures": departures,
         "summary": {
             "people": [x["summary"] for x in out_people],
             "buyers": [g["summary"] for g in groups],

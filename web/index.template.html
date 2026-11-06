@@ -587,7 +587,7 @@ function fieldHTML(f) {
   if (f.kind === "text") return `<div class="field text" data-path="${f.path}">${lab}<div class="in"><input type="text" id="${fieldId(f.path)}" maxlength="40" value="${esc(v || "")}"${f.list ? ` list="${f.list}"` : ""}></div></div>`;
   if (f.kind === "yrs") return `<div style="display:grid;gap:4px" data-path="${f.path}">${lab}<div class="oi-grid">${v.map((x, i) =>
     `<div>${v.length > 5 ? `<span class="yl">Y${i + 1}</span>` : ""}<div class="in"><input id="${fieldId(f.path, i)}" data-i="${i}" type="number" step="0.1" value="${+(x / 1000).toFixed(1)}" aria-label="${esc(f.label.replace(" ($k)", ""))}, year ${i + 1}, in thousands"></div></div>`).join("")}</div></div>`;
-  const pre = f.kind === "usd" ? "$" : "", post = f.kind === "pct" ? "%" : f.kind === "num" ? "×" : "";
+  const pre = f.kind === "usd" ? "$" : "", post = f.unit != null ? f.unit : f.kind === "pct" ? "%" : f.kind === "num" ? "×" : "";
   const type = f.kind === "date" ? "date" : "number";
   const step = f.kind === "pct" ? "0.05" : f.kind === "usd" ? "1000" : "0.01";
   return `<div class="field" data-path="${f.path}">${lab}<div class="in">${pre ? `<span>${pre}</span>` : ""}<input id="${fieldId(f.path)}" type="${type}" step="${step}" value="${displayVal(f.kind, v)}">${post ? `<span>${post}</span>` : ""}</div></div>`;
@@ -602,7 +602,7 @@ function bindField(el, f) {
       else if (f.kind === "text") { v = inp.value.trim(); if (!v && !f.list) { inp.value = get(inputs, f.path); return; } }
       else if (f.kind === "yrs") { v = get(inputs, f.path).slice(); v[+inp.dataset.i] = (parseFloat(inp.value) || 0) * 1000; }
       else { const n = parseFloat(inp.value); if (!isFinite(n)) return; v = f.kind === "pct" ? n / 100 : n; }
-      if (f.kind === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
+      if (f.kind === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(v) && !(f.allowEmpty && v === "")) return;
       const renamed = /^warehouse\.people\.\d+\.name$/.test(f.path) ? get(inputs, f.path) : null;
       set(inputs, f.path, v);
       if (f.onset) f.onset(v);
@@ -611,6 +611,8 @@ function bindField(el, f) {
         const w = inputs.warehouse;
         w.selldown.tranches.forEach((t) => { if (same(t.buyer)) t.buyer = v; });
         w.manager_transfers.forEach((x) => { if (same(x.buyer)) x.buyer = v; if (same(x.seller)) x.seller = v; });
+        (w.manager_loans || []).forEach((x) => { if (same(x.lender)) x.lender = v; if (same(x.borrower)) x.borrower = v; });
+        (w.manager_vesting || []).forEach((x) => { if (same(x.person)) x.person = v; });
       }
       // Typing a sale price or a cap rate means you want the sale priced that way.
       const cm = f.path.match(/^cases\.(\w+)\.(sale_price|exit_cap)$/);
@@ -718,7 +720,7 @@ function renderVariants() {
   sec.hidden = !alts.length;
   if (!alts.length) return;
   const btn = (i, name, note) => `<button type="button" class="btn${activeVariant === i ? " primary" : ""}" data-v="${i}" aria-pressed="${activeVariant === i}"><b>${esc(name)}</b>${note ? `<br><span class="muted small">${esc(note)}</span>` : ""}</button>`;
-  sec.innerHTML = `<h3>Variants</h3><p class="note" style="margin:0">Named alternatives from the documents. Each starts from the defaults; then edit anything.</p>
+  sec.innerHTML = `<h3>Variants</h3><p class="note" style="margin:0">Named alternatives: from the documents, or structures to test. Each starts from the defaults; then edit anything.</p>
     <div class="variants">${btn(-1, "Defaults", "The sponsor model as underwritten")}${alts.map((a, i) => btn(i, a.name, a.note)).join("")}</div>`;
   sec.querySelectorAll("[data-v]").forEach((b) => b.addEventListener("click", () => {
     const i = +b.dataset.v;
@@ -1039,6 +1041,28 @@ function whFields() {
               F(Q + "credit_distributions", "Less cash the seller already got", "bool", `${n.manager} distributions, fees and promote on that share`)];
     },
     credit: [F(P + "selldown.credit_distributions", "Credit buyers for distributions already paid", "bool", "Subtracted from the price")],
+    split: [rr(F(P + "manager_waterfall.enabled", `Pay ${n.manager}'s capital back first`, "bool", `Pools all ${n.manager} cash: whoever funded ${n.manager} gets capital + pref before any split`)),
+            F(P + "manager_waterfall.pref", "Pref on that capital", "pct", "0 = just the capital back"),
+            F(P + "manager_waterfall.pref_type", "Pref grows by", "select", null, [["compound", "Compounding (IRR)"], ["simple", "Simple interest"]])],
+    residual: [F(P + "manager_waterfall.residual_capital_share", w.manager_waterfall.tiers.length ? "After the last step, to capital holders" : "Then to capital holders", "pct", `The rest goes by shares of ${n.manager} fees & promote; 0% = all of it`)],
+    tier: (k) => [F(`${P}manager_waterfall.tiers.${k}.capital_share`, "To capital holders", "pct", "The rest by fees & promote shares"),
+                  F(`${P}manager_waterfall.tiers.${k}.to_irr`, "Until their IRR reaches", "pct")],
+    loan: (q) => {
+      const names = w.people.map((p) => [p.name, p.name]), Q = `${P}manager_loans.${q}.`;
+      return [F(Q + "lender", "Lender", "select", null, names), F(Q + "borrower", "Borrower", "select", null, names),
+              F(Q + "amount", "Lends", "usd", `Funds the borrower's own ${n.manager} capital (set under People), up to all of it`),
+              F(Q + "rate", "Interest rate", "pct"),
+              F(Q + "rate_type", "Interest", "select", null, [["simple", "Simple"], ["compound", "Compounding"]]),
+              F(Q + "recourse", "Borrower repays any balance at the end", "bool", "Off: what's left is forgiven")];
+    },
+    vest: (q) => {
+      const names = w.people.map((p) => [p.name, p.name]), Q = `${P}manager_vesting.${q}.`;
+      return [F(Q + "person", "Partner", "select", null, names),
+              Object.assign(F(Q + "years", "Fees & promote share vests over", "num", "From close; 0 = fully vested"), { unit: "yrs" }),
+              Object.assign(F(Q + "cliff_years", "Nothing vests before", "num"), { unit: "yrs" }),
+              Object.assign(F(Q + "leaves", "Leaves on", "date", "Blank = stays for the whole hold"), { allowEmpty: true }),
+              F(Q + "terms", "On leaving", "select", null, [["keep_vested", "Keeps the vested part"], ["forfeit", "Forfeits all of it"]])];
+    },
   };
 }
 function renderWarehouseInputs() {
@@ -1055,6 +1079,19 @@ function renderWarehouseInputs() {
     ${w.people.map((p, i) => `<div class="card"><div class="card-head"><span>Person ${i + 1}</span>${w.people.length > 1 ? `<button class="link" type="button" data-remove-person="${i}">Remove</button>` : ""}</div>${block(fx.person(i))}</div>`).join("")}
     <div class="sumline" id="peopleSums"></div>
     ${w.people.length < MAX_PEOPLE ? `<div class="row"><button class="btn" type="button" id="addPerson">+ Add person</button></div>` : ""}`)}
+    ${grp("wh-ltec", `${esc(n.manager)} between its partners`, `
+    <p class="note" style="margin:0">How ${esc(n.manager)}'s own cash is shared when partners fund it unevenly. All off: each partner gets their capital share of ${esc(n.manager)}'s units and reserve, and their share of its fees &amp; promote.</p>
+    ${block(fx.split)}
+    ${w.manager_waterfall.enabled ? w.manager_waterfall.tiers.map((t, k) => `<div class="card"><div class="card-head"><span>Then, step ${k + 1}</span><button class="link" type="button" data-remove-tier="${k}">Remove</button></div>${block(fx.tier(k))}</div>`).join("") : ""}
+    ${w.manager_waterfall.enabled && w.manager_waterfall.tiers.length < 3 ? `<div class="row"><button class="btn" type="button" id="addTier">+ Add a step (split until an IRR)</button></div>` : ""}
+    ${block(fx.residual)}
+    <p class="note" style="margin:6px 0 0"><b>Partner loans</b> · one partner funds another's share of ${esc(n.manager)}; the borrower's ${esc(n.manager)} cash repays it first.</p>
+    ${w.manager_loans.map((x, q) => `<div class="card"><div class="card-head"><span>Loan ${q + 1}</span><button class="link" type="button" data-remove-mloan="${q}">Remove</button></div>${block(fx.loan(q))}</div>`).join("")}
+    ${w.manager_loans.length < 3 && w.people.length > 1 ? `<div class="row"><button class="btn" type="button" id="addMLoan">+ Add partner loan</button></div>` : ""}
+    <p class="note" style="margin:6px 0 0"><b>Vesting</b> · a partner earns their fees &amp; promote share over time; if they leave, the unvested part goes to the other partners.</p>
+    ${w.manager_vesting.map((x, q) => `<div class="card"><div class="card-head"><span>Vesting ${q + 1}</span><button class="link" type="button" data-remove-vest="${q}">Remove</button></div>${block(fx.vest(q))}</div>`).join("")}
+    ${w.manager_vesting.length < 4 && w.people.length > 1 ? `<div class="row"><button class="btn" type="button" id="addVest">+ Add vesting</button></div>` : ""}
+    <div class="sumline" id="ltecSums"></div>`)}
     ${grp("wh-buyins", `${esc(n.manager)} buy-ins after close`, `
     <p class="note" style="margin:0">Someone buys part of ${esc(n.manager)} from an owner later, e.g. when a commission comes in. The buyer pays the seller; ${esc(n.manager)}'s cash follows the new ownership from that date. Price is based on cost: the share of ${esc(n.manager)}'s ${fmt.usd(w.manager_commitment + (w.manager_reserve || 0))} of capital.</p>
     ${w.manager_transfers.map((x, q) => `<div class="card"><div class="card-head"><span>Buy-in ${q + 1}</span><button class="link" type="button" data-remove-xfer="${q}">Remove</button></div>${block(fx.xfer(q))}</div>`).join("")}
@@ -1069,6 +1106,7 @@ function renderWarehouseInputs() {
   w.people.forEach((p, i) => { const el = sec.querySelector(`[data-path="warehouse.people.${i}.loan_rate"]`); el.hidden = p.role !== "loan"; });
   sec.querySelector('[data-path="warehouse.admin_cost_per_year"]').hidden = w.admin_cost_method === "pct_raise";
   sec.querySelector('[data-path="warehouse.admin_cost_pct"]').hidden = w.admin_cost_method !== "pct_raise";
+  ["pref", "pref_type", "residual_capital_share"].forEach((k) => { sec.querySelector(`[data-path="warehouse.manager_waterfall.${k}"]`).hidden = !w.manager_waterfall.enabled; });
   w.manager_transfers.forEach((x, q) => {
     const f = (k) => sec.querySelector(`[data-path="warehouse.manager_transfers.${q}.${k}"]`);
     const promo = x.interest === "promote";
@@ -1103,6 +1141,13 @@ function updateWhSums() {
   el("xferSums").className = "sumline";
   el("xferSums").innerHTML = xs.length ? `${esc(n.manager)} after buy-ins (Base case), capital / fees &amp; promote: ` + w.people.map((p, i) => `${esc(p.name)} ${fmt.pct(sp[i].manager_capital_share_end, 1)} / ${fmt.pct(sp[i].manager_share_end, 1)}`).join(" · ") +
     xs.filter((x) => x.share < 1e-9).map(() => `<br><span style="color:var(--warn-fg)">A buy-in moves nothing: check the buyer, seller and the seller's stake.</span>`).slice(0, 1).join("") : "";
+  const R0 = results.warehouse[PRIMARY], ms = R0.manager_split, lines = [];
+  if (ms.enabled) lines.push(`${esc(results.cases[PRIMARY].label)}: ${fmt.usd(ms.to_capital)} to ${esc(n.manager)}'s capital holders, ${fmt.usd(ms.to_promote)} by fees &amp; promote shares`);
+  R0.manager_loans.forEach((x) => lines.push(x.settled === "invalid" ? `<span style="color:var(--warn-fg)">${x.amount <= 0 && x.borrower ? `${esc(x.borrower)} puts nothing into ${esc(n.manager)}, so there's nothing to lend toward: give them ${esc(n.manager)} capital under People.` : "A loan needs a lender and a different borrower, both partners, and an amount."}</span>`
+    : `${esc(x.lender)} → ${esc(x.borrower)}: ${fmt.usd(x.interest)} interest; ${x.settled === "repaid" ? "repaid from " + esc(n.manager) + " cash" : x.settled === "paid_at_end" ? fmt.usd(x.owed_end) + " paid by the borrower at the end" : fmt.usd(x.owed_end) + " forgiven"}`));
+  R0.manager_departures.forEach((x) => lines.push(x.valid ? `${esc(x.person)} leaves ${esc(x.date)}: keeps ${fmt.pct(x.vested, 0)} vested = ${fmt.pct(x.share_kept, 1)} of fees &amp; promote (was ${fmt.pct(x.share_before, 1)})`
+    : `<span style="color:var(--warn-fg)">Vesting names someone who isn't a partner.</span>`));
+  el("ltecSums").className = "sumline"; el("ltecSums").innerHTML = lines.join("<br>");
   const sold = sum(w.selldown.tranches.map((t) => t.share));
   el("saleSums").className = "sumline" + (sold > 1 + 1e-9 ? " warn" : "");
   el("saleSums").textContent = pool < 0.5 ? "Nobody is warehousing or lending, so sales have nothing to sell." :
@@ -1114,7 +1159,7 @@ function sum(a) { return a.reduce((x, y) => x + y, 0); }
 /* ------------------------------------------------------------ collapsible rail */
 const RAIL_KEY = "deal-engine.rail.collapsed.v1";
 const RAIL_DEFAULT_CLOSED = ["sec-timing", "sec-redstone", "sec-loan", "sec-hold", "sec-direct", "sec-repo",
-                             "wh-names", "wh-raise", "wh-fees", "wh-buyins", "wh-sales"];
+                             "wh-names", "wh-raise", "wh-fees", "wh-ltec", "wh-buyins", "wh-sales"];
 let railClosed;
 try { railClosed = new Set(JSON.parse(localStorage.getItem(RAIL_KEY)) || RAIL_DEFAULT_CLOSED); } catch (_) { railClosed = new Set(RAIL_DEFAULT_CLOSED); }
 function saveRail() { try { localStorage.setItem(RAIL_KEY, JSON.stringify([...railClosed])); } catch (_) {} }
@@ -1137,6 +1182,7 @@ function railHome(path) {
   if (path.startsWith("warehouse")) {
     const k = path.split(".")[1];
     const g = k === "names" ? "wh-names" : k === "people" ? "wh-people" : k === "manager_transfers" ? "wh-buyins" : k === "selldown" ? "wh-sales"
+      : ["manager_waterfall", "manager_loans", "manager_vesting"].includes(k) ? "wh-ltec"
       : ["close_date", "manager_commitment", "manager_reserve", "reserve", "unit_price"].includes(k) ? "wh-raise" : "wh-fees";
     return ["sec-wh", g];
   }
@@ -1165,6 +1211,9 @@ function railSummaries() {
     "wh-raise": `${fmt.usdk(raised)} raise · ${n.manager} ${fmt.usdk(w.manager_commitment)} in${w.manager_reserve ? ` + ${fmt.usdk(w.manager_reserve)} held` : ""}${w.reserve ? ` · ${fmt.usdk(w.reserve)} reserve` : ""}`,
     "wh-fees": `${ps(w.acq_fee_pct)} acquisition · ${ps(w.member_hurdle_irr)} hurdle · ${ps(w.promote)} promote · admin ${w.admin_cost_method === "pct_raise" ? ps(w.admin_cost_pct) + " of raise" : fmt.usdk(w.admin_cost_per_year) + "/yr"}`,
     "wh-people": w.people.map((p) => `${p.name} ${fmt.usdk(p.amount)}`).join(" · "),
+    "wh-ltec": [w.manager_waterfall.enabled ? `capital + ${ps(w.manager_waterfall.pref)} back first` : "shared pro rata",
+                w.manager_loans.length ? `${w.manager_loans.length} loan${w.manager_loans.length > 1 ? "s" : ""}` : "",
+                w.manager_vesting.length ? `${w.manager_vesting.length} vesting` : ""].filter(Boolean).join(" · "),
     "wh-buyins": w.manager_transfers.length ? w.manager_transfers.map((x) => `${x.buyer} ← ${x.seller}`).join(" · ") : "None",
     "wh-sales": w.selldown.tranches.length ? `${w.selldown.tranches.length} sale${w.selldown.tranches.length > 1 ? "s" : ""} · ${ps(Math.min(1, sold))} of pool` : "None",
   };
@@ -1405,6 +1454,9 @@ function renderWarehouse() {
   const money = (v) => `<span class="${v >= 0 ? "pos" : "neg"}">${fmt.usd(v)}</span>`;
   const anyLoan = people.some((p) => p.role === "loan" && p.amount > 0);
   const anyXfer = CASES.some((k) => R(k).manager_transfers.some((x) => x.share > 1e-9));
+  const mcapAll = w.manager_commitment + (w.manager_reserve || 0);
+  const ltecOn = !!(w.manager_waterfall || {}).enabled || (w.manager_loans || []).length > 0 || R(PRIMARY).manager_departures.length > 0
+    || (people.length > 1 && people.some((p) => Math.abs((mcapAll > 0 ? p.manager_capital / mcapAll : 0) - p.manager_share) > 1e-6));
   const buysFrom = (name) => w.selldown.tranches.filter((t) => (t.buyer || "").trim().toLowerCase() === name.trim().toLowerCase()).length;
   let body = "";
   people.forEach((p, i) => {
@@ -1414,10 +1466,11 @@ function renderWarehouse() {
     const cap0 = mcapT > 0 ? p.manager_capital / mcapT : 0, capE = sb.people[i].manager_capital_share_end, proE = sb.people[i].manager_share_end;
     const pair = (c, pr) => Math.abs(c - pr) < 1e-9 ? `${fmt.pct(c, c * 100 % 1 ? 1 : 0)} of ${esc(n.manager)}` : `${fmt.pct(c, c * 100 % 1 ? 1 : 0)} of ${esc(n.manager)} capital, ${fmt.pct(pr, pr * 100 % 1 ? 1 : 0)} of its fees &amp; promote`;
     const moved = Math.abs(capE - cap0) > 1e-9 || Math.abs(proE - p.manager_share) > 1e-9;
-    const ownTxt = `${p.manager_capital > 0 ? `puts ${fmt.usd(p.manager_capital)} into ${esc(n.manager)}; ` : ""}owns ${pair(cap0, p.manager_share)}${moved ? ` → ${pair(capE, proE)} after buy-ins` : ""}`;
+    const ownTxt = `${p.manager_capital > 0 ? `puts ${fmt.usd(p.manager_capital)} into ${esc(n.manager)}; ` : ""}owns ${pair(cap0, p.manager_share)}${moved ? ` → ${pair(capE, proE)} by the end` : ""}`;
     body += `<tr class="grp"><td colspan="${cols}">${esc(p.name)} <span>· ${how}; ${ownTxt}${buys}</span></td></tr>`;
     const S = (k) => R(k).summary.people[i];
     body += `<tr><td class="lbl">Cash in at close</td>${cells((k) => fmt.usd(S(k).cash_in))}</tr>`;
+    if (ltecOn) body += `<tr class="sub"><td class="lbl">From ${esc(n.manager)}${Math.abs(sb.people[i].manager_loans_net) > 0.5 ? ` (after partner loans)` : ""}</td>${cells((k) => fmt.usd(S(k).from_manager))}</tr>`;
     if (pool > 0.5) {
       body += `<tr><td class="lbl">Net cash at sales</td>${cells((k) => fmt.usd(S(k).returned_at_selldown))}</tr>`;
       body += `<tr class="sub"><td class="lbl">Still at risk</td>${cells((k) => (S(k).at_risk > 0.5 ? fmt.usd(S(k).at_risk) : "None"))}</tr>`;
@@ -1447,6 +1500,17 @@ function renderWarehouse() {
   body += `<tr><td class="lbl">Promote earned</td>${cells((k) => fmt.usd(R(k).summary.manager_promote_total))}</tr>`;
   body += `<tr><td class="lbl">Fees earned</td>${cells((k) => fmt.usd(R(k).summary.manager_fees_total))}</tr>`;
   if (anyLoan) body += `<tr><td class="lbl">Interest owed to lenders</td>${cells((k) => fmt.usd(-R(k).summary.loan_interest_total))}</tr>`;
+  if ((w.manager_waterfall || {}).enabled) {
+    body += `<tr><td class="lbl">Paid to capital holders (capital + ${fmt.pct(w.manager_waterfall.pref, 1)} first)</td>${cells((k) => fmt.usd(R(k).manager_split.to_capital))}</tr>`;
+    body += `<tr><td class="lbl">Shared by fees &amp; promote shares</td>${cells((k) => fmt.usd(R(k).manager_split.to_promote))}</tr>`;
+  }
+  R(PRIMARY).manager_loans.forEach((x, q) => {
+    if (x.settled === "invalid") return;
+    body += `<tr><td class="lbl">${esc(x.lender)} lends ${esc(x.borrower)} ${fmt.usd(x.amount)}: interest · left owing</td>${cells((k) => { const y = R(k).manager_loans[q]; return `${fmt.usd(y.interest)}<br><span class="muted small">${y.settled === "repaid" ? "repaid" : y.settled === "paid_at_end" ? fmt.usd(y.owed_end) + " paid at end" : fmt.usd(y.owed_end) + " forgiven"}</span>`; })}</tr>`;
+  });
+  R(PRIMARY).manager_departures.forEach((x) => {
+    if (x.valid) body += `<tr><td class="lbl">${esc(x.person)} leaves ${esc(x.date)}</td>${cells(() => `keeps ${fmt.pct(x.share_kept, 1)}<br><span class="muted small">of ${fmt.pct(x.share_before, 1)}</span>`)}</tr>`;
+  });
   const bad = CASES.some((k) => R(k).summary.check > 0.05);
   document.getElementById("whTable").innerHTML = `<table><thead><tr><th></th>${CASES.map((k) => `<th class="n${hl(k)}">${esc(results.cases[k].label)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>` +
     (bad ? `<p class="note" style="color:var(--warn-fg)">Money put in doesn't match the ${esc(n.vehicle)} raise or ${esc(n.manager)}'s capital, or ${esc(n.manager)} fees &amp; promote don't total 100%, so some cash isn't assigned to anyone.</p>` : "");
@@ -1521,6 +1585,28 @@ document.addEventListener("click", (e) => {
   if (e.target.closest("#addDirect")) {
     inputs.direct_investors.push({ name: "Investor " + (inputs.direct_investors.length + 1), check: 100000 });
     renderDirectInputs(); recompute(); document.getElementById(fieldId(`direct_investors.${inputs.direct_investors.length - 1}.name`)).focus(); return;
+  }
+  const rt = e.target.closest("button[data-remove-tier]");
+  if (rt) { w.manager_waterfall.tiers.splice(+rt.dataset.removeTier, 1); renderWarehouseInputs(); recompute(); return; }
+  if (e.target.closest("#addTier")) {
+    const ts = w.manager_waterfall.tiers, lastH = ts.length ? ts[ts.length - 1].to_irr : Math.max(w.manager_waterfall.pref, 0.1);
+    ts.push({ capital_share: 0.5, to_irr: Math.round((lastH + 0.05) * 100) / 100 });
+    renderWarehouseInputs(); recompute(); return;
+  }
+  const rl = e.target.closest("button[data-remove-mloan]");
+  if (rl) { w.manager_loans.splice(+rl.dataset.removeMloan, 1); renderWarehouseInputs(); recompute(); return; }
+  if (e.target.closest("#addMLoan")) {
+    const byCap = w.people.map((p, i) => i).sort((a, b) => w.people[b].manager_capital - w.people[a].manager_capital);
+    const lender = w.people[byCap[0]], borrower = w.people[byCap.length > 1 ? byCap[1] : byCap[0]];
+    w.manager_loans.push({ lender: lender.name, borrower: borrower.name, amount: Math.round(borrower.manager_capital), rate: 0.08, rate_type: "simple", recourse: true });
+    renderWarehouseInputs(); recompute(); return;
+  }
+  const rv = e.target.closest("button[data-remove-vest]");
+  if (rv) { w.manager_vesting.splice(+rv.dataset.removeVest, 1); renderWarehouseInputs(); recompute(); return; }
+  if (e.target.closest("#addVest")) {
+    const who = w.people[w.people.length - 1].name;
+    w.manager_vesting.push({ person: who, years: 4, cliff_years: 1, leaves: "", terms: "keep_vested" });
+    renderWarehouseInputs(); recompute(); return;
   }
   const rx = e.target.closest("button[data-remove-xfer]");
   if (rx) { w.manager_transfers.splice(+rx.dataset.removeXfer, 1); renderWarehouseInputs(); recompute(); return; }
@@ -1736,6 +1822,9 @@ function upgradeInputs(saved) {
   o.deal.below_noi_income = Object.assign(clone(DEFAULTS.deal.below_noi_income), (saved.deal || {}).below_noi_income || {});
   ["hurdle_type", "hurdle_basis", "promote_on_manager_units"].forEach((k) => { if (w2[k] == null) w2[k] = DEFAULTS.warehouse[k]; });
   if (!w2.manager_transfers) w2.manager_transfers = [];
+  if (!w2.manager_waterfall) w2.manager_waterfall = clone(DEFAULTS.warehouse.manager_waterfall || { enabled: false, pref: 0.08, pref_type: "compound", tiers: [], residual_capital_share: 0 });
+  if (!w2.manager_loans) w2.manager_loans = [];
+  if (!w2.manager_vesting) w2.manager_vesting = [];
   if (w2.manager_reserve == null) w2.manager_reserve = 0;
   w2.people.forEach((p) => { if (p.manager_capital == null) p.manager_capital = p.manager_share * (w2.manager_commitment + w2.manager_reserve); });
   w2.manager_transfers.forEach((x) => { if (x.interest == null) x.interest = "both"; if (x.price == null) x.price = 0; });
@@ -2092,6 +2181,17 @@ function vehicleIssues(inp, sm) {
   if (Math.abs(sM - 1) > 1e-6) out.push(`People's shares of ${n.manager} fees & promote total ${(sM * 100).toFixed(1)}%, so ${((1 - sM) * 100).toFixed(1)}% of the manager's fees and promote goes to no one. Fix under Our vehicle > People.`);
   if (Math.abs(sC - mcap) >= 0.5) out.push(`People put ${Math.round(sC).toLocaleString("en-US")} into ${n.manager} but its capital is ${Math.round(mcap).toLocaleString("en-US")}.`);
   if (Math.abs(gap) >= 0.5) out.push(`${n.vehicle} is ${gap > 0 ? Math.round(gap).toLocaleString("en-US") + " short" : Math.round(-gap).toLocaleString("en-US") + " over"}: people's amounts plus the manager's commitment should equal the check plus the reserve.`);
+  const isP = (nm) => w.people.some((p) => (p.name || "").trim().toLowerCase() === (nm || "").trim().toLowerCase());
+  (w.manager_loans || []).forEach((x, q) => {
+    if (!isP(x.lender) || !isP(x.borrower) || (x.lender || "").trim().toLowerCase() === (x.borrower || "").trim().toLowerCase()) out.push(`Partner loan ${q + 1} needs a lender and a different borrower, both people in ${n.manager}.`);
+    else { const bp = w.people.find((p) => p.name.trim().toLowerCase() === x.borrower.trim().toLowerCase());
+      if (x.amount > bp.manager_capital + 0.5) out.push(`Partner loan ${q + 1} lends ${x.borrower} ${Math.round(x.amount).toLocaleString("en-US")} but they put only ${Math.round(bp.manager_capital).toLocaleString("en-US")} into ${n.manager}; the loan counts up to that.`); }
+  });
+  (w.manager_vesting || []).forEach((x, q) => {
+    if (!isP(x.person)) out.push(`Vesting ${q + 1} names ${x.person || "no one"}, who isn't in ${n.manager}.`);
+    else if (x.leaves && x.leaves <= w.close_date) out.push(`Vesting ${q + 1}: ${x.person} leaves on or before the close.`);
+  });
+  if ((w.manager_waterfall || {}).enabled && mcap <= 0) out.push(`${n.manager} has no capital, so "capital back first" has nothing to pay back.`);
   if (sm && Math.abs(sm.check) >= 0.05 && !out.length) out.push(`${n.vehicle}'s cash doesn't reconcile by ${Math.round(sm.check).toLocaleString("en-US")}.`);
   return out;
 }
@@ -2120,7 +2220,7 @@ const ASK_TOOLS = [
       }));
     } },
   { name: "get_vehicle",
-    description: "Our own vehicle (SPV) for one deal and case: its settings (raise, fees, member hurdle, promote, reserve, sell-down tranches, manager buy-ins) and results per person (cash in, returned at sell-down, profit, IRR, multiple on money at risk, manager share at the end), outside buyers, and the manager's fees and promote. Works on the dashboard's inputs, a saved scenario, and/or changes.",
+    description: "Our own vehicle (SPV) for one deal and case: its settings (raise, fees, member hurdle, promote, reserve, sell-down tranches, manager buy-ins, and the manager's own terms between its partners: manager_waterfall = capital + pref back first then splits, manager_loans = one partner funding another's capital, manager_vesting = promote share vesting and leaving) and results per person (incl. from_manager = cash from the manager after its own split and loans) (cash in, returned at sell-down, profit, IRR, multiple on money at risk, manager share at the end), outside buyers, and the manager's fees and promote. Works on the dashboard's inputs, a saved scenario, and/or changes.",
     inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name" },
       changes: { type: "object", description: "optional: dotted path -> value" } }, required: ["deal", "case"] },
     execute: ({ deal, case: k, scenario, changes }) => {
@@ -2131,9 +2231,14 @@ const ASK_TOOLS = [
         vehicle: wh.names.vehicle, manager: wh.names.manager, case: ck, label: inp.cases[ck].label,
         settings: { check_into_deal: inp.investor.check, reserve: wh.reserve, manager_commitment: wh.manager_commitment, acq_fee_pct: wh.acq_fee_pct, mgmt_fee_pct: wh.mgmt_fee_pct,
           admin_per_year: sm.admin_per_year, member_hurdle_irr: wh.member_hurdle_irr, hurdle_type: wh.hurdle_type, hurdle_basis: wh.hurdle_basis, promote: wh.promote,
-          people: wh.people, selldown: wh.selldown.tranches, manager_transfers: wh.manager_transfers || [], timing: inp.timing.mode },
+          people: wh.people, selldown: wh.selldown.tranches, manager_transfers: wh.manager_transfers || [], timing: inp.timing.mode,
+          manager_waterfall: wh.manager_waterfall, manager_loans: wh.manager_loans || [], manager_vesting: wh.manager_vesting || [] },
         people: v.people.map((pp, i) => { const x = sm.people[i]; return { name: pp.name, cash_in: r0(x.cash_in), returned_at_selldown: r0(x.returned_at_selldown), at_risk: r0(x.at_risk),
-          profit: r0(x.profit), irr: r4(x.irr), multiple_at_risk: r4(x.multiple_at_risk), manager_share_end: r4(x.manager_share_end) }; }),
+          profit: r0(x.profit), irr: r4(x.irr), multiple_at_risk: r4(x.multiple_at_risk), manager_share_end: r4(x.manager_share_end),
+          manager_capital_share_end: r4(x.manager_capital_share_end), from_manager: r0(x.from_manager), manager_loans_net_at_close: r0(x.manager_loans_net) }; }),
+        manager_split: { enabled: v.manager_split.enabled, to_capital_holders: r0(v.manager_split.to_capital), by_fees_and_promote_shares: r0(v.manager_split.to_promote) },
+        manager_loans: v.manager_loans.map((x) => ({ lender: x.lender, borrower: x.borrower, amount: r0(x.amount), interest: r0(x.interest), repaid: r0(x.repaid), owed_at_end: r0(x.owed_end), settled: x.settled })),
+        manager_departures: v.manager_departures.map((x) => ({ person: x.person, date: x.date, vested: r4(x.vested), share_before: r4(x.share_before), share_kept: r4(x.share_kept) })),
         buyers: (v.buyers || []).map((b, i) => Object.assign({ name: b.name || (wh.selldown.tranches[i] || {}).buyer || "buyer " + (i + 1) }, sm.buyers[i] ? { units: r0(sm.buyers[i].units), cost: r0(sm.buyers[i].cost), profit: r0(sm.buyers[i].profit), irr: r4(sm.buyers[i].irr) } : {})),
         share_sold: r4(sm.share_sold), manager_fees_total: r0(sm.manager_fees_total), manager_promote_total: r0(sm.manager_promote_total), loan_interest_total: r0(sm.loan_interest_total),
         reconciles: Math.abs(sm.check) < 0.05, unreconciled_dollars: r0(sm.check), issues: vehicleIssues(inp, sm),
@@ -2297,6 +2402,7 @@ function askContext() {
     "- If a tool reports issues or vehicle_issues (inputs that don't add up), tell the viewer first, in plain words, with the fix.",
     "- To fix or adjust a saved scenario, use propose_scenario with scenario and replaces set to its name; the viewer clicks Update. Never claim a scenario was changed.",
     "- Saved scenarios: list_scenarios shows them; pass a scenario's name as `scenario` to any tool to work from it (what-ifs then build on it). get_vehicle covers our SPV: each person's cash, profit and IRR, buyers, fees and promote.",
+    "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
     "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),

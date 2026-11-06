@@ -25,6 +25,11 @@
   deal tool takes `scenario` (a saved scenario's name) to work from it in `web/index.template.html`. Rules given to Claude: every number from a tool result;
   Claude proposes scenarios, the viewer saves them (Save as scenario button); run_what_if warns on no-op or overridden changes.
   New engine outputs a partner would ask about should be exposed through these tools.
+- LTEC's own terms between its partners (schema 5, issue #9): `warehouse.manager_waterfall` (all manager cash pooled;
+  capital + pref back first, then capital/promote splits by IRR step), `manager_loans` (a partner funds another's manager
+  capital, capped at it; repaid from the borrower's manager cash first; recourse or forgiven) and `manager_vesting`
+  (promote share vests; on `leaves` the unvested part goes to the others). All off by default = results unchanged.
+  Siena's variants "LTEC A–E" are the worked examples; `tests/test_manager_split.py` holds the hand calculations.
 - New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from
   the sponsor case; defaults in `engine/standard_cases.json`), then tune them to the deal's diligence and source them.
 - Tests: `python -m pytest` runs engine, deal-file, tie-out AND page tests (`tests/web/*.test.js` in headless Chromium,

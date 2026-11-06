@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "meta": {
     "slug": "the-bend",
     "name": "The Bend",
@@ -308,7 +308,10 @@
     "cases.downside": "LTEC assumption (Nov 5, 2026). Taxes at the 2% cap: +$195k vs model Year 2. Concessions at T-12 level, burning off. No TIF value to a buyer",
     "cases.stress": "LTEC assumption (Nov 5, 2026). No lease-up, +1% rents, taxes at the 2% cap, 6.75% exit, no TIF value at sale",
     "deal.below_noi_income.factor": "Model: rebate paid in full (1.0). Lower to test a cut; TIF agreement not received",
-    "deal.below_noi_income.delay_years": "Model: rebates start Year 1 (2027). Raise to test a delay"
+    "deal.below_noi_income.delay_years": "Model: rebates start Year 1 (2027). Raise to test a delay",
+    "warehouse.manager_waterfall": "Assumption: off. LTEC's operating agreement between its partners is not drafted yet; set from its terms (issue #9).",
+    "warehouse.manager_loans": "Assumption: off. LTEC's operating agreement between its partners is not drafted yet; set from its terms (issue #9).",
+    "warehouse.manager_vesting": "Assumption: off. LTEC's operating agreement between its partners is not drafted yet; set from its terms (issue #9)."
   },
   "version": "bend-v1",
   "as_of": "2026-11-04",
@@ -666,7 +669,17 @@
       "credit_distributions": true,
       "tranches": []
     },
-    "manager_transfers": []
+    "manager_transfers": [],
+    "manager_waterfall": {
+      "enabled": false,
+      "pref": 0.08,
+      "pref_type": "compound",
+      "tiers": [],
+      "residual_capital_share": 0.0
+    },
+    "manager_loans": [],
+    "manager_vesting": [],
+    "_manager_split_note": "LTEC's own terms between its partners (issue #9), all off by default. manager_waterfall: all manager cash is pooled; capital holders get capital back plus `pref` first, then each tier gives capital_share to capital holders until they reach to_irr, residual_capital_share above that; the rest goes by fees & promote shares. manager_loans: a partner funds part of another's manager capital; the borrower's manager cash repays it first; recourse = any balance is paid at the end, else forgiven. manager_vesting: fees & promote share vests over `years` from close after `cliff_years`; on `leaves` the unvested part goes to the other partners pro rata."
   },
   "direct_investors": []
 }

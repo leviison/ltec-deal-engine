@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "meta": {
     "slug": "siena-villas",
     "name": "Siena Villas",
@@ -80,6 +80,224 @@
         "item": "Insurance quote; property-tax reassessment at $19.1M.",
         "status": "open"
       }
+    ],
+    "alternatives": [
+      {
+        "name": "LTEC A · Levi funds it, promote 50/50",
+        "note": "Levi puts in all of LTEC's capital and keeps everything it earns on that capital; fees & promote split 50/50 from day one.",
+        "changes": {
+          "warehouse": {
+            "people": [
+              {
+                "name": "Levi",
+                "amount": 700000.0,
+                "role": "warehouse",
+                "manager_capital": 350000,
+                "manager_share": 0.5,
+                "loan_rate": 0.08
+              },
+              {
+                "name": "Thaxter",
+                "amount": 0.0,
+                "role": "member",
+                "manager_capital": 0.0,
+                "manager_share": 0.5,
+                "loan_rate": 0.08
+              }
+            ],
+            "manager_waterfall": {
+              "enabled": false,
+              "pref": 0.08,
+              "pref_type": "compound",
+              "tiers": [],
+              "residual_capital_share": 0.0
+            },
+            "manager_loans": [],
+            "manager_vesting": []
+          }
+        }
+      },
+      {
+        "name": "LTEC B · Levi's capital + 8% back first",
+        "note": "All LTEC cash (units, fees, promote) repays Levi's capital plus an 8% IRR first; after that everything splits 50/50 by promote share.",
+        "changes": {
+          "warehouse": {
+            "people": [
+              {
+                "name": "Levi",
+                "amount": 700000.0,
+                "role": "warehouse",
+                "manager_capital": 350000,
+                "manager_share": 0.5,
+                "loan_rate": 0.08
+              },
+              {
+                "name": "Thaxter",
+                "amount": 0.0,
+                "role": "member",
+                "manager_capital": 0.0,
+                "manager_share": 0.5,
+                "loan_rate": 0.08
+              }
+            ],
+            "manager_waterfall": {
+              "enabled": true,
+              "pref": 0.08,
+              "pref_type": "compound",
+              "tiers": [],
+              "residual_capital_share": 0.0
+            },
+            "manager_loans": [],
+            "manager_vesting": []
+          }
+        }
+      },
+      {
+        "name": "LTEC C · Levi lends Thaxter his half at 8%",
+        "note": "Levi advances all the cash; Thaxter owns 50/50 but his LTEC cash repays Levi's $175k loan plus 8% simple first. Recourse: any balance is due at the end.",
+        "changes": {
+          "warehouse": {
+            "people": [
+              {
+                "name": "Levi",
+                "amount": 700000.0,
+                "role": "warehouse",
+                "manager_capital": 175000.0,
+                "manager_share": 0.5,
+                "loan_rate": 0.08
+              },
+              {
+                "name": "Thaxter",
+                "amount": 0.0,
+                "role": "member",
+                "manager_capital": 175000.0,
+                "manager_share": 0.5,
+                "loan_rate": 0.08
+              }
+            ],
+            "manager_waterfall": {
+              "enabled": false,
+              "pref": 0.08,
+              "pref_type": "compound",
+              "tiers": [],
+              "residual_capital_share": 0.0
+            },
+            "manager_vesting": [],
+            "manager_loans": [
+              {
+                "lender": "Levi",
+                "borrower": "Thaxter",
+                "amount": 175000.0,
+                "rate": 0.08,
+                "rate_type": "simple",
+                "recourse": true
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "LTEC D · add a GP partner, 4-year vesting",
+        "note": "As B, with a third partner on 20% of fees & promote (Levi and Thaxter 40% each), vesting over 4 years after a 1-year cliff. Stays the whole hold.",
+        "changes": {
+          "warehouse": {
+            "people": [
+              {
+                "name": "Levi",
+                "amount": 700000.0,
+                "role": "warehouse",
+                "manager_capital": 350000,
+                "manager_share": 0.4,
+                "loan_rate": 0.08
+              },
+              {
+                "name": "Thaxter",
+                "amount": 0.0,
+                "role": "member",
+                "manager_capital": 0.0,
+                "manager_share": 0.4,
+                "loan_rate": 0.08
+              },
+              {
+                "name": "GP partner",
+                "amount": 0.0,
+                "role": "member",
+                "manager_capital": 0.0,
+                "manager_share": 0.2,
+                "loan_rate": 0.08
+              }
+            ],
+            "manager_waterfall": {
+              "enabled": true,
+              "pref": 0.08,
+              "pref_type": "compound",
+              "tiers": [],
+              "residual_capital_share": 0.0
+            },
+            "manager_loans": [],
+            "manager_vesting": [
+              {
+                "person": "GP partner",
+                "years": 4,
+                "cliff_years": 1,
+                "leaves": "",
+                "terms": "keep_vested"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "LTEC E · GP partner leaves after 2 years",
+        "note": "As D, but the GP partner leaves on Nov 5, 2028 with half of their 20% vested; the other 10% goes to Levi and Thaxter.",
+        "changes": {
+          "warehouse": {
+            "people": [
+              {
+                "name": "Levi",
+                "amount": 700000.0,
+                "role": "warehouse",
+                "manager_capital": 350000,
+                "manager_share": 0.4,
+                "loan_rate": 0.08
+              },
+              {
+                "name": "Thaxter",
+                "amount": 0.0,
+                "role": "member",
+                "manager_capital": 0.0,
+                "manager_share": 0.4,
+                "loan_rate": 0.08
+              },
+              {
+                "name": "GP partner",
+                "amount": 0.0,
+                "role": "member",
+                "manager_capital": 0.0,
+                "manager_share": 0.2,
+                "loan_rate": 0.08
+              }
+            ],
+            "manager_waterfall": {
+              "enabled": true,
+              "pref": 0.08,
+              "pref_type": "compound",
+              "tiers": [],
+              "residual_capital_share": 0.0
+            },
+            "manager_loans": [],
+            "manager_vesting": [
+              {
+                "person": "GP partner",
+                "years": 4,
+                "cliff_years": 1,
+                "leaves": "2028-11-05",
+                "terms": "keep_vested"
+              }
+            ]
+          }
+        }
+      }
     ]
   },
   "sources": {
@@ -132,7 +350,10 @@
     "deal.reserves_returned_at_sale": "v10: none",
     "deal.below_noi_income": "None for Siena",
     "waterfall.return_of_capital": "OA §8.1: after pref, cash returns capital",
-    "investor.side_letter": "Off (the LTEC side letter is modeled as deal.refi.side_letter_protects)"
+    "investor.side_letter": "Off (the LTEC side letter is modeled as deal.refi.side_letter_protects)",
+    "warehouse.manager_waterfall": "Assumption: off. LTEC's operating agreement between its partners is not drafted yet; set from its terms (issue #9).",
+    "warehouse.manager_loans": "Assumption: off. LTEC's operating agreement between its partners is not drafted yet; set from its terms (issue #9).",
+    "warehouse.manager_vesting": "Assumption: off. LTEC's operating agreement between its partners is not drafted yet; set from its terms (issue #9)."
   },
   "version": "v24-code",
   "as_of": "2026-11-04",
@@ -416,7 +637,17 @@
     "_hurdle_note": "Defaults follow the Nov 3 memo: members 'in aggregate' get capital plus a 10% per annum IRR (hurdle_basis 'pooled', hurdle_type 'compound'), then 40/60 with no catch-up; promote applies to all units including LTEC's. 'per_member' gives each block of units its own hurdle from its purchase price and date; 'simple' accrues 10% simple interest on unreturned capital; promote_on_manager_units false exempts LTEC's own units.",
     "_promote_note": "promote applies to all units; warehouse_promote replaces it on pool units not yet sold.",
     "manager_transfers": [],
-    "_manager_transfers_note": "Buy-ins to the manager after close: {date, buyer, seller, interest: 'both'|'capital'|'promote', mode: 'share'|'amount', share, amount, price, pricing, rate, credit_distributions}. 'both' buys the same % of capital and of fees & promote; 'capital' or 'both' are priced from cost (manager_commitment + manager_reserve) grown at rate (carry_simple / carry_compound) or x (1 + rate) (premium), less cash already paid on that interest if credit_distributions; 'amount' buys as much as that $ covers. 'promote' (fees & promote only) is bought for a set price ($, 0 = granted) for share. The buyer pays the seller directly."
+    "_manager_transfers_note": "Buy-ins to the manager after close: {date, buyer, seller, interest: 'both'|'capital'|'promote', mode: 'share'|'amount', share, amount, price, pricing, rate, credit_distributions}. 'both' buys the same % of capital and of fees & promote; 'capital' or 'both' are priced from cost (manager_commitment + manager_reserve) grown at rate (carry_simple / carry_compound) or x (1 + rate) (premium), less cash already paid on that interest if credit_distributions; 'amount' buys as much as that $ covers. 'promote' (fees & promote only) is bought for a set price ($, 0 = granted) for share. The buyer pays the seller directly.",
+    "manager_waterfall": {
+      "enabled": false,
+      "pref": 0.08,
+      "pref_type": "compound",
+      "tiers": [],
+      "residual_capital_share": 0.0
+    },
+    "manager_loans": [],
+    "manager_vesting": [],
+    "_manager_split_note": "LTEC's own terms between its partners (issue #9), all off by default. manager_waterfall: all manager cash is pooled; capital holders get capital back plus `pref` first, then each tier gives capital_share to capital holders until they reach to_irr, residual_capital_share above that; the rest goes by fees & promote shares. manager_loans: a partner funds part of another's manager capital; the borrower's manager cash repays it first; recourse = any balance is paid at the end, else forgiven. manager_vesting: fees & promote share vests over `years` from close after `cliff_years`; on `leaves` the unvested part goes to the other partners pro rata."
   },
   "direct_investors": [],
   "_direct_investors_note": "Other LPs investing in Siena directly, e.g. {\"name\": \"Levi (direct)\", \"check\": 250000}. Same Preferred terms as everyone, so their cash scales with the check."

@@ -432,6 +432,37 @@
     st.bal -= paid;
     return paid;
   }
+  // The manager's own waterfall between its partners (see core.py manager_waterfall_split).
+  function managerWaterfallSplit(seq, capital, mw) {
+    const simple = (mw.pref_type || "compound") === "simple";
+    const pref = hurdleNew(capital);
+    const tiers = mw.tiers || [];
+    const hs = tiers.map(() => hurdleNew(capital));
+    const out = [];
+    for (const [a, x] of seq) {
+      let toC = hurdlePay(pref, x, a, mw.pref, simple);  // accrues; pays nothing when x <= 0
+      hs.forEach((st, k) => { st.bal *= Math.pow(1 + tiers[k].to_irr, a); });
+      if (x < 0) {
+        [pref].concat(hs).forEach((st) => { st.bal -= x; st.cap -= x; });
+        out.push([x, 0]);
+        continue;
+      }
+      let rem = x - toC, toP = 0;
+      hs.forEach((st, k) => {
+        const need = Math.max(0, st.bal - toC), c = tiers[k].capital_share;
+        const z = need <= 0 ? 0 : (c <= 0 ? rem : Math.min(rem, need / c));
+        toC += c * z;
+        toP += (1 - c) * z;
+        rem -= z;
+      });
+      const c = mw.residual_capital_share || 0;
+      toC += c * rem;
+      toP += (1 - c) * rem;
+      hs.forEach((st) => { st.bal = Math.max(0, st.bal - toC); });
+      out.push([toC, toP]);
+    }
+    return out;
+  }
   // Per-unit net cash for units bought at `basis` on `start`, with their own hurdle (member-by-member mode).
   function unitSeries(grossPu, dates, yfs, close, start, basis, rate, h, simple) {
     const st = hurdleNew(basis), sDay = toDay(start);
@@ -590,8 +621,37 @@
     const pro0 = people.map((p) => p.manager_share);
     const xsIn = w.manager_transfers || [];
     const cap = cap0.slice(), pro = pro0.slice(), snaps = [], xfers = [];
-    const order = xsIn.map((_, q) => q).sort((a, b) => (xsIn[a].date < xsIn[b].date ? -1 : xsIn[a].date > xsIn[b].date ? 1 : a - b));
-    order.forEach((q) => {
+    // Partners leaving (manager_vesting): see core.py. Handled in date order with buy-ins.
+    const vestIn = w.manager_vesting || [], departures = [];
+    const evs = xsIn.map((x, q) => [x.date, 0, q]).concat(vestIn.map((v, k) => [v.leaves, 1, k]).filter((e) => e[0]));
+    evs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1] || a[2] - b[2]));
+    evs.forEach(([, kind_, q]) => {
+      if (kind_ === 1) {
+        const v = vestIn[q], d = toDay(v.leaves);
+        const i = nameKey(v.person) in pidx ? pidx[nameKey(v.person)] : null;
+        if (i === null) {
+          departures.push({ person: v.person, date: v.leaves, vested: 0, share_before: 0, share_kept: 0, valid: false });
+          return;
+        }
+        const yrs = (d - closeDay) / 365;
+        const vy = v.years || 0, cl = v.cliff_years || 0;
+        let vested = yrs < cl ? 0 : (vy <= 0 ? 1 : Math.min(1, yrs / vy));
+        if ((v.terms || "keep_vested") === "forfeit") vested = 0;
+        const before = pro[i];
+        const others = people.map((_, k) => k).filter((k) => k !== i);
+        let base = others.map((k) => pro[k]);
+        if (sum(base) <= 0) base = others.map((k) => cap[k]);
+        if (sum(base) <= 0) base = others.map(() => 1);
+        const freed = before - before * vested;
+        if (others.length && freed > 0) {
+          const tb = sum(base);
+          others.forEach((k, m) => { pro[k] += freed * base[m] / tb; });
+          pro[i] = before * vested;
+        }
+        departures.push({ person: people[i].name, date: v.leaves, vested, share_before: before, share_kept: pro[i], valid: true });
+        snaps.push([d, cap.slice(), pro.slice()]);
+        return;
+      }
       const x = xsIn[q], kind = x.interest || "both", d = toDay(x.date);
       const b = nameKey(x.buyer) in pidx ? pidx[nameKey(x.buyer)] : null;
       const s = nameKey(x.seller) in pidx ? pidx[nameKey(x.seller)] : null;
@@ -624,11 +684,77 @@
     });
     const ownAt = (d) => { let c = cap0, pr = pro0; snaps.forEach(([sd, sc, sp]) => { if (sd < d) { c = sc; pr = sp; } }); return [c, pr]; };
 
+    // ---- the manager's own split between its partners (see core.py). Off: as before.
+    const mw = w.manager_waterfall || {}, mLoans = w.manager_loans || [];
+    const splitOn = !!mw.enabled, custom = splitOn || mLoans.length > 0, nP = people.length;
+    const ev = trs.map((_, j) => [tDay[j], 0, j]).concat(dDays.map((d, t) => [d, 1, t]));
+    ev.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+    const splitTot = { enabled: splitOn, to_capital: 0, to_promote: 0, capital: mcap };
+    const loansOut = [], lent = people.map(() => 0);
+    let mTr = null, mDist = null;
+    if (custom) {
+      mTr = trs.map((_, j) => people.map((_, i) => ownAt(tDay[j])[0][i] * mgrTr[j]));
+      mDist = dDays.map((dd, t) => people.map((_, i) => ownAt(dd)[0][i] * capDist[t] + ownAt(dd)[1][i] * proDist[t]));
+      if (splitOn) {
+        let prev = closeDay;
+        const seq = ev.map(([d, k, j]) => { const a = (d - prev) / 365; prev = d; return [a, k === 0 ? mgrTr[j] : capDist[j] + proDist[j]]; });
+        managerWaterfallSplit(seq, mcap, mw).forEach(([toC, toP], e) => {
+          const [d, k, j] = ev[e], [oc, op] = ownAt(d);
+          const row = people.map((_, i) => oc[i] * toC + op[i] * toP);
+          if (k === 0) mTr[j] = row; else mDist[j] = row;
+          splitTot.to_capital += toC;
+          splitTot.to_promote += toP;
+        });
+      }
+      // Partner loans (see core.py)
+      mLoans.forEach((ln) => {
+        const lo = nameKey(ln.lender) in pidx ? pidx[nameKey(ln.lender)] : null;
+        const bo = nameKey(ln.borrower) in pidx ? pidx[nameKey(ln.borrower)] : null;
+        // a loan funds the borrower's own manager capital, so it is capped at that
+        const aL = bo !== null ? Math.min(ln.amount, people[bo].manager_capital) : 0;
+        const rec = { lender: ln.lender, borrower: ln.borrower, amount: aL, repaid: 0, interest: 0, owed_end: 0, settled: "invalid" };
+        loansOut.push(rec);
+        if (lo === null || bo === null || lo === bo || aL <= 0) return;
+        lent[lo] += aL;
+        lent[bo] -= aL;
+        const simpleL = (ln.rate_type || "simple") === "simple";
+        let prin = aL, acc = 0, bal = aL, prev = closeDay;
+        ev.forEach(([d, k, j]) => {
+          const a = (d - prev) / 365;
+          prev = d;
+          if (simpleL) acc += prin * ln.rate * a;
+          else bal *= Math.pow(1 + ln.rate, a);
+          const row = k === 0 ? mTr[j] : mDist[j];
+          const pay = Math.min(Math.max(0, row[bo]), simpleL ? prin + acc : bal);
+          row[bo] -= pay;
+          row[lo] += pay;
+          rec.repaid += pay;
+          if (simpleL) {
+            const ti = Math.min(pay, acc);
+            acc -= ti;
+            prin -= pay - ti;
+          } else bal -= pay;
+        });
+        const owed = Math.max(0, simpleL ? prin + acc : bal);
+        rec.interest = rec.repaid + owed - aL;
+        rec.owed_end = owed;
+        if (owed > 1e-9 && ln.recourse !== false && ev.length) {
+          const [, k, j] = ev[ev.length - 1];
+          const row = k === 0 ? mTr[j] : mDist[j];
+          row[bo] -= owed;
+          row[lo] += owed;
+          rec.settled = "paid_at_end";
+        } else rec.settled = owed <= 1e-9 ? "repaid" : "forgiven";
+      });
+    }
+
     // ---- people
     const allDates = [close].concat(trs.map((tr) => tr.date), xfers.map((x) => x.date), dates);
     const outPeople = people.map((p, i) => {
-      const c0 = -(P[i] + p.manager_capital);
+      let c0 = -(P[i] + p.manager_capital);
+      if (custom) c0 -= lent[i];
       const mine = buyerPerson.map((bp) => bp === i);
+      let fromMgr = 0;
       const trFlows = trs.map((_, j) => {
         let v;
         if (role[i] === "loan") {
@@ -637,6 +763,8 @@
         } else if (role[i] === "warehouse") v = shares[j] * W[i] * prices[j];
         else v = 0;
         if (mine[j]) v -= unitsSold[j] * prices[j];
+        if (custom) { fromMgr += mTr[j][i]; return v + mTr[j][i]; }
+        fromMgr += ownAt(tDay[j])[0][i] * mgrTr[j];
         return v + ownAt(tDay[j])[0][i] * mgrTr[j];
       });
       const dist = puS.map((ps, t) => {
@@ -645,6 +773,8 @@
         else if (role[i] === "warehouse") v = puW[t] * W[i] * (1 - soldBefore[t]);
         else v = ps * W[i];
         const [oc, op] = ownAt(dDays[t]);
+        if (custom) { fromMgr += mDist[t][i]; return v + boughtCash(mine, t) + mDist[t][i]; }
+        fromMgr += oc[i] * capDist[t] + op[i] * proDist[t];
         return v + boughtCash(mine, t) + oc[i] * capDist[t] + op[i] * proDist[t];
       });
       const xFlows = xfers.map((x) => (x.seller === i ? x.paid : 0) - (x.buyer === i ? x.paid : 0));
@@ -653,7 +783,8 @@
       return { name: p.name, flows,
         summary: { cash_in: cashIn, returned_at_selldown: atSales, at_buyins: atBuyins,
                    at_risk: atRisk, manager_share_end: pro[i], manager_capital_share_end: cap[i], profit: sum(flows),
-                   irr: xirr(flows, allDates), multiple_at_risk: atRisk > 0 ? sum(dist) / atRisk : null } };
+                   irr: xirr(flows, allDates), multiple_at_risk: atRisk > 0 ? sum(dist) / atRisk : null,
+                   from_manager: fromMgr, manager_loans_net: lent[i] } };
     });
 
     // ---- outside buyer groups
@@ -688,6 +819,7 @@
       manager_transfers: xfers.map((x) => ({ date: x.date, index: x.index,
         buyer: x.buyer !== null ? people[x.buyer].name : null, seller: x.seller !== null ? people[x.seller].name : null,
         interest: x.interest, share: x.share, paid: x.paid, price_100: x.price_100 })),
+      manager_split: splitTot, manager_loans: loansOut, manager_departures: departures,
       summary: {
         people: outPeople.map((x) => x.summary),
         buyers: groups.map((g) => g.summary),

@@ -76,4 +76,17 @@ def randomized(base, seed):
                                   "pricing": r.choice(["carry_simple", "carry_compound", "premium"]),
                                   "rate": r.uniform(-0.1, 0.12),
                                   "buyer": r.choice(["", "Fund A", "Fund B"] + names)} for _ in range(r.randint(0, 3))]
+    # LTEC's own split between its partners (issue #9)
+    pn = [p["name"] for p in w["people"]]
+    w["manager_waterfall"] = {"enabled": r.random() < 0.5, "pref": r.choice([0.0, 0.06, 0.08, 0.1]),
+                              "pref_type": r.choice(["compound", "simple"]),
+                              "tiers": [{"capital_share": r.choice([0.0, 0.3, 0.5, 1.0]), "to_irr": r.choice([0.12, 0.15, 0.2])}
+                                        for _ in range(r.randint(0, 2))],
+                              "residual_capital_share": r.choice([0.0, 0.2, 0.5])}
+    w["manager_loans"] = [{"lender": r.choice(pn), "borrower": r.choice(pn + ["Nobody"]), "amount": r.uniform(0, 2e5),
+                           "rate": r.uniform(0, 0.12), "rate_type": r.choice(["simple", "compound"]),
+                           "recourse": r.random() < 0.5} for _ in range(r.randint(0, 2))] if r.random() < 0.5 else []
+    w["manager_vesting"] = [{"person": r.choice(pn), "years": r.choice([0, 3, 4]), "cliff_years": r.choice([0, 1]),
+                             "leaves": r.choice(["", "2027-06-30", "2028-11-05", "2030-01-01"]),
+                             "terms": r.choice(["keep_vested", "forfeit"])} for _ in range(r.randint(0, 2))] if r.random() < 0.5 else []
     return inp

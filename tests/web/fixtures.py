@@ -1,6 +1,7 @@
 """Write the page tests' fixtures to tests/web/.fixtures/ from the current deal files (so they never go stale).
     python tests/web/fixtures.py
 - scen.json:  The Bend with the side letter on and a 6.0% Downside exit cap (a saved "Aggressive ask")
+- siena_variants.json: Python results for each Siena variant (LTEC structures), which the page must match
 - test1.json: Siena with the changes of the first live saved scenario, "test 1 _ hold all capital" (Nov 6, 2026),
               including its fees & promote shares totalling 50% (a known input problem the page must flag)
 """
@@ -11,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from engine.core import load_deal  # noqa: E402
+from engine.core import load_deal, run_all  # noqa: E402
 
 OUT = Path(__file__).parent / ".fixtures"
 
@@ -39,6 +40,24 @@ def main():
                                             "share": 0.5, "amount": 175000, "price": 0, "pricing": "premium", "rate": 0.1,
                                             "credit_distributions": False}]
     (OUT / "test1.json").write_text(json.dumps({"inputs": json.dumps(t)}))
+
+    # Python results for each Siena variant (LTEC structures, issue #9), for the page to match
+    base = load_deal("siena-villas")
+    exp = []
+    for a in base["meta"].get("alternatives", []):
+        inp = _merge(base, a["changes"])
+        wh = run_all(inp)["warehouse"]
+        exp.append({"name": a["name"], "cases": {k: [{"name": p["name"], "profit": x["profit"], "from_manager": x["from_manager"]}
+                                                      for p, x in zip(v["people"], v["summary"]["people"])] for k, v in wh.items()}})
+    (OUT / "siena_variants.json").write_text(json.dumps(exp))
+
+
+def _merge(b, c):
+    """The page's mergeDeep: objects merge, everything else (lists too) replaces."""
+    o = copy.deepcopy(b)
+    for k, v in c.items():
+        o[k] = _merge(o[k], v) if isinstance(v, dict) and isinstance(o.get(k), dict) else copy.deepcopy(v)
+    return o
 
 
 if __name__ == "__main__":
