@@ -1,5 +1,5 @@
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "meta": {
     "slug": "siena-villas",
     "name": "Siena Villas",
@@ -236,6 +236,56 @@
               "maturity": "2029-11-05",
               "on_leave": "due",
               "preset": "forgivable"
+            }
+          ]
+        }
+      },
+      {
+        "name": "{manager} H · {levi} bridges {thaxter}'s half until Jun 30, 2027",
+        "note": "{levi} funds all of {manager}'s capital at close; {thaxter} owns his half from day one and pays {levi} back, with 8% simple interest, from his own money on Jun 30, 2027. His {manager} cash is his throughout.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 175000.0,
+          "warehouse.people[levi].manager_share": 0.5,
+          "warehouse.people[thaxter].manager_capital": 175000.0,
+          "warehouse.people[thaxter].manager_share": 0.5,
+          "warehouse.manager_loans": [
+            {
+              "lender": "levi",
+              "borrower": "thaxter",
+              "amount": 175000.0,
+              "rate": 0.08,
+              "rate_type": "simple",
+              "recourse": true,
+              "repayment": "none",
+              "due_on": "exact_date",
+              "maturity": "2027-06-30",
+              "on_leave": "due",
+              "preset": "bridge"
+            }
+          ]
+        }
+      },
+      {
+        "name": "{manager} I · {levi} funds it all; {thaxter} buys in Jun 30, 2027",
+        "note": "The other way to bridge: {levi} owns all of {manager}'s capital (and its cash) until {thaxter} buys half of it on Jun 30, 2027 at cost plus 8% simple. Fees & promote 50/50 from day one.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 350000,
+          "warehouse.people[levi].manager_share": 0.5,
+          "warehouse.people[thaxter].manager_capital": 0.0,
+          "warehouse.people[thaxter].manager_share": 0.5,
+          "warehouse.manager_transfers": [
+            {
+              "date": "2027-06-30",
+              "buyer": "thaxter",
+              "seller": "levi",
+              "interest": "capital",
+              "mode": "share",
+              "share": 0.5,
+              "amount": 0.0,
+              "price": 0.0,
+              "pricing": "carry_simple",
+              "rate": 0.08,
+              "credit_distributions": false
             }
           ]
         }

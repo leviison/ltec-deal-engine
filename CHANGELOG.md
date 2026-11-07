@@ -5,6 +5,20 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.8.0 — 2026-11-07
+
+- Bridge loans and pay-downs (#31, schema 9): a partner loan can be paid down from the borrower's own money on set
+  dates (`paydowns`, interest first, up to 6), and a maturity or departure can settle on the exact date from the
+  borrower's own money (`due_on: exact_date`) instead of the next cash date. New **Bridge** method in the library
+  (nothing from LTEC cash; paid off on the maturity date). Payments on their own dates get their own column in each
+  person's flows (`loan_payment_dates`), ledger entries (`loan_paydown`, `loan_settlement`) and schedule rows.
+  Pay-downs stay when you pick another method. Loans without these parts are unchanged.
+- Siena variants **LTEC H** (Levi bridges Thaxter's half until Jun 30, 2027) and **LTEC I** (the other way: Levi
+  owns it all until Thaxter buys half on that date at cost + 8%, a buy-in).
+- The loan card has "Maturity / leaving settles" and "+ Add a pay-down"; terms in words, the term sheet, the
+  statement and Ask cover both. The buy-ins summary in the side panel shows names, not ids; switching from a variant
+  with a buy-in to one with more people no longer throws (stale results).
+
 ## 2.7.0 — 2026-11-07
 
 - Summary of terms (#25): **Export terms** saves a Word document (.docx) of how we hold the deal, written from the
