@@ -5,7 +5,7 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
-## 2.6.0 — unreleased (feature/24-loan-terms)
+## 2.6.0 — 2026-11-07
 
 - Loan terms (#24, schema 8): a partner loan says how it's repaid. Parts: repayment (a share of the borrower's
   LTEC cash, interest only, equal principal over N years, at exit, or nothing along the way), the share swept, the
