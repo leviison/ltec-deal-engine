@@ -47,6 +47,10 @@
   · LTEC and its partners · Tools). A new input goes in the card for its stage and gets a home in `railHome` (badges,
   "show only what's changed") and a summary in `railSummaries`; "Find an input" and diagram links work from the
   rendered fields. No drag-to-rearrange.
+- Click to edit (#20): `editLink(path, html)` / `goToInput(path, slug)` take any figure one input drives to that input;
+  warnings come from `vehicleIssueItems` ({msg, path}); Ask writes `[label](input:path)`. Link inputs, never results.
+  tests/web/edit_links.test.js checks every input of every deal file reaches a field, or is listed in NOT_SHOWN /
+  CARD_ONLY with a reason; a new input must get a field, a `railHome`, or a listed reason.
 - New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from
   the sponsor case; defaults in `engine/standard_cases.json`), then tune them to the deal's diligence and source them.
 - Tests: `python -m pytest` runs engine, deal-file, tie-out AND page tests (`tests/web/*.test.js` in headless Chromium,
