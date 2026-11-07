@@ -5,7 +5,7 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
-## 2.3.0 — unreleased (feature/18-rail-flow)
+## 2.3.0 — 2026-11-06
 
 - Side panel follows the flow (#18), in fixed, labelled stages in the order of the flow diagram: **Which version**
   (variants, saved scenarios) · **The deal** (operating cases, sponsor terms, loan, hold, distribution timing, costs &
