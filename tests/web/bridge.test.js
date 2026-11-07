@@ -24,6 +24,18 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
     `bridge: ${JSON.stringify(r)}`);
   check(/settled on the exact date from Thaxter's own money/.test(r.note), `bridge words: ${r.note}`);
 
+  // the late case (#33): not paid at maturity, Thaxter's LTEC cash repays it from then on
+  await p.evaluate(() => { const el = document.querySelector('[data-path="warehouse.manager_loans.0.at_maturity"] select'); el.value = 'sweep'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await p.waitForTimeout(250);
+  r = await p.evaluate(() => { const ln = results.warehouse.base.manager_loans[0];
+    cbpParty = 'p1'; cbpCase = 'base'; cbpView = 'statement'; cbpFreq = 12; renderCashByPerson();
+    const t = document.getElementById('cbpTable').textContent;
+    return { sw: ln.switched_on, rep: ln.repaid, row: /Not paid at maturity: LTEC cash repays it from here/.test(t), sweeps: /Repays Levi \(partner loan\)/.test(t),
+      words: /if not paid by 2027-06-30, Thaxter's LTEC cash repays it from then on/.test(document.querySelector('.loan-terms-note').textContent),
+      label: document.querySelector('[data-path="warehouse.manager_loans.0.preset"] select').selectedOptions[0].textContent }; });
+  check(r.sw === '2027-06-30' && r.rep > 0 && r.row && r.sweeps && r.words && /Bridge.*\(edited\)/.test(r.label), `late bridge: ${JSON.stringify(r)}`);
+  await p.evaluate(() => { const el = document.querySelector('[data-path="warehouse.manager_loans.0.at_maturity"] select'); el.value = 'settle'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await p.waitForTimeout(200);
   // add a pay-down from the card, then set its date and amount
   await p.evaluate(() => document.querySelector('[data-add-paydown="0"]').click()); await p.waitForTimeout(200);
   await p.evaluate(() => {

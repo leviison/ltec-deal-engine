@@ -64,6 +64,16 @@
         "exact_date": "On the exact date, from the borrower's own money"
       }
     },
+    "at_maturity": {
+      "label": "If not paid at maturity",
+      "applies": {
+        "has_maturity": true
+      },
+      "options": {
+        "settle": "Settled then: paid or forgiven (box below)",
+        "sweep": "From then on the borrower's {manager} cash repays it"
+      }
+    },
     "paydowns": {
       "label": "Pay-downs from the borrower's own money",
       "note": "Dated payments the borrower makes on top of any repayment from {manager} cash (interest first). Kept when you pick another method."
@@ -79,7 +89,8 @@
         "maturity": "",
         "recourse": true,
         "on_leave": "continues",
-        "due_on": "cash_date"
+        "due_on": "cash_date",
+        "at_maturity": "settle"
       }
     },
     "half_sweep": {
@@ -91,7 +102,8 @@
         "maturity": "",
         "recourse": true,
         "on_leave": "due",
-        "due_on": "cash_date"
+        "due_on": "cash_date",
+        "at_maturity": "settle"
       }
     },
     "interest_only_balloon": {
@@ -103,7 +115,8 @@
         "maturity": "",
         "recourse": true,
         "on_leave": "due",
-        "due_on": "cash_date"
+        "due_on": "cash_date",
+        "at_maturity": "settle"
       }
     },
     "interest_current_pay": {
@@ -115,7 +128,8 @@
         "maturity": "",
         "recourse": true,
         "on_leave": "due",
-        "due_on": "cash_date"
+        "due_on": "cash_date",
+        "at_maturity": "settle"
       }
     },
     "equal_principal": {
@@ -128,7 +142,8 @@
         "maturity": "",
         "recourse": true,
         "on_leave": "due",
-        "due_on": "cash_date"
+        "due_on": "cash_date",
+        "at_maturity": "settle"
       }
     },
     "accrue_to_exit": {
@@ -140,7 +155,8 @@
         "maturity": "",
         "recourse": true,
         "on_leave": "due",
-        "due_on": "cash_date"
+        "due_on": "cash_date",
+        "at_maturity": "settle"
       }
     },
     "bridge": {
@@ -151,7 +167,20 @@
         "due_on": "exact_date",
         "maturity": "",
         "recourse": true,
-        "on_leave": "due"
+        "on_leave": "due",
+        "at_maturity": "settle"
+      }
+    },
+    "bridge_fallback": {
+      "title": "Bridge, paid late from {manager} cash",
+      "summary": "The late case of a bridge: the borrower doesn't pay it off by the maturity date (their other money comes in late, or never), so the loan keeps accruing and their {manager} cash repays it from then on; anything left at the end is paid (or forgiven, if the box is off). For the on-time case use Bridge; for part paid at maturity, add a pay-down on that date.",
+      "terms": {
+        "repayment": "none",
+        "due_on": "exact_date",
+        "maturity": "",
+        "recourse": true,
+        "on_leave": "due",
+        "at_maturity": "sweep"
       }
     },
     "forgivable": {
@@ -162,7 +191,8 @@
         "maturity": "",
         "recourse": false,
         "on_leave": "due",
-        "due_on": "cash_date"
+        "due_on": "cash_date",
+        "at_maturity": "settle"
       }
     }
   }

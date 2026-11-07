@@ -486,7 +486,7 @@
   const nameKey = (s) => s.trim().toLowerCase();
 
   // A partner loan's repayment terms (#24), defaults = the original rule (see core.py)
-  const LOAN_TERM_DEFAULTS = { repayment: "sweep", sweep_pct: 1, term_years: 5, source: "manager_cash", maturity: "", on_leave: "continues", due_on: "cash_date", paydowns: [] };
+  const LOAN_TERM_DEFAULTS = { repayment: "sweep", sweep_pct: 1, term_years: 5, source: "manager_cash", maturity: "", on_leave: "continues", due_on: "cash_date", paydowns: [], at_maturity: "settle" };
   function loanTermsOf(ln) {
     const out = {};
     Object.keys(LOAN_TERM_DEFAULTS).forEach((k) => { out[k] = ln[k] !== undefined && ln[k] !== null ? ln[k] : LOAN_TERM_DEFAULTS[k]; });
@@ -759,13 +759,14 @@
         moves.push([-1, -1, lo, bo, aL, qL, "loan_advance"]);
         sched.push({ date: close, kind: "advance", interest: 0, paid: 0, balance: aL });
         // Terms (#24, see core.py)
-        const tm = loanTermsOf(ln);
+        let tm = loanTermsOf(ln);
         rec.terms = tm;
         const simpleL = (ln.rate_type || "simple") === "simple";
-        const rL = ln.rate, rp = tm.repayment;
-        const mat = tm.maturity ? toDay(tm.maturity) : null;
+        const rL = ln.rate;
+        let rp = tm.repayment;
+        let mat = tm.maturity ? toDay(tm.maturity) : null;
         const leave = tm.on_leave !== "continues" ? leaveOf(bo) : null;
-        const exact = tm.due_on === "exact_date";
+        let exact = tm.due_on === "exact_date";
         const evl = ev.map(([d, k, j]) => [d, k, j, null]).concat(loanExtra(ln).map(([d, k, x]) => [d, k, lDays.indexOf(d), x]));
         evl.sort((p1, p2) => p1[0] - p2[0] || p1[1] - p2[1] || p1[2] - p2[2]);
         let prin = aL, acc = 0, prev = closeDay, done = false, nCash = 0;
@@ -787,7 +788,7 @@
           if (k === 2) pay = Math.min(Math.max(0, x), owed);
           else if (k === 3) pay = 0;
           else if (ends === "leaving") pay = tm.on_leave === "forgiven" ? 0 : Math.min(owed, cash);
-          else if (ends === "maturity") pay = rp === "none" ? 0 : Math.min(owed, cash);
+          else if (ends === "maturity") pay = rp === "none" && tm.at_maturity !== "sweep" ? 0 : Math.min(owed, cash);
           else if (rp === "sweep") pay = Math.min(tm.sweep_pct * cash, owed);
           else {
             let due;
@@ -809,6 +810,15 @@
           const mk = k >= 2 ? 2 : k, iso = k >= 2 ? lDates[j] : evIso(k, j);
           if (pay > 0) moves.push([mk, j, lo, bo, pay, qL, k === 2 ? "loan_paydown" : "loan_repayment"]);
           sched.push({ date: iso, kind: k === 2 ? "paydown" : k === 3 ? "due" : "period", interest: accrued, paid: pay, balance: prin + acc });
+          // not paid at maturity (#33, see core.py)
+          if (ends === "maturity" && tm.at_maturity === "sweep") {
+            tm = Object.assign({}, tm, { repayment: "sweep", sweep_pct: 1 });
+            rp = "sweep"; mat = null; exact = false;
+            rec.switched_on = iso;
+            if (k === 3) sched[sched.length - 1].kind = "switch";
+            else sched[sched.length - 1].switched = true;
+            continue;
+          }
           if (ends) {
             const left_ = Math.max(0, prin + acc);
             rec.interest = rec.repaid + left_ - aL;

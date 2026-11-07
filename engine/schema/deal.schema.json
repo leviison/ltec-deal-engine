@@ -21,7 +21,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 9
+      "const": 10
     },
     "meta": {
       "type": "object",
@@ -821,6 +821,13 @@
                     }
                   }
                 }
+              },
+              "at_maturity": {
+                "enum": [
+                  "settle",
+                  "sweep"
+                ],
+                "description": "If the loan isn't paid at maturity: settle it (recourse decides: paid or forgiven) or, from then on, the borrower's manager cash repays it (#33)."
               }
             }
           }

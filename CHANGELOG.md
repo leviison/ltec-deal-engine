@@ -5,6 +5,14 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.9.0 — 2026-11-07
+
+- Bridge fallback (#33, schema 10): a partner loan's new part **If not paid at maturity**: settled then (paid or
+  forgiven, as before; the default) or **from then on the borrower's LTEC cash repays it** (`at_maturity: sweep`),
+  for a bridge whose payoff money comes in late or never. New method "Bridge, paid late from LTEC cash"; the
+  schedule marks where the switch happens (`switched_on` on the loan). Loans without the part are unchanged.
+- The loan card re-renders when a term changes, so "In short" and the parts shown stay current.
+
 ## 2.8.0 — 2026-11-07
 
 - Bridge loans and pay-downs (#31, schema 9): a partner loan can be paid down from the borrower's own money on set
