@@ -5,7 +5,7 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
-## 2.5.0 — unreleased (feature/21-ledger)
+## 2.5.0 — 2026-11-07
 
 - Ledger (#21): `warehouse_case` returns each person's dated entries by account (the vehicle's units, the manager,
   each partner loan, buy-ins): contributions, distributions, unit sales and purchases, loan advances, repayments and
