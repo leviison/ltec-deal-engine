@@ -43,7 +43,7 @@
     },
     "maturity": {
       "label": "Maturity (balance due)",
-      "note": "Blank = the end of the hold. Payments fall on the deal's cash dates; a maturity between them is settled on the next one."
+      "note": "Blank = the end of the hold. Settled on the next cash date, or on the exact date if set below."
     },
     "recourse": {
       "label": "Borrower pays what's left at maturity / the end",
@@ -56,6 +56,17 @@
         "due": "The balance is due when they leave",
         "forgiven": "The balance is forgiven when they leave"
       }
+    },
+    "due_on": {
+      "label": "Maturity / leaving settles",
+      "options": {
+        "cash_date": "On the next cash date (from the borrower's {manager} cash first)",
+        "exact_date": "On the exact date, from the borrower's own money"
+      }
+    },
+    "paydowns": {
+      "label": "Pay-downs from the borrower's own money",
+      "note": "Dated payments the borrower makes on top of any repayment from {manager} cash (interest first). Kept when you pick another method."
     }
   },
   "presets": {
@@ -67,7 +78,8 @@
         "sweep_pct": 1.0,
         "maturity": "",
         "recourse": true,
-        "on_leave": "continues"
+        "on_leave": "continues",
+        "due_on": "cash_date"
       }
     },
     "half_sweep": {
@@ -78,7 +90,8 @@
         "sweep_pct": 0.5,
         "maturity": "",
         "recourse": true,
-        "on_leave": "due"
+        "on_leave": "due",
+        "due_on": "cash_date"
       }
     },
     "interest_only_balloon": {
@@ -89,7 +102,8 @@
         "source": "manager_cash",
         "maturity": "",
         "recourse": true,
-        "on_leave": "due"
+        "on_leave": "due",
+        "due_on": "cash_date"
       }
     },
     "interest_current_pay": {
@@ -100,7 +114,8 @@
         "source": "borrower",
         "maturity": "",
         "recourse": true,
-        "on_leave": "due"
+        "on_leave": "due",
+        "due_on": "cash_date"
       }
     },
     "equal_principal": {
@@ -112,7 +127,8 @@
         "source": "manager_cash",
         "maturity": "",
         "recourse": true,
-        "on_leave": "due"
+        "on_leave": "due",
+        "due_on": "cash_date"
       }
     },
     "accrue_to_exit": {
@@ -121,6 +137,18 @@
       "terms": {
         "repayment": "at_exit",
         "source": "manager_cash",
+        "maturity": "",
+        "recourse": true,
+        "on_leave": "due",
+        "due_on": "cash_date"
+      }
+    },
+    "bridge": {
+      "title": "Bridge, paid off from the borrower's own money",
+      "summary": "The lender funds the borrower's share now; the borrower pays it off, with interest, from their own money on the maturity date (and any pay-downs before it). Nothing comes out of the borrower's {manager} cash meanwhile. Set the maturity to the date they will fund.",
+      "terms": {
+        "repayment": "none",
+        "due_on": "exact_date",
         "maturity": "",
         "recourse": true,
         "on_leave": "due"
@@ -133,7 +161,8 @@
         "repayment": "none",
         "maturity": "",
         "recourse": false,
-        "on_leave": "due"
+        "on_leave": "due",
+        "due_on": "cash_date"
       }
     }
   }

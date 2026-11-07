@@ -185,3 +185,75 @@ def test_presets_are_valid_parts():
         assert t.get("on_leave", "continues") in parts["on_leave"]["options"], key
         ln = apply_loan_preset(LOAN, key, LIB)
         assert ln["preset"] == key and ln["amount"] == LOAN["amount"] and ln["rate"] == LOAN["rate"]
+
+
+# ---- bridges and pay-downs (#31): payments on their own dates, from the borrower's own money
+
+@pytest.mark.parametrize("k", CASES)
+def test_bridge_paid_off_on_the_exact_date(k):
+    _, r = run(**dict({x: v for x, v in apply_loan_preset(LOAN, "bridge", LIB).items() if x not in LOAN}, maturity="2027-06-30"))
+    r = r[k]
+    close = r["dates"][0]
+    owed = 175000.0 * (1 + 0.08 * years(close, "2027-06-30"))
+    ln = r["manager_loans"][0]
+    assert ln["settled"] == "paid_at_maturity" and ln["due_date"] == "2027-06-30"
+    assert ln["owed_end"] == pytest.approx(owed) and ln["repaid"] == 0
+    assert r["loan_payment_dates"] == ["2027-06-30"]
+    th, lv = r["people"][1], r["people"][0]
+    i = r["dates"].index("2027-06-30")
+    assert th["flows"][i] == pytest.approx(-owed) and lv["flows"][i] == pytest.approx(owed)
+    assert [e["kind"] for e in th["ledger"] if e["date"] == "2027-06-30"] == ["loan_settlement"]
+    # nothing came out of Thaxter's LTEC cash
+    assert not [e for e in th["ledger"] if e["kind"] == "loan_repayment"]
+
+
+@pytest.mark.parametrize("k", CASES)
+def test_paydowns_by_hand(k):
+    """Nothing from LTEC cash; the borrower pays $50,000 on Jun 30, 2027 and $30,000 on Feb 29, 2028 (interest
+    first), and the rest at the end."""
+    _, r = run(repayment="none", paydowns=[{"date": "2027-06-30", "amount": 50000.0}, {"date": "2028-02-29", "amount": 30000.0}])
+    r = r[k]
+    close = r["dates"][0]
+    prin, acc, prev, pays = 175000.0, 0.0, close, []
+    for d, amt in (("2027-06-30", 50000.0), ("2028-02-29", 30000.0)):
+        acc += prin * 0.08 * years(prev, d)
+        prev = d
+        ti = min(amt, acc)
+        acc -= ti
+        prin -= amt - ti
+        pays.append(amt)
+    sch = r["loan_schedules"][0]
+    assert [x["paid"] for x in sch if x["kind"] == "paydown"] == pytest.approx(pays)
+    assert r["loan_payment_dates"] == ["2027-06-30", "2028-02-29"]
+    end = sch[-1]["date"]
+    acc += prin * 0.08 * years(prev, end)
+    ln = r["manager_loans"][0]
+    assert ln["owed_end"] == pytest.approx(prin + acc) and ln["settled"] == "paid_at_end"
+    assert ln["repaid"] == pytest.approx(80000.0)
+
+
+@pytest.mark.parametrize("k", CASES)
+def test_paydown_larger_than_the_balance_stops_at_zero(k):
+    _, r = run(repayment="none", paydowns=[{"date": "2027-06-30", "amount": 1e7}])
+    ln = r[k]["manager_loans"][0]
+    assert ln["settled"] == "repaid" and ln["repaid"] == pytest.approx(175000.0 * (1 + 0.08 * years(r[k]["dates"][0], "2027-06-30")))
+
+
+@pytest.mark.parametrize("k", CASES)
+def test_exact_date_departure(k):
+    d, _ = run()
+    w = d["warehouse"]
+    w["manager_loans"][0].update(repayment="interest_only", on_leave="due", due_on="exact_date")
+    w["manager_vesting"] = [{"person": "thaxter", "years": 4, "cliff_years": 1, "leaves": "2028-07-01", "terms": "keep_vested"}]
+    ln = run_all(d)["warehouse"][k]["manager_loans"][0]
+    assert ln["settled"] == "paid_on_leaving" and ln["due_date"] == "2028-07-01"
+
+
+def test_bridge_and_buyin_variants_load():
+    """Siena's LTEC H (bridge loan) and LTEC I (later buy-in): the two ways to fund a partner's share later."""
+    d = load_deal("siena-villas")
+    alts = {a["name"][:11]: a for a in d["meta"]["alternatives"]}
+    h = run_all(apply_variant(d, alts["{manager} H"]))["warehouse"]["base"]
+    i = run_all(apply_variant(d, alts["{manager} I"]))["warehouse"]["base"]
+    assert h["manager_loans"][0]["settled"] == "paid_at_maturity"
+    assert i["manager_transfers"][0]["paid"] == pytest.approx(h["manager_loans"][0]["owed_end"])

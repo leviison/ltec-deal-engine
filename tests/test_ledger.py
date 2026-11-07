@@ -13,7 +13,7 @@ from engine.core import apply_variant, list_deals, load_deal, run_all  # noqa: E
 
 KINDS = {"units_bought", "warehouse_loan", "manager_capital", "loan_advance", "warehouse_loan_repaid", "unit_sale",
          "unit_purchase", "manager_cash", "distribution", "distribution_bought_units", "loan_repayment",
-         "loan_settlement", "buyin_sale", "buyin_purchase"}
+         "loan_settlement", "loan_paydown", "buyin_sale", "buyin_purchase"}
 
 
 def setups():
@@ -60,7 +60,8 @@ def test_ledger_with_loans_buyins_and_sales():
     w = d["warehouse"]
     w["manager_waterfall"]["enabled"] = True
     w["people"][1]["manager_capital"] = 175000.0
-    w["manager_loans"] = [{"lender": "levi", "borrower": "thaxter", "amount": 175000.0, "rate": 0.12, "rate_type": "compound", "recourse": True},
+    w["manager_loans"] = [{"lender": "levi", "borrower": "thaxter", "amount": 175000.0, "rate": 0.12, "rate_type": "compound", "recourse": True,
+                           "paydowns": [{"date": "2027-08-15", "amount": 20000.0}], "maturity": "2030-02-01", "due_on": "exact_date", "repayment": "interest_only"},
                           {"lender": "thaxter", "borrower": "levi", "amount": 10000.0, "rate": 0.05, "rate_type": "simple", "recourse": False}]
     w["manager_transfers"] = [{"date": "2027-06-30", "buyer": "thaxter", "seller": "levi", "interest": "promote", "mode": "share",
                                "share": 0.1, "amount": 0, "price": 5000, "pricing": "fixed", "rate": 0, "credit_distributions": False}]
@@ -68,4 +69,4 @@ def test_ledger_with_loans_buyins_and_sales():
     for k in r:
         check_ledger(r[k])
     kinds = {e["kind"] for p in r["stress"]["people"] for e in p["ledger"]}
-    assert {"loan_advance", "loan_repayment", "unit_sale", "manager_cash", "buyin_sale", "buyin_purchase"} <= kinds
+    assert {"loan_advance", "loan_repayment", "loan_paydown", "loan_settlement", "unit_sale", "manager_cash", "buyin_sale", "buyin_purchase"} <= kinds

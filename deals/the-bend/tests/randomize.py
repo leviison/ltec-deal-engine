@@ -89,5 +89,8 @@ def randomized(base, seed):
                        "sweep_pct": rt.choice([1.0, 0.5, 0.25]), "term_years": rt.choice([0, 3, 5, 10]),
                        "source": rt.choice(["manager_cash", "borrower"]),
                        "maturity": rt.choice(["", "", "2028-06-30", "2029-10-10", "2040-01-01"]),
-                       "on_leave": rt.choice(["continues", "due", "forgiven"])})
+                       "on_leave": rt.choice(["continues", "due", "forgiven"]),
+                       "due_on": rt.choice(["cash_date", "exact_date"]),
+                       "paydowns": [{"date": rt.choice(["2027-01-15", "2027-06-30", "2028-02-29", "2029-10-10", "2035-01-01"]),
+                                     "amount": rt.choice([0.0, 5000.0, 50000.0, 1e6])} for _ in range(rt.randint(0, 2))]})
     return inp
