@@ -1360,7 +1360,7 @@ def apply_structure(inp: dict, key: str, lib: dict | None = None, partners: list
     w = out["warehouse"]
     w.update({
         "structure": key,
-        "names": {"vehicle": t["vehicle_name"].replace("{deal}", deal_name), "manager": w0["names"]["manager"],
+        "names": {"vehicle": t["vehicle_name"].replace("{deal}", deal_name).replace("{manager}", w0["names"]["manager"]), "manager": w0["names"]["manager"],
                   "buyers": w0["names"]["buyers"]},
         "unit_price": 1000.0, "reserve": reserve, "manager_commitment": mc, "manager_reserve": 0.0,
         "admin_cost_per_year": t["admin_cost_per_year"], "admin_cost_method": "fixed",

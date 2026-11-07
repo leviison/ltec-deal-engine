@@ -122,3 +122,17 @@ if __name__ == "__main__":
         d = load_deal(slug)
         jsonschema.validate(d, SCHEMA, format_checker=jsonschema.FormatChecker())
         print(slug, "valid;", len(unsourced(d)), "unsourced:", unsourced(d))
+
+
+@pytest.mark.parametrize("slug", list_deals())
+def test_variant_titles_use_name_placeholders(slug):
+    """Variant titles and notes write names as {manager} / {vehicle} / {buyers} / {<person id>}, so they follow a
+    rename on the page (tests/web/names.test.js checks the page)."""
+    import re
+    d = load_deal(slug)
+    w = d["warehouse"]
+    names = [w["names"]["manager"], w["names"]["vehicle"], w["names"]["buyers"]] + [p["name"] for p in w["people"]]
+    for a in d["meta"].get("alternatives", []):
+        for k in ("name", "note"):
+            for n in names:
+                assert not re.search(rf"(?<![A-Za-z0-9]){re.escape(n)}(?![A-Za-z0-9])", a.get(k, "")), (slug, a["name"], k, n)

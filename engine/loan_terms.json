@@ -1,18 +1,18 @@
 {
-  "_about": "Known ways a partner loan is repaid (issue #24). Each preset is a named set of the loan's term parts; picking one on a loan fills them in, and any part can then be edited. Who lends, who borrows, the amount and the rate stay as they are. These are common patterns for loans between partners in private real-estate deals, not legal advice; when a signed note exists, its terms are the inputs and the note is their source. Add a preset here and every deal can use it.",
+  "_about": "Known ways a partner loan is repaid (issue #24). Each preset is a named set of the loan's term parts; picking one on a loan fills them in, and any part can then be edited. Who lends, who borrows, the amount and the rate stay as they are. These are common patterns for loans between partners in private real-estate deals, not legal advice; when a signed note exists, its terms are the inputs and the note is their source. Add a preset here and every deal can use it. Labels and summaries use {manager} (the deal's manager name), filled on the page.",
   "parts": {
     "repayment": {
       "label": "How it's repaid",
       "options": {
-        "sweep": "A share of the borrower's LTEC cash goes to the lender until it's paid",
-        "interest_only": "Interest each time LTEC pays out; the balance at maturity (or the end)",
+        "sweep": "A share of the borrower's {manager} cash goes to the lender until it's paid",
+        "interest_only": "Interest each time {manager} pays out; the balance at maturity (or the end)",
         "equal_principal": "Equal principal over a number of years, plus interest",
-        "at_exit": "Nothing until the end; then paid from the borrower's last LTEC cash",
-        "none": "Nothing from LTEC cash; settled at maturity (paid or forgiven)"
+        "at_exit": "Nothing until the end; then paid from the borrower's last {manager} cash",
+        "none": "Nothing from {manager} cash; settled at maturity (paid or forgiven)"
       }
     },
     "sweep_pct": {
-      "label": "Share of the borrower's LTEC cash",
+      "label": "Share of the borrower's {manager} cash",
       "applies": {
         "repayment": [
           "sweep"
@@ -28,7 +28,7 @@
       }
     },
     "source": {
-      "label": "When the borrower's LTEC cash is short",
+      "label": "When the borrower's {manager} cash is short",
       "applies": {
         "repayment": [
           "interest_only",
@@ -61,7 +61,7 @@
   "presets": {
     "cash_sweep": {
       "title": "Cash sweep",
-      "summary": "Every dollar of the borrower's LTEC cash repays the lender until the loan is paid. Fastest payback for the lender; the borrower sees no LTEC cash until then. The engine's original rule.",
+      "summary": "Every dollar of the borrower's {manager} cash repays the lender until the loan is paid. Fastest payback for the lender; the borrower sees no {manager} cash until then. The engine's original rule.",
       "terms": {
         "repayment": "sweep",
         "sweep_pct": 1.0,
@@ -72,7 +72,7 @@
     },
     "half_sweep": {
       "title": "Half sweep",
-      "summary": "Half of the borrower's LTEC cash repays the loan and they keep the other half; what's left at the end is paid. Common when the borrower needs some income from the deal.",
+      "summary": "Half of the borrower's {manager} cash repays the loan and they keep the other half; what's left at the end is paid. Common when the borrower needs some income from the deal.",
       "terms": {
         "repayment": "sweep",
         "sweep_pct": 0.5,
@@ -83,7 +83,7 @@
     },
     "interest_only_balloon": {
       "title": "Interest only, balloon at exit",
-      "summary": "The borrower pays the interest out of their LTEC cash as it comes in and repays the principal at the end (the balloon). Typical for a loan meant to be repaid from the sale.",
+      "summary": "The borrower pays the interest out of their {manager} cash as it comes in and repays the principal at the end (the balloon). Typical for a loan meant to be repaid from the sale.",
       "terms": {
         "repayment": "interest_only",
         "source": "manager_cash",
@@ -94,7 +94,7 @@
     },
     "interest_current_pay": {
       "title": "Interest paid current, balloon at exit",
-      "summary": "As above, but the interest is due on every payment date whether or not LTEC has paid out; the borrower covers any shortfall. Protects the lender's income.",
+      "summary": "As above, but the interest is due on every payment date whether or not {manager} has paid out; the borrower covers any shortfall. Protects the lender's income.",
       "terms": {
         "repayment": "interest_only",
         "source": "borrower",
@@ -105,7 +105,7 @@
     },
     "equal_principal": {
       "title": "Amortizing (equal principal)",
-      "summary": "The principal comes down in equal steps over a set number of years, plus interest on what's outstanding, from the borrower's LTEC cash; unpaid amounts carry forward.",
+      "summary": "The principal comes down in equal steps over a set number of years, plus interest on what's outstanding, from the borrower's {manager} cash; unpaid amounts carry forward.",
       "terms": {
         "repayment": "equal_principal",
         "term_years": 5,
@@ -117,7 +117,7 @@
     },
     "accrue_to_exit": {
       "title": "Accrue to exit (PIK)",
-      "summary": "Nothing is paid along the way; interest adds to the balance and the whole amount comes out of the borrower's share at the end. The borrower keeps their LTEC cash meanwhile; the lender waits.",
+      "summary": "Nothing is paid along the way; interest adds to the balance and the whole amount comes out of the borrower's share at the end. The borrower keeps their {manager} cash meanwhile; the lender waits.",
       "terms": {
         "repayment": "at_exit",
         "source": "manager_cash",

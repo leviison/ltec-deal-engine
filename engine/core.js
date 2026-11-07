@@ -1020,7 +1020,7 @@
     }
     Object.assign(out.warehouse, {
       structure: key,
-      names: { vehicle: t.vehicle_name.replace("{deal}", dealName), manager: w0.names.manager, buyers: w0.names.buyers },
+      names: { vehicle: t.vehicle_name.replace("{deal}", dealName).replace("{manager}", w0.names.manager), manager: w0.names.manager, buyers: w0.names.buyers },
       unit_price: 1000, reserve, manager_commitment: mc, manager_reserve: 0,
       admin_cost_per_year: t.admin_cost_per_year, admin_cost_method: "fixed",
       acq_fee_pct: t.acq_fee_pct, mgmt_fee_pct: t.mgmt_fee_pct,

@@ -14,6 +14,7 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
     const out = {};
     // 1. a rename in the deal file: variant titles and the variant itself use the new names; references still work
     DEFAULTS.warehouse.people[0].name = 'Bob'; DEFAULTS.warehouse.names.manager = 'Acme';
+    inputs = clone(DEFAULTS);  // the page as loaded from the renamed deal file (variants keep the names on screen)
     renderVariants();
     const btn = [...document.querySelectorAll('#sec-variants [data-v]')].find((x) => /lends/.test(x.textContent));
     out.title = btn && btn.querySelector('b').textContent;

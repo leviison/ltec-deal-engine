@@ -63,6 +63,10 @@
   on the deal's cash dates; a maturity or departure settles on the next one. A new term or preset: both engines,
   the library, `tests/test_loan_terms.py` (hand calculation), the randomizers, and a field on the loan card.
   Next: a Summary of terms export (#25), the warehouse lender on the same parts (#26), legal drafts (#27, roadmap).
+- Names are labels (#29 checks): any text that shows a manager / vehicle / buyers / person name takes it from the inputs
+  (or `{manager}`-style placeholders filled by `fill_label` = `fillLabel`), never a literal; library files
+  (`structures.json`, `loan_terms.json`) use placeholders too. tests/web/names.test.js renames everything on every
+  variant and fails on any old name outside the deal file's own text; extend its exceptions only with a reason.
 - New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from
   the sponsor case; defaults in `engine/standard_cases.json`), then tune them to the deal's diligence and source them.
 - Tests: `python -m pytest` runs engine, deal-file, tie-out AND page tests (`tests/web/*.test.js` in headless Chromium,

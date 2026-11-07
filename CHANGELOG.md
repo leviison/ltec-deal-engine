@@ -21,6 +21,13 @@ they are off; patch = fixes.
   schedule, Compare and both exports. Ask: `list_inputs` lists the presets and parts; `get_vehicle` and
   `get_statement` return each loan's terms and due date.
 - Exports show people's names (not ids) for partner loans and vesting.
+- Names are labels everywhere: renaming the manager, vehicle, default buyers, investor or a person re-renders every
+  card (the side-letter label, timing and others were left stale); variant titles read with the names in use and a
+  variant keeps them when clicked; sales to the default buyers follow their rename; the loan-terms library and
+  structure templates write `{manager}` instead of "LTEC" (the direct template's vehicle is "{manager} (direct)").
+  New page test `tests/web/names.test.js` renames everything on every variant and fails on any old name left;
+  `tests/test_deal_files.py` checks variant titles use placeholders.
+- Month and year in period labels read "Jun 2030" (was "Jun 30", which looked like a day).
 
 ## 2.5.0 — 2026-11-07
 

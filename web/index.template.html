@@ -539,6 +539,11 @@ const ENGINE_LABEL = `LTEC Deal Engine v${BUILD.engine}`;
 const STRUCTURES = /*__STRUCTURES__*/null;
 // Known ways a partner loan is repaid (engine/loan_terms.json, #24): presets built from the loan's term parts.
 const LOAN_TERMS = /*__LOAN_TERMS__*/null;
+// The library's words with this deal's names filled in ({manager} etc.); `inp` defaults to the page's inputs.
+function loanLib(inp) {
+  const fill = (o) => typeof o === "string" ? E.fillLabel(o, inp || inputs) : Array.isArray(o) ? o.map(fill) : o && typeof o === "object" ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, fill(v)])) : o;
+  return fill(LOAN_TERMS || { parts: {}, presets: {} });
+}
 // Which library preset a loan's terms match now ("" = none); `edited` when it names one but a part was changed.
 function loanPresetState(spec) {
   const t = E.loanTermsOf(spec), lib = (LOAN_TERMS || {}).presets || {};
@@ -698,8 +703,13 @@ function bindField(el, f) {
       else { const n = parseFloat(inp.value); if (!isFinite(n)) return; v = f.kind === "pct" ? n / 100 : n; }
       if (f.kind === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(v) && !(f.allowEmpty && v === "")) return;
       const renamed = /^warehouse\.people\.\d+\.name$/.test(f.path) ? get(inputs, f.path) : null;
+      const renamedBuyers = f.path === "warehouse.names.buyers" ? get(inputs, f.path) : null;
       set(inputs, f.path, v);
       if (f.onset) f.onset(v);
+      if (renamedBuyers) {  // sales to the default buyers follow their new name
+        const same = (x) => (x || "").trim().toLowerCase() === renamedBuyers.trim().toLowerCase();
+        inputs.warehouse.selldown.tranches.forEach((t) => { if (same(t.buyer)) t.buyer = v; });
+      }
       if (renamed) {  // carry a person's new name into sales and buy-ins that named them
         const same = (a) => (a || "").trim().toLowerCase() === renamed.trim().toLowerCase();
         const w = inputs.warehouse;
@@ -713,7 +723,7 @@ function bindField(el, f) {
       if (cm && inputs.cases[cm[1]].kind === "custom") inputs.cases[cm[1]].exit_method = cm[2] === "sale_price" ? "sale_price" : "cap_rate";
       syncExitMethod();
       recompute();
-      if (f.kind === "text" || f.rerender) keepFocus(f.after || renderWarehouseInputs);
+      if (f.kind === "text" || f.rerender) keepFocus(f.after || (/(^|\.)(names\.\w+|name)$/.test(f.path) ? renderAllFields : renderWarehouseInputs));
     });
   });
 }
@@ -811,19 +821,28 @@ function mergeDeep(base, ch) {
   Object.keys(ch).forEach((k) => { o[k] = ch[k] && typeof ch[k] === "object" && !Array.isArray(ch[k]) && o[k] && typeof o[k] === "object" ? mergeDeep(o[k], ch[k]) : clone(ch[k]); });
   return o;
 }
+// The deal file with the names in use now (manager, vehicle, buyers, each person by id): names are labels, so a
+// variant keeps the ones you've typed and its title reads with them.
+function namedBase() {
+  const b = clone(DEFAULTS), w = inputs && inputs.warehouse, bw = b.warehouse;
+  if (!w || !bw) return b;
+  bw.names = Object.assign({}, bw.names, w.names);
+  (bw.people || []).forEach((p) => { const q = (w.people || []).find((x) => x.id && x.id === p.id); if (q) p.name = q.name; });
+  return b;
+}
 function renderVariants() {
   const alts = META.alternatives || [], sec = document.getElementById("sec-variants");
   sec.hidden = !alts.length;
   if (!alts.length) return;
   const btn = (i, name, note) => `<button type="button" class="btn${activeVariant === i ? " primary" : ""}" data-v="${i}" aria-pressed="${activeVariant === i}"><b>${esc(name)}</b>${note ? `<br><span class="muted small">${esc(note)}</span>` : ""}</button>`;
   sec.innerHTML = `<h3>Variants</h3><p class="note" style="margin:0">Named alternatives: from the documents, or structures to test. Each starts from the defaults; then edit anything.</p>
-    <div class="variants">${btn(-1, "Defaults", "The sponsor model as underwritten")}${alts.map((a, i) => btn(i, E.fillLabel(a.name, DEFAULTS), E.fillLabel(a.note, DEFAULTS))).join("")}</div>`;
+    <div class="variants">${btn(-1, "Defaults", "The sponsor model as underwritten")}${alts.map((a, i) => { const nb = namedBase(); return btn(i, E.fillLabel(a.name, nb), E.fillLabel(a.note, nb)); }).join("")}</div>`;
   sec.querySelectorAll("[data-v]").forEach((b) => b.addEventListener("click", () => {
     const i = +b.dataset.v;
     activeVariant = i < 0 ? null : i;
     // a variant states only what it changes (list items by id) and may name a structure template, so it applies
     // cleanly to the current deal file: renames, a new check, new partners
-    inputs = i < 0 ? clone(DEFAULTS) : E.applyVariant(DEFAULTS, alts[i], STRUCTURES);
+    inputs = i < 0 ? clone(DEFAULTS) : E.applyVariant(namedBase(), alts[i], STRUCTURES);
     activeScenario = null; renderAllFields(); recompute(); renderSaved(); updateScenarioChip();
   }));
 }
@@ -1025,7 +1044,8 @@ function renderTimingInputs() {
 /* ------------------------------------------------------------ cash by person */
 let cbpParty = "p0", cbpCase = PRIMARY, cbpFreq = 12, cbpView = "periods", cbpAsOf = "";
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const monLabel = (iso) => { const [y, m] = iso.split("-"); return `${MON[+m - 1]} ${y.slice(2)}`; };
+// "Jun 2030" (month and year; "Jun 30" read like a day of the month)
+const monLabel = (iso) => { const [y, m] = iso.split("-"); return `${MON[+m - 1]} ${y}`; };
 function cbpParties() {
   const w = inputs.warehouse, k = cbpCase, R = results.warehouse[k], C = results.cases[k];
   const T = R.tranches.length, X = R.manager_transfers.length, distDates = R.dates.slice(1 + T + X);
@@ -1219,7 +1239,7 @@ function whFields() {
            F(P + "warehouse_promote", "Promote on unsold warehouse units", "pct", "Same as above unless you set it"),
            F(P + "hurdle_type", "Hurdle grows by", "select", "Memo: “10% per annum IRR”", [["compound", "Compounding (IRR)"], ["simple", "Simple interest"]]),
            F(P + "hurdle_basis", "Hurdle measured", "select", "Memo: members “in aggregate”", [["pooled", "Whole fund"], ["per_member", "Each member"]]),
-           F(P + "promote_on_manager_units", `${n.manager}'s own units pay promote`, "bool", "Memo: 60% to members “including LTEC”"),
+           F(P + "promote_on_manager_units", `${n.manager}'s own units pay promote`, "bool", "On: the manager's own units pay promote like members' units"),
            Object.assign(F(P + "admin_cost_method", `${n.vehicle} admin cost`, "select", null, [["fixed", "Fixed $ per year"], ["pct_raise", "% of the raise per year"]]), { rerender: true }),
            F(P + "admin_cost_per_year", "Admin per year", "usd", "Assumption, not from docs"),
            F(P + "admin_cost_pct", "Admin, % of raise per year", "pct", "Assumption; scales with the raise")],
@@ -1264,7 +1284,7 @@ function whFields() {
     },
     // Terms (#24): a preset from the library fills the parts; each part is an input of its own.
     loanTerms: (q) => {
-      const Q = `${P}manager_loans.${q}.`, spec = w.manager_loans[q], t = E.loanTermsOf(spec), L = LOAN_TERMS || { parts: {}, presets: {} };
+      const Q = `${P}manager_loans.${q}.`, spec = w.manager_loans[q], t = E.loanTermsOf(spec), L = loanLib();
       const st = loanPresetState(spec), opt = (part) => Object.entries(L.parts[part].options);
       const rr = (f) => Object.assign(f, { rerender: true });
       const preset = rr(Object.assign(F(Q + "preset", "Terms", "select", null, [["", st.key ? "Custom" : "Custom (own terms)"]].concat(Object.entries(L.presets).map(([k, p]) => [k, p.title + (st.key === k && st.edited ? " (edited)" : "")]))), {
@@ -1322,7 +1342,7 @@ function updateStructurePick() {
   const sp = document.getElementById("structurePick");
   if (!sp || !STRUCTURES) return;
   const cur = inputs.warehouse.structure || "custom", ch = cur !== "custom" ? structureChanges() : [], ed = ch.length > 0;
-  [...sp.options].forEach((o) => { const t = STRUCTURES.templates[o.value]; if (t) o.textContent = t.label + (o.value === cur && ed ? " · edited" : ""); });
+  [...sp.options].forEach((o) => { const t = STRUCTURES.templates[o.value]; if (t) o.textContent = E.fillLabel(t.label, inputs) + (o.value === cur && ed ? " · edited" : ""); });
   const se = document.getElementById("structureEdits");
   if (se) { se.hidden = !ed; se.innerHTML = ed ? `<b>Changed from the template:</b> ${esc(ch.join("; "))}.` : ""; }
 }
@@ -1336,7 +1356,7 @@ function renderWarehouseInputs() {
   const st = STRUCTURES && STRUCTURES.templates, cur = w.structure || "custom", edited = cur !== "custom" && structureEdited();
   secV.innerHTML = `<h3>${esc(n.vehicle)}</h3>
     ${st ? `<div class="structure-pick" data-path="warehouse.structure"><label for="structurePick"><b>How ${esc(n.manager)} holds this deal</b></label>
-      <select id="structurePick">${Object.entries(st).map(([k, t]) => `<option value="${k}"${k === cur ? " selected" : ""}>${esc(t.label)}${k === cur && edited ? " · edited" : ""}</option>`).join("")}<option value="custom"${cur === "custom" ? " selected" : ""}>Set by hand</option></select>
+      <select id="structurePick">${Object.entries(st).map(([k, t]) => `<option value="${k}"${k === cur ? " selected" : ""}>${esc(E.fillLabel(t.label, inputs))}${k === cur && edited ? " · edited" : ""}</option>`).join("")}<option value="custom"${cur === "custom" ? " selected" : ""}>Set by hand</option></select>
       <span class="note" style="margin:0">${esc(cur !== "custom" ? E.templateNote(st[cur], inputs) : "The vehicle below was set up by hand.")}</span>
       <span class="note" id="structureEdits" style="margin:0"></span>
       <span class="note muted small" style="margin:0">Picking a structure (or this one again) resets the vehicle to ${esc(n.manager)}'s house terms for this check, keeping ${esc(n.manager)}'s partners and terms; Defaults restores the deal file.</span></div>` : ""}
@@ -1362,7 +1382,7 @@ function renderWarehouseInputs() {
     ${w.manager_waterfall.enabled && w.manager_waterfall.tiers.length < 3 ? `<div class="row"><button class="btn" type="button" id="addTier">+ Add a step (split until an IRR)</button></div>` : ""}
     ${block(fx.residual)}
     <p class="note" style="margin:6px 0 0"><b>Partner loans</b> · one partner funds another's share of ${esc(n.manager)}. Pick how it's repaid from known terms, or set the parts yourself.</p>
-    ${w.manager_loans.map((x, q) => { const st = loanPresetState(x), pr = st.key && LOAN_TERMS.presets[st.key], bn = (w.people.find((p) => p.id === x.borrower || p.name === x.borrower) || {}).name;
+    ${w.manager_loans.map((x, q) => { const st = loanPresetState(x), pr = st.key && loanLib().presets[st.key], bn = (w.people.find((p) => p.id === x.borrower || p.name === x.borrower) || {}).name;
       return `<div class="card"><div class="card-head"><span>Loan ${q + 1}</span><button class="link" type="button" data-remove-mloan="${q}">Remove</button></div>${block(fx.loan(q))}${block(fx.loanTerms(q))}<p class="note loan-terms-note">${pr ? `<b>${esc(pr.title)}${st.edited ? " (edited)" : ""}:</b> ${esc(pr.summary)}<br>` : ""}In short: ${esc(loanTermsText(x, bn, n.manager))}.</p></div>`; }).join("")}
     ${w.manager_loans.length < 3 && w.people.length > 1 ? `<div class="row"><button class="btn" type="button" id="addMLoan">+ Add partner loan</button></div>` : ""}
     <p class="note" style="margin:6px 0 0"><b>Vesting</b> · a partner earns their fees &amp; promote share over time; if they leave, the unvested part goes to the other partners.</p>
@@ -2865,8 +2885,8 @@ const ASK_TOOLS = [
         investor: Object.fromEntries(inputLeaves(inp.investor, "investor")),
         vehicle: Object.fromEntries(inputLeaves(inp.warehouse, "warehouse").filter(([pp]) => !pp.startsWith("warehouse.names."))),
         loan_terms: { about: "Partner loans (warehouse.manager_loans.N) take terms: preset (a name from presets) and the parts it fills. Set a whole loan, or parts by path (warehouse.manager_loans.0.repayment). Left out = the original cash sweep.",
-          parts: LOAN_TERMS ? Object.fromEntries(Object.entries(LOAN_TERMS.parts).map(([k, v]) => [k, v.options ? { label: v.label, options: v.options } : { label: v.label, note: v.note }])) : {},
-          presets: LOAN_TERMS ? Object.fromEntries(Object.entries(LOAN_TERMS.presets).map(([k, v]) => [k, { title: v.title, when: v.summary, terms: v.terms }])) : {} },
+          parts: LOAN_TERMS ? Object.fromEntries(Object.entries(loanLib(inp).parts).map(([k, v]) => [k, v.options ? { label: v.label, options: v.options } : { label: v.label, note: v.note }])) : {},
+          presets: LOAN_TERMS ? Object.fromEntries(Object.entries(loanLib(inp).presets).map(([k, v]) => [k, { title: v.title, when: v.summary, terms: v.terms }])) : {} },
         vehicle_how_to_change: "our SPV and the manager: people by id (warehouse.people[levi].manager_capital, .manager_share; a whole warehouse.people[new_id] adds a person); loans, vesting and buy-ins refer to people by id, or lists whole (warehouse.manager_loans, warehouse.manager_vesting, warehouse.manager_waterfall.tiers); results via get_vehicle, or person_* metrics in sweep / solve_for",
         cases: keys.map((c) => {
           const cs = inp.cases[c], f = {};
