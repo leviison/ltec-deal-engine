@@ -93,6 +93,14 @@ aside.rail { position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); 
 .flash { animation: flash 1.4s ease-out; }
 @keyframes flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
 .flow .node { cursor: pointer; }
+.edit-link { all: unset; cursor: pointer; border-bottom: 1px dotted transparent; }
+.edit-link:hover, .edit-link:focus-visible { border-bottom-color: var(--accent); color: var(--accent); }
+.edit-link .pencil { margin-left: 4px; font-size: .85em; opacity: 0; transition: opacity .15s; }
+.edit-link:hover .pencil, .edit-link:focus-visible .pencil { opacity: .8; }
+.issues { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--warn-fg) 40%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--warn-fg) 7%, transparent); font-size: 12.5px; }
+.issues .edit-link { color: var(--warn-fg); }
+.flag.go { cursor: pointer; }
+.case { cursor: pointer; }
 .flow .node:hover rect { stroke: var(--accent); stroke-width: 1.8; }
 .field { display: grid; grid-template-columns: minmax(0, 1fr) 118px; align-items: center; gap: 8px; }
 .field label { font-size: 13px; color: var(--fg); }
@@ -812,6 +820,7 @@ function renderSale() {
   const fields = [F("deal.selling_cost_pct", "Selling costs", "pct"),
                   F("deal.disposition_fee_pct", "Disposition fee", "pct", "OA §9.8: “market” — not fixed"),
                   F("deal.annual_capex_reserves", "CapEx / reserves per year", "usd"),
+                  Object.assign(F("deal.units", "Units", "num", "For the sale price per unit"), { unit: "" }),
                   F("deal.exit_noi_basis", "Sale priced on", "select", null, [["trailing", "Final hold year's NOI"], ["forward", "Next year's NOI"]]),
                   F("deal.reserves_returned_at_sale", "Reserves returned at sale", "usd")];
   if (hasB) {
@@ -901,6 +910,7 @@ function renderRedstoneInputs() {
   const tierF = (i) => [F(`waterfall.tiers.${i}.lp_irr_hurdle`, `Tier ${i + 1}: up to LP IRR of`, "pct"),
                         F(`waterfall.tiers.${i}.lp_share`, `Tier ${i + 1}: LP share`, "pct")];
   const fields = [
+    F("deal.lp_equity", "LP equity raised", "usd", "The waterfall's capital; sets our check's share of the LP"),
     F("waterfall.pref_rate", "Preferred return", "pct", "OA §8.1: 6%, cumulative"),
     F("waterfall.pref_compounds", "Compound unpaid pref", "bool", "OA says compounded; v10 does not"),
     Object.assign(F("waterfall.return_of_capital", "Capital comes back from", "select", "All cash: OA-style. Capital events: sale / refi only", [["all_cash", "Any cash after pref"], ["capital_events", "Sale or refinance only"]]), { rerender: true, after: renderRedstoneInputs }),
@@ -1183,11 +1193,12 @@ function renderWarehouseInputs() {
   const grp = (id, title, body) => `<div class="grp" data-grp="${id}"><div class="grp-head" role="button" tabindex="0"><span class="grp-title">${title}</span><span class="sec-badge"></span><span class="chev" aria-hidden="true"></span></div><div class="grp-sum"></div><div class="grp-body">${body}</div></div>`;
   const st = STRUCTURES && STRUCTURES.templates, cur = w.structure || "custom", edited = cur !== "custom" && structureEdited();
   secV.innerHTML = `<h3>${esc(n.vehicle)}</h3>
-    ${st ? `<div class="structure-pick"><label for="structurePick"><b>How ${esc(n.manager)} holds this deal</b></label>
+    ${st ? `<div class="structure-pick" data-path="warehouse.structure"><label for="structurePick"><b>How ${esc(n.manager)} holds this deal</b></label>
       <select id="structurePick">${Object.entries(st).map(([k, t]) => `<option value="${k}"${k === cur ? " selected" : ""}>${esc(t.label)}${k === cur && edited ? " · edited" : ""}</option>`).join("")}<option value="custom"${cur === "custom" ? " selected" : ""}>Set by hand</option></select>
       <span class="note" style="margin:0">${esc(cur !== "custom" ? E.templateNote(st[cur], inputs) : "The vehicle below was set up by hand.")}</span>
       <span class="note" id="structureEdits" style="margin:0"></span>
       <span class="note muted small" style="margin:0">Picking a structure (or this one again) resets the vehicle to ${esc(n.manager)}'s house terms for this check, keeping ${esc(n.manager)}'s partners and terms; Defaults restores the deal file.</span></div>` : ""}
+    <div class="issues" id="whIssues" hidden></div>
     ${grp("wh-names", "Names", block(fx.names))}
     ${grp("wh-raise", "The raise", block(fx.vehicle) + `<div class="readout" id="whRaised"></div>`)}
     ${grp("wh-fees", `${esc(n.manager)} fees &amp; promote`, block(fx.fees))}
@@ -1267,6 +1278,8 @@ function updateWhSums() {
   el("xferSums").className = "sumline";
   el("xferSums").innerHTML = xs.length ? `${esc(n.manager)} after buy-ins (Base case), capital / fees &amp; promote: ` + w.people.map((p, i) => `${esc(p.name)} ${fmt.pct(sp[i].manager_capital_share_end, 1)} / ${fmt.pct(sp[i].manager_share_end, 1)}`).join(" · ") +
     xs.filter((x) => x.share < 1e-9).map(() => `<br><span style="color:var(--warn-fg)">A buy-in moves nothing: check the buyer, seller and the seller's stake.</span>`).slice(0, 1).join("") : "";
+  const iss = vehicleIssueItems(inputs, results.warehouse[PRIMARY].summary), ib = el("whIssues");
+  if (ib) { ib.hidden = !iss.length; ib.innerHTML = iss.map((x) => `<span>⚠ ${editLink(x.path, esc(x.msg))}</span>`).join(""); }
   const R0 = results.warehouse[PRIMARY], ms = R0.manager_split, lines = [];
   if (ms.enabled) lines.push(`${esc(results.cases[PRIMARY].label)}: ${fmt.usd(ms.to_capital)} to ${esc(n.manager)}'s capital holders, ${fmt.usd(ms.to_promote)} by fees &amp; promote shares`);
   R0.manager_loans.forEach((x) => lines.push(x.settled === "invalid" ? `<span style="color:var(--warn-fg)">${x.amount <= 0 && x.borrower ? `${esc(x.borrower)} puts nothing into ${esc(n.manager)}, so there's nothing to lend toward: give them ${esc(n.manager)} capital under People.` : "A loan needs a lender and a different borrower, both partners, and an amount."}</span>`
@@ -1298,9 +1311,9 @@ function toggleRail(id, open) {
 function railHome(path) {
   const d = (k) => path === "deal." + k || path.startsWith("deal." + k + ".");
   if (path.startsWith("investor.")) return ["sec-investor"];
-  if (["exit_noi_basis", "reserves_returned_at_sale", "below_noi_income", "selling_cost_pct", "disposition_fee_pct", "annual_capex_reserves"].some(d)) return ["sec-sale"];
+  if (["exit_noi_basis", "reserves_returned_at_sale", "below_noi_income", "selling_cost_pct", "disposition_fee_pct", "annual_capex_reserves", "units"].some(d)) return ["sec-sale"];
   if (path.startsWith("timing")) return ["sec-timing"];
-  if (path.startsWith("waterfall") || d("asset_mgmt_fee_pct_of_income")) return ["sec-redstone"];
+  if (path.startsWith("waterfall") || d("asset_mgmt_fee_pct_of_income") || d("lp_equity")) return ["sec-redstone"];
   if (["loan_amount", "loan_rate", "debt_service_method", "annual_debt_service", "assumption_fee_pct"].some(d)) return ["sec-loan"];
   if (d("hold_years") || d("refi")) return ["sec-hold"];
   if (path.startsWith("direct_investors")) return ["sec-direct"];
@@ -1390,6 +1403,33 @@ function decorateRail(changedPaths) {
   const nc = document.getElementById("noChanges");
   if (nc) nc.hidden = !(only && !Object.keys(counts).length);
 }
+// Click-to-edit (#20): anything on the page that one input drives can link to it. editLink(path, html) renders the
+// link; goToInput(path, slug) opens the deal if needed, switches the case tab for case inputs, opens the card and group
+// (railHome), scrolls and focuses the field, or the nearest card when that field isn't on screen.
+function editLink(path, html, slug) {
+  return `<button type="button" class="edit-link" data-edit="${esc(path)}"${slug ? ` data-deal="${esc(slug)}"` : ""} title="Change this in the panel">${html}<span class="pencil" aria-hidden="true">✎</span></button>`;
+}
+function goToInput(path, slug) {
+  if (slug && slug !== META.slug && DEALS[slug]) openDeal(slug);
+  if (view !== "deal") { setHash(META.slug); setView("deal"); }
+  // list items by id -> their position, which is how the panel's fields are addressed
+  let p = path.replace(/warehouse\.people\[([^\]]+)\]/, (m0, id) => { const i = inputs.warehouse.people.findIndex((x) => x.id === id); return i < 0 ? m0 : `warehouse.people.${i}`; });
+  p = p.replace(/^(warehouse\.(?:manager_loans|manager_vesting|manager_transfers|selldown\.tranches))\[(\d+)\]/, "$1.$2");
+  const cm = p.match(/^cases\.([^.]+)(\.|$)/);
+  if (cm && inputs.cases[cm[1]] && editCase !== cm[1]) { editCase = cm[1]; renderCaseFields(); markChanged(); }
+  const home = railHome(p);
+  if (!home.length) return false;
+  let f = p;
+  while (f && !document.querySelector(`.rail [data-path="${f}"]`)) f = f.includes(".") ? f.slice(0, f.lastIndexOf(".")) : "";
+  openRail(home[0], home[1] || null, f || null);
+  return true;
+}
+document.addEventListener("click", (e) => {
+  const card = e.target.closest("#caseCards article[data-case]");
+  if (card && !e.target.closest("button, a, input, select")) { goToInput("cases." + card.dataset.case); return; }
+  const b = e.target.closest("[data-edit]");
+  if (b) { e.preventDefault(); goToInput(b.dataset.edit, b.dataset.deal); }
+});
 // Open a card (and a group in it), scroll to it, and focus a field: from the flow diagram and from "Find an input".
 function openRail(secId, grpId, focusPath) {
   [secId, grpId].filter(Boolean).forEach((id) => railClosed.delete(id));
@@ -1397,6 +1437,7 @@ function openRail(secId, grpId, focusPath) {
   let target = (focusPath && document.querySelector(`.rail [data-path="${focusPath}"]`)) || (grpId && document.querySelector(`.rail [data-grp="${grpId}"]`)) || document.getElementById(secId);
   if (!target) return;
   if (target.offsetParent === null && document.querySelector("aside.rail").classList.contains("only-changed")) setOnlyChanged(false);
+  if (target.closest("[hidden]")) { focusPath = null; target = (grpId && document.querySelector(`.rail [data-grp="${grpId}"]`)) || document.getElementById(secId); }
   target.scrollIntoView({ block: focusPath ? "center" : "start" });
   target.classList.remove("flash"); void target.offsetWidth; target.classList.add("flash");
   if (focusPath) { const i = target.querySelector("input, select"); if (i) i.focus({ preventScroll: true }); }
@@ -1414,6 +1455,7 @@ function setOnlyChanged(on) {
   decorateRail();
 }
 document.getElementById("onlyChanged").addEventListener("change", (e) => setOnlyChanged(e.target.checked));
+document.getElementById("changeChip").addEventListener("click", () => { setOnlyChanged(true); document.querySelector("aside.rail").scrollIntoView({ block: "start" }); });
 try { if (localStorage.getItem(ONLY_KEY)) { document.querySelector("aside.rail").classList.add("only-changed"); document.getElementById("onlyChanged").checked = true; } } catch (_) {}
 // flow diagram boxes open the cards that control them (data-open = "section/group/field path")
 document.addEventListener("click", (e) => {
@@ -1529,7 +1571,8 @@ function markChanged() {
   });
   const chip = document.getElementById("changeChip");
   chip.hidden = changed.size === 0;
-  chip.className = "chip changed";
+  chip.className = "chip changed go";
+  chip.title = "Show only what's changed in the panel";
   chip.textContent = changed.size + (changed.size === 1 ? " change from defaults" : " changes from defaults");
   decorateRail([...changed]);
 }
@@ -1546,7 +1589,7 @@ function renderCards() {
     const c = results.cases[k], d = base.cases[k];
     const dIrr = c.lp.irr - d.lp.irr;
     const delta = Math.abs(dIrr) > 5e-5 ? `<span class="delta ${dIrr > 0 ? "pos" : "neg"}">${dIrr > 0 ? "+" : "−"}${(Math.abs(dIrr) * 100).toFixed(1)} pts vs defaults</span>` : "";
-    return `<article class="case${hl(k)}" style="--case-color:${CASE_COLOR[k]}">
+    return `<article class="case${hl(k)}" data-case="${k}" title="Edit ${esc(c.label)}'s assumptions" style="--case-color:${CASE_COLOR[k]}">
       <div class="head"><span class="name">${esc(c.label)}</span>${irrPill(c.lp.irr)}</div>
       <div class="irr">${fmt.pct(c.lp.irr)}<small>LP IRR</small></div>${delta}
       <dl>
@@ -1653,16 +1696,16 @@ function renderExit() {
     <dt>LP multiple</dt><dd>${fmt.x(c.lp.multiple)}</dd>
     <dt>Your total distributions</dt><dd>${fmt.usd(c.investor.total)}</dd>
     <dt>Your profit</dt><dd class="${c.investor.profit >= 0 ? "pos" : "neg"}">${fmt.signedk(c.investor.profit)}</dd>
-    <dt>Sale priced by</dt><dd>${how}</dd>
-    <dt>Sale at end of</dt><dd>Year ${HN - 1}</dd>
-    <dt>${NL}</dt><dd>${fmt.usd(ex.y6_noi)}</dd>
+    <dt>${editLink(ci.kind === "custom" ? `cases.${k}.exit_method` : `cases.${k}`, "Sale priced by")}</dt><dd>${how}</dd>
+    <dt>${editLink("deal.hold_years", "Sale at end of")}</dt><dd>Year ${HN - 1}</dd>
+    <dt>${editLink(`cases.${k}`, esc(NL))}</dt><dd>${fmt.usd(ex.y6_noi)}</dd>
     <dt>Gross sale value</dt><dd>${fmt.usd(ex.gross_value)}</dd>
-    <dt>${implied ? "Implied cap" : "Exit cap"} / per unit</dt><dd>${fmt.pct(ex.exit_cap, 2)} · ${fmt.usdk(ex.price_per_unit)}</dd>
+    <dt>${editLink(ci.kind === "custom" && ci.exit_method === "sale_price" ? `cases.${k}.sale_price` : "exit_cap" in ci ? `cases.${k}.exit_cap` : `cases.${k}`, `${implied ? "Implied cap" : "Exit cap"} / per unit`)}</dt><dd>${fmt.pct(ex.exit_cap, 2)} · ${fmt.usdk(ex.price_per_unit)}</dd>
     <dt>Net proceeds after loan</dt><dd>${fmt.usd(ex.net_sale_proceeds)}</dd>
-    ${c.operations.refi ? `<dt>Refinance, end of Year ${c.operations.refi.year}</dt><dd>${fmt.usd(c.operations.refi.net_proceeds)} out</dd>` : ""}
-    <dt>Loan payoff at sale</dt><dd>${fmt.usd(ex.debt_payoff)}</dd>
+    ${c.operations.refi ? `<dt>${editLink("deal.refi.enabled", `Refinance, end of Year ${c.operations.refi.year}`)}</dt><dd>${fmt.usd(c.operations.refi.net_proceeds)} out</dd>` : ""}
+    <dt>${editLink("deal.loan_amount", "Loan payoff at sale")}</dt><dd>${fmt.usd(ex.debt_payoff)}</dd>
     ${c.crystallization && c.crystallization.applied ? `<dt>Crystallized split</dt><dd>LP ${fmt.pct(c.crystallization.lp_pct, 1)} / sponsor ${fmt.pct(1 - c.crystallization.lp_pct, 1)}</dd>` : ""}
-    <dt>Sponsor promote, ${HN - 1} yrs</dt><dd>${fmt.usd(c.gp_promote_total)}</dd>`;
+    <dt>${editLink("waterfall.pref_rate", `Sponsor promote, ${HN - 1} yrs`)}</dt><dd>${fmt.usd(c.gp_promote_total)}</dd>`;
   const s = results.sensitivity_by_case[k];
   const onGrid = inputs.sensitivity.exit_caps.some((x) => Math.abs(x - s.own_cap) < 1e-9);
   document.getElementById("heat").innerHTML = `<table class="heat"><thead><tr><th>Cap ↓ · NOI →</th>${s.noi_factors.map((f) => `<th class="n">${Math.round(f * 100)}%</th>`).join("")}</tr></thead><tbody>
@@ -2079,8 +2122,12 @@ function renderSaved() {
     el.append(nm, acts, meta);
     if (s.note) { const nt = document.createElement("span"); nt.className = "note"; nt.textContent = s.note; el.append(nt); }
     let issues = [];
-    try { issues = scenarioIssues(scenarioInputs(s, META.slug)); } catch (_) { issues = ["This scenario can't be read."]; }
-    issues.forEach((t) => { const f = document.createElement("span"); f.className = "flag"; f.textContent = "⚠ " + t; el.append(f); });
+    try { issues = vehicleIssueItems(scenarioInputs(s, META.slug), null); } catch (_) { issues = [{ msg: "This scenario can't be read." }]; }
+    issues.forEach((x) => {
+      const f = document.createElement(x.path ? "button" : "span"); f.className = "flag" + (x.path ? " go" : ""); f.textContent = "⚠ " + x.msg;
+      if (x.path) { f.type = "button"; f.title = "Load this scenario and go to the input"; f.onclick = () => { load.onclick(); goToInput(x.path); }; }
+      el.append(f);
+    });
     if (s.diff_json && (s.base_version !== DEFAULTS.version || s.base_as_of !== DEFAULTS.as_of)) {
       const f = document.createElement("span"); f.className = "flag info";
       f.textContent = `The deal file was updated since this was saved (${s.base_as_of || "earlier"} → ${DEFAULTS.as_of}). Inputs you didn't change follow the current file.`;
@@ -2517,30 +2564,37 @@ function caseInputs(c) {
   return out;
 }
 
-function vehicleIssues(inp, sm) {
-  const w = inp.warehouse, n = w.names, out = [];
+function vehicleIssues(inp, sm) { return vehicleIssueItems(inp, sm).map((x) => x.msg); }
+// Each issue with the input to fix ({msg, path}), so warnings can take you there.
+function vehicleIssueItems(inp, sm) {
+  const w = inp.warehouse, n = w.names, items = [];
+  const out = { push: (msg, path) => items.push({ msg, path: path || "warehouse" }), get length() { return items.length; } };
   const sM = w.people.reduce((a, x) => a + x.manager_share, 0), sC = w.people.reduce((a, x) => a + x.manager_capital, 0);
   const mcap = w.manager_commitment + (w.manager_reserve || 0), put = w.people.reduce((a, x) => a + x.amount, 0);
   const gap = inp.investor.check + w.reserve - w.manager_commitment - put;
-  if (Math.abs(sM - 1) > 1e-6) out.push(`People's shares of ${n.manager} fees & promote total ${(sM * 100).toFixed(1)}%, so ${((1 - sM) * 100).toFixed(1)}% of the manager's fees and promote goes to no one. Fix under Our vehicle > People.`);
-  if (Math.abs(sC - mcap) >= 0.5) out.push(`People put ${Math.round(sC).toLocaleString("en-US")} into ${n.manager} but its capital is ${Math.round(mcap).toLocaleString("en-US")}.`);
-  if (Math.abs(gap) >= 0.5) out.push(`${n.vehicle} is ${gap > 0 ? Math.round(gap).toLocaleString("en-US") + " short" : Math.round(-gap).toLocaleString("en-US") + " over"}: people's amounts plus the manager's commitment should equal the check plus the reserve.`);
+  if (Math.abs(sM - 1) > 1e-6) out.push(`People's shares of ${n.manager} fees & promote total ${(sM * 100).toFixed(1)}%, so ${((1 - sM) * 100).toFixed(1)}% of the manager's fees and promote goes to no one. Fix under Our vehicle > People.`, "warehouse.people.0.manager_share");
+  if (Math.abs(sC - mcap) >= 0.5) out.push(`People put ${Math.round(sC).toLocaleString("en-US")} into ${n.manager} but its capital is ${Math.round(mcap).toLocaleString("en-US")}.`, "warehouse.people.0.manager_capital");
+  if (Math.abs(gap) >= 0.5) out.push(`${n.vehicle} is ${gap > 0 ? Math.round(gap).toLocaleString("en-US") + " short" : Math.round(-gap).toLocaleString("en-US") + " over"}: people's amounts plus the manager's commitment should equal the check plus the reserve.`, "warehouse.people.0.amount");
   // references to people (by id; older saves by name) that point at nobody, from the engine's own check
-  E.referenceIssues(inp).forEach((t) => out.push(`${t.charAt(0).toUpperCase()}${t.slice(1)}${/is not a person$/.test(t) ? ` in ${n.manager}` : ""}.`));
+  E.referenceIssues(inp).forEach((t) => {
+    const m = t.match(/^partner loan (\d+): (lender|borrower)/) || t.match(/^buy-in (\d+): (buyer|seller)/) || t.match(/^vesting (\d+)/);
+    const path = !m ? "warehouse.people.0.name" : /^partner/.test(t) ? `warehouse.manager_loans.${m[1] - 1}.${m[2]}` : /^buy-in/.test(t) ? `warehouse.manager_transfers.${m[1] - 1}.${m[2]}` : `warehouse.manager_vesting.${m[1] - 1}.person`;
+    out.push(`${t.charAt(0).toUpperCase()}${t.slice(1)}${/is not a person$/.test(t) ? ` in ${n.manager}` : ""}.`, path);
+  });
   const findP = (r) => w.people.find((p) => p.id === r) || w.people.find((p) => (p.name || "").trim().toLowerCase() === (r || "").trim().toLowerCase());
   const nameOf = (r) => (findP(r) || {}).name || r;
   (w.manager_loans || []).forEach((x, q) => {
     if (!findP(x.lender) || !findP(x.borrower)) return;
-    if (findP(x.lender) === findP(x.borrower)) out.push(`Partner loan ${q + 1} needs a lender and a different borrower.`);
+    if (findP(x.lender) === findP(x.borrower)) out.push(`Partner loan ${q + 1} needs a lender and a different borrower.`, `warehouse.manager_loans.${q}.borrower`);
     else { const bp = findP(x.borrower);
-      if (x.amount > bp.manager_capital + 0.5) out.push(`Partner loan ${q + 1} lends ${bp.name} ${Math.round(x.amount).toLocaleString("en-US")} but they put only ${Math.round(bp.manager_capital).toLocaleString("en-US")} into ${n.manager}; the loan counts up to that.`); }
+      if (x.amount > bp.manager_capital + 0.5) out.push(`Partner loan ${q + 1} lends ${bp.name} ${Math.round(x.amount).toLocaleString("en-US")} but they put only ${Math.round(bp.manager_capital).toLocaleString("en-US")} into ${n.manager}; the loan counts up to that.`, `warehouse.manager_loans.${q}.amount`); }
   });
   (w.manager_vesting || []).forEach((x, q) => {
-    if (findP(x.person) && x.leaves && x.leaves <= w.close_date) out.push(`Vesting ${q + 1}: ${nameOf(x.person)} leaves on or before the close.`);
+    if (findP(x.person) && x.leaves && x.leaves <= w.close_date) out.push(`Vesting ${q + 1}: ${nameOf(x.person)} leaves on or before the close.`, `warehouse.manager_vesting.${q}.leaves`);
   });
-  if ((w.manager_waterfall || {}).enabled && mcap <= 0) out.push(`${n.manager} has no capital, so "capital back first" has nothing to pay back.`);
-  if (sm && Math.abs(sm.check) >= 0.05 && !out.length) out.push(`${n.vehicle}'s cash doesn't reconcile by ${Math.round(sm.check).toLocaleString("en-US")}.`);
-  return out;
+  if ((w.manager_waterfall || {}).enabled && mcap <= 0) out.push(`${n.manager} has no capital, so "capital back first" has nothing to pay back.`, "warehouse.manager_waterfall.enabled");
+  if (sm && Math.abs(sm.check) >= 0.05 && !out.length) out.push(`${n.vehicle}'s cash doesn't reconcile by ${Math.round(sm.check).toLocaleString("en-US")}.`, "warehouse");
+  return items;
 }
 const ASK_TOOLS = [
   { name: "list_scenarios",
@@ -2753,6 +2807,7 @@ function askContext() {
     "- To build or rebuild Custom from another case, use custom_from (then changes on cases.custom.*). For break-evens use solve_for; for sensitivity tables use sweep; for year-by-year rows of a what-if, get_case_years with changes.",
     "- A below-NOI income stream (e.g. a TIF rebate) has factor (share paid) and delay_years inputs; use them rather than editing its amounts list.",
     "- If a tool reports issues or vehicle_issues (inputs that don't add up), tell the viewer first, in plain words, with the fix.",
+    "- When you name an input the viewer could change, link it so they can jump to it: [exit cap](input:cases.downside.exit_cap) for the deal on screen, or [loan amount](input:the-bend/deal.loan_amount) for another deal. Use exact paths from list_inputs or your tool calls (people by id, e.g. warehouse.people[levi].manager_capital). Link only real inputs, never results like IRR.",
     "- To fix or adjust a saved scenario, use propose_scenario with scenario and replaces set to its name; the viewer clicks Update. Never claim a scenario was changed.",
     "- Saved scenarios: list_scenarios shows them; pass a scenario's name as `scenario` to any tool to work from it (what-ifs then build on it). get_vehicle covers our SPV: each person's cash, profit and IRR, buyers, fees and promote.",
     "- For questions about who in our vehicle gets what, measure the person: sweep / solve_for take metric person_profit, person_irr or person_from_manager with `person`; run_what_if and propose_scenario return each person's results when you change warehouse.*.",
@@ -2767,7 +2822,15 @@ function askContext() {
 }
 
 // ---- small, safe Markdown: paragraphs, bullets, numbered lists, ####/### headings, **bold**, `code`, pipe tables
-function mdInline(t) { return esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>"); }
+function mdInline(t) {
+  return esc(t)
+    // an input Ask names: [label](input:path) for the deal on screen, or [label](input:slug/path); unknown paths stay text
+    .replace(/\[([^\]]+)\]\(input:(?:([a-z0-9-]+)\/)?([^)\s]+)\)/g, (m0, label, slug, path) => {
+      const sl = slug && DEALS[slug] ? slug : META.slug;
+      return get(slug ? DEALS[sl] : inputs, path) === undefined && get(DEALS[sl], path) === undefined ? label : editLink(path, label, sl !== META.slug ? sl : null);
+    })
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+}
 function md(text) {
   const lines = text.replace(/\r/g, "").split("\n"), out = [];
   let i = 0;
@@ -2925,6 +2988,19 @@ function showWhatIfs(a) {
     const row = document.createElement("div");
     row.className = "ask-wi";
     row.innerHTML = `<span class="ask-wi-name">${esc(DEALS[w.slug].meta.name)}${w.scenario ? ` · on “${esc(w.scenario)}”` : ""} · ${esc(w.label)}</span>`;
+    // the inputs this what-if changes: each opens the what-if on the dashboard and goes to that input
+    const paths = Object.keys(w.changes || {}).slice(0, 6);
+    if (paths.length) {
+      const ins = document.createElement("span"); ins.className = "ask-wi-inputs muted small"; ins.append("Changes: ");
+      paths.forEach((pp, i) => {
+        const b = document.createElement("button"); b.type = "button"; b.className = "edit-link"; b.title = "Open this what-if and go to the input";
+        b.innerHTML = `${esc(pp)}<span class="pencil" aria-hidden="true">✎</span>`;
+        b.addEventListener("click", () => { openWhatIf(w); goToInput(pp, w.slug); });
+        if (i) ins.append(", ");
+        ins.append(b);
+      });
+      row.append(ins);
+    }
     const open = document.createElement("button"); open.type = "button"; open.className = "link"; open.textContent = "Open on dashboard";
     open.addEventListener("click", () => openWhatIf(w));
     const save = document.createElement("button"); save.type = "button"; save.className = "link"; save.textContent = "Save as scenario";
