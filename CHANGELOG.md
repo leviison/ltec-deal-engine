@@ -5,6 +5,18 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.5.0 — 2026-11-07
+
+- Ledger (#21): `warehouse_case` returns each person's dated entries by account (the vehicle's units, the manager,
+  each partner loan, buy-ins): contributions, distributions, unit sales and purchases, loan advances, repayments and
+  settlement at the end, buy-in payments; and a schedule per partner loan (interest, payment, balance by date). Both
+  engines, identical; on every date a person's entries add up exactly to their cash flows (tested on every deal,
+  variant and case, and 120 random set-ups).
+- Cash by person: a **Statement** view (every payment in words, by period or each date, with a running total and
+  each partner loan's schedule) and **Balances as of** a date (put in, received, who owes whom on the loans).
+- Ask: `get_statement` (a person's ledger, loan schedules and balances as of a date).
+- Warning when someone warehouses units with no sale set.
+
 ## 2.4.0 — 2026-11-06
 
 - Click to edit (#20): what one input drives links to that input, with a pencil on hover. Vehicle warnings (in a box

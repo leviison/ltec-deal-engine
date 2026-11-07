@@ -693,7 +693,9 @@
     ev.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
     const splitTot = { enabled: splitOn, to_capital: 0, to_promote: 0, capital: mcap };
     const loansOut = [], lent = people.map(() => 0);
-    let mTr = null, mDist = null;
+    const moves = [], schedules = [];  // partner-loan cash between people (ledger) and each loan's schedule
+    const evIso = (k, j) => (k === 0 ? trs[j].date : dates[j]);
+    let mTr = null, mDist = null, mTr0 = null, mDist0 = null;
     if (custom) {
       mTr = trs.map((_, j) => people.map((_, i) => ownAt(tDay[j])[0][i] * mgrTr[j]));
       mDist = dDays.map((dd, t) => people.map((_, i) => ownAt(dd)[0][i] * capDist[t] + ownAt(dd)[1][i] * proDist[t]));
@@ -708,6 +710,8 @@
           splitTot.to_promote += toP;
         });
       }
+      mTr0 = mTr.map((r) => r.slice());
+      mDist0 = mDist.map((r) => r.slice());
       // Partner loans (see core.py)
       mLoans.forEach((ln) => {
         const lo = nameKey(ln.lender) in pidx ? pidx[nameKey(ln.lender)] : null;
@@ -716,16 +720,27 @@
         const aL = bo !== null ? Math.min(ln.amount, people[bo].manager_capital) : 0;
         const rec = { lender: lo !== null ? people[lo].name : ln.lender, borrower: bo !== null ? people[bo].name : ln.borrower, amount: aL, repaid: 0, interest: 0, owed_end: 0, settled: "invalid" };
         loansOut.push(rec);
+        const sched = [];
+        schedules.push(sched);
         if (lo === null || bo === null || lo === bo || aL <= 0) return;
+        const qL = loansOut.length - 1;
         lent[lo] += aL;
         lent[bo] -= aL;
+        moves.push([-1, -1, lo, bo, aL, qL, "loan_advance"]);
+        sched.push({ date: close, kind: "advance", interest: 0, paid: 0, balance: aL });
         const simpleL = (ln.rate_type || "simple") === "simple";
         let prin = aL, acc = 0, bal = aL, prev = closeDay;
         ev.forEach(([d, k, j]) => {
           const a = (d - prev) / 365;
           prev = d;
-          if (simpleL) acc += prin * ln.rate * a;
-          else bal *= Math.pow(1 + ln.rate, a);
+          let accrued;
+          if (simpleL) {
+            accrued = prin * ln.rate * a;
+            acc += accrued;
+          } else {
+            accrued = bal * (Math.pow(1 + ln.rate, a) - 1);
+            bal *= Math.pow(1 + ln.rate, a);
+          }
           const row = k === 0 ? mTr[j] : mDist[j];
           const pay = Math.min(Math.max(0, row[bo]), simpleL ? prin + acc : bal);
           row[bo] -= pay;
@@ -736,6 +751,8 @@
             acc -= ti;
             prin -= pay - ti;
           } else bal -= pay;
+          if (pay > 0) moves.push([k, j, lo, bo, pay, qL, "loan_repayment"]);
+          sched.push({ date: evIso(k, j), kind: "period", interest: accrued, paid: pay, balance: simpleL ? prin + acc : bal });
         });
         const owed = Math.max(0, simpleL ? prin + acc : bal);
         rec.interest = rec.repaid + owed - aL;
@@ -746,13 +763,42 @@
           row[bo] -= owed;
           row[lo] += owed;
           rec.settled = "paid_at_end";
-        } else rec.settled = owed <= 1e-9 ? "repaid" : "forgiven";
+          moves.push([k, j, lo, bo, owed, qL, "loan_settlement"]);
+          sched.push({ date: evIso(k, j), kind: "paid_at_end", interest: 0, paid: owed, balance: 0 });
+        } else {
+          rec.settled = owed <= 1e-9 ? "repaid" : "forgiven";
+          if (owed > 1e-9 && ev.length) {
+            const [, k, j] = ev[ev.length - 1];
+            sched.push({ date: evIso(k, j), kind: "forgiven", interest: 0, paid: 0, balance: owed });
+          }
+        }
       });
     }
 
     // ---- people
     const allDates = [close].concat(trs.map((tr) => tr.date), xfers.map((x) => x.date), dates);
+    // the manager's cash to person i at an event (k 0 = a sale, 1 = a distribution), before partner loans
+    const mgrPre = (k, j, i) => {
+      if (custom) return (k === 0 ? mTr0[j] : mDist0[j])[i];
+      if (k === 0) return ownAt(tDay[j])[0][i] * mgrTr[j];
+      const [oc, op] = ownAt(dDays[j]);
+      return oc[i] * capDist[j] + op[i] * proDist[j];
+    };
     const outPeople = people.map((p, i) => {
+      // Ledger (#21, see core.py): every part of this person's cash, dated, by account
+      const led = [];
+      const add = (d, account, kind, amount, counterparty = null, units = null, price = null) => {
+        if (amount !== 0) led.push({ date: d, account, kind, amount, counterparty, units, price });
+      };
+      const addMoves = (k, j, d) => moves.forEach(([mk, mj, lo_, bo_, amt_, q_, kind_]) => {
+        if (mk === k && mj === j) {
+          if (i === bo_) add(d, `loan:${q_}`, kind_, kind_ === "loan_advance" ? amt_ : -amt_, people[lo_].name);
+          if (i === lo_) add(d, `loan:${q_}`, kind_, kind_ === "loan_advance" ? -amt_ : amt_, people[bo_].name);
+        }
+      });
+      if (P[i]) add(close, "vehicle", role[i] === "loan" ? "warehouse_loan" : "units_bought", -P[i]);
+      if (p.manager_capital) add(close, "manager", "manager_capital", -p.manager_capital);
+      addMoves(-1, -1, close);
       let c0 = -(P[i] + p.manager_capital);
       if (custom) c0 -= lent[i];
       const mine = buyerPerson.map((bp) => bp === i);
@@ -764,7 +810,15 @@
           if (j === jLast) v += unsold * P[i] * p.loan_rate * lastDays / 365;
         } else if (role[i] === "warehouse") v = shares[j] * W[i] * prices[j];
         else v = 0;
-        if (mine[j]) v -= unitsSold[j] * prices[j];
+        const bname = buyerPerson[j] !== null ? people[buyerPerson[j]].name : buyerNames[j];
+        if (role[i] === "loan") add(trs[j].date, "vehicle", "warehouse_loan_repaid", v);
+        else if (role[i] === "warehouse") add(trs[j].date, "vehicle", "unit_sale", v, bname, shares[j] * W[i], prices[j]);
+        if (mine[j]) {
+          v -= unitsSold[j] * prices[j];
+          add(trs[j].date, "vehicle", "unit_purchase", -unitsSold[j] * prices[j], null, unitsSold[j], prices[j]);
+        }
+        add(trs[j].date, "manager", "manager_cash", mgrPre(0, j, i));
+        addMoves(0, j, trs[j].date);
         if (custom) { fromMgr += mTr[j][i]; return v + mTr[j][i]; }
         fromMgr += ownAt(tDay[j])[0][i] * mgrTr[j];
         return v + ownAt(tDay[j])[0][i] * mgrTr[j];
@@ -775,14 +829,23 @@
         else if (role[i] === "warehouse") v = puW[t] * W[i] * (1 - soldBefore[t]);
         else v = ps * W[i];
         const [oc, op] = ownAt(dDays[t]);
+        add(dates[t], "vehicle", "distribution", v);
+        add(dates[t], "vehicle", "distribution_bought_units", boughtCash(mine, t));
+        add(dates[t], "manager", "manager_cash", mgrPre(1, t, i));
+        addMoves(1, t, dates[t]);
         if (custom) { fromMgr += mDist[t][i]; return v + boughtCash(mine, t) + mDist[t][i]; }
         fromMgr += oc[i] * capDist[t] + op[i] * proDist[t];
         return v + boughtCash(mine, t) + oc[i] * capDist[t] + op[i] * proDist[t];
       });
       const xFlows = xfers.map((x) => (x.seller === i ? x.paid : 0) - (x.buyer === i ? x.paid : 0));
+      xfers.forEach((x, q) => {
+        if (x.seller === i) add(x.date, `buyin:${q}`, "buyin_sale", x.paid, x.buyer !== null ? people[x.buyer].name : null);
+        if (x.buyer === i) add(x.date, `buyin:${q}`, "buyin_purchase", -x.paid, x.seller !== null ? people[x.seller].name : null);
+      });
+      led.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
       const flows = [c0].concat(trFlows, xFlows, dist);
       const cashIn = -c0, atSales = sum(trFlows), atBuyins = sum(xFlows), atRisk = cashIn - atSales - atBuyins;
-      return { name: p.name, flows,
+      return { name: p.name, flows, ledger: led,
         summary: { cash_in: cashIn, returned_at_selldown: atSales, at_buyins: atBuyins,
                    at_risk: atRisk, manager_share_end: pro[i], manager_capital_share_end: cap[i], profit: sum(flows),
                    irr: xirr(flows, allDates), multiple_at_risk: atRisk > 0 ? sum(dist) / atRisk : null,
@@ -822,6 +885,7 @@
         buyer: x.buyer !== null ? people[x.buyer].name : null, seller: x.seller !== null ? people[x.seller].name : null,
         interest: x.interest, share: x.share, paid: x.paid, price_100: x.price_100 })),
       manager_split: splitTot, manager_loans: loansOut, manager_departures: departures,
+      loan_schedules: schedules,
       summary: {
         people: outPeople.map((x) => x.summary),
         buyers: groups.map((g) => g.summary),

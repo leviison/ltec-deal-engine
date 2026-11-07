@@ -51,6 +51,11 @@
   warnings come from `vehicleIssueItems` ({msg, path}); Ask writes `[label](input:path)`. Link inputs, never results.
   tests/web/edit_links.test.js checks every input of every deal file reaches a field, or is listed in NOT_SHOWN /
   CARD_ONLY with a reason; a new input must get a field, a `railHome`, or a listed reason.
+- Ledger (#21): each vehicle person's `ledger` (dated entries by account and kind; positive = cash to them) and the
+  vehicle's `loan_schedules` come from `warehouse_case` in both engines. On every date a person's entries must add up to
+  their flows (tests/test_ledger.py, and the randomized parity test). New cash between people (a new feature) must
+  write ledger entries; the page describes kinds in `ledgerLabel`, Ask reads them with `get_statement`. Tracking
+  actual payments is issue #22 (not built).
 - New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from
   the sponsor case; defaults in `engine/standard_cases.json`), then tune them to the deal's diligence and source them.
 - Tests: `python -m pytest` runs engine, deal-file, tie-out AND page tests (`tests/web/*.test.js` in headless Chromium,

@@ -986,6 +986,8 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
     ev = sorted([(t_dates[j], 0, j) for j in range(len(trs))] + [(dates[t], 1, t) for t in range(N)])
     split_tot = {"enabled": split_on, "to_capital": 0.0, "to_promote": 0.0, "capital": mcap}
     loans_out, lent = [], [0.0] * n_p
+    moves, schedules = [], []  # partner-loan cash between people (for the ledger) and each loan's schedule
+    m_tr0 = m_dist0 = None
     if custom:
         m_tr = [[own_at(t_dates[j])[0][i] * mgr_tr[j] for i in range(n_p)] for j in range(len(trs))]
         m_dist = [[own_at(dates[t])[0][i] * cap_dist[t] + own_at(dates[t])[1][i] * pro_dist[t] for i in range(n_p)]
@@ -1004,6 +1006,8 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                     m_dist[j] = row
                 split_tot["to_capital"] += to_c
                 split_tot["to_promote"] += to_p
+        m_tr0 = [r[:] for r in m_tr]
+        m_dist0 = [r[:] for r in m_dist]
         # Partner loans: the lender pays part of the borrower's capital at close; the borrower's manager cash repays
         # it first (interest simple or compound). Left owing at the end: the borrower pays it (recourse) or it is
         # forgiven.
@@ -1015,18 +1019,25 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                    "borrower": people[bo]["name"] if bo is not None else ln["borrower"], "amount": a_l, "repaid": 0.0,
                    "interest": 0.0, "owed_end": 0.0, "settled": "invalid"}
             loans_out.append(rec)
+            sched = []
+            schedules.append(sched)
             if lo is None or bo is None or lo == bo or a_l <= 0:
                 continue
+            q_l = len(loans_out) - 1
             lent[lo] += a_l
             lent[bo] -= a_l
+            moves.append((-1, -1, lo, bo, a_l, q_l, "loan_advance"))
+            sched.append({"date": close.isoformat(), "kind": "advance", "interest": 0.0, "paid": 0.0, "balance": a_l})
             simple_l = ln.get("rate_type", "simple") == "simple"
             prin, acc, bal, prev = a_l, 0.0, a_l, close
             for d, k, j in ev:
                 a = (d - prev).days / 365
                 prev = d
                 if simple_l:
-                    acc += prin * ln["rate"] * a
+                    accrued = prin * ln["rate"] * a
+                    acc += accrued
                 else:
+                    accrued = bal * ((1 + ln["rate"]) ** a - 1)
                     bal *= (1 + ln["rate"]) ** a
                 row = m_tr[j] if k == 0 else m_dist[j]
                 pay = min(max(0.0, row[bo]), prin + acc if simple_l else bal)
@@ -1039,6 +1050,10 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                     prin -= pay - ti
                 else:
                     bal -= pay
+                if pay > 0:
+                    moves.append((k, j, lo, bo, pay, q_l, "loan_repayment"))
+                sched.append({"date": d.isoformat(), "kind": "period", "interest": accrued, "paid": pay,
+                              "balance": prin + acc if simple_l else bal})
             owed = max(0.0, prin + acc if simple_l else bal)
             rec["interest"] = rec["repaid"] + owed - a_l
             rec["owed_end"] = owed
@@ -1048,13 +1063,50 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                 row[bo] -= owed
                 row[lo] += owed
                 rec["settled"] = "paid_at_end"
+                moves.append((k, j, lo, bo, owed, q_l, "loan_settlement"))
+                sched.append({"date": d.isoformat(), "kind": "paid_at_end", "interest": 0.0, "paid": owed, "balance": 0.0})
             else:
                 rec["settled"] = "repaid" if owed <= 1e-9 else "forgiven"
+                if owed > 1e-9 and ev:
+                    sched.append({"date": ev[-1][0].isoformat(), "kind": "forgiven", "interest": 0.0, "paid": 0.0,
+                                  "balance": owed})
 
     # ---- people
     all_dates = [close] + t_dates + [x["date"] for x in xfers] + dates
     out_people = []
+
+    def mgr_pre(k, j, i):
+        """The manager's cash to person i at an event (k 0 = a sale, 1 = a distribution), before partner loans."""
+        if custom:
+            return (m_tr0[j] if k == 0 else m_dist0[j])[i]
+        if k == 0:
+            return own_at(t_dates[j])[0][i] * mgr_tr[j]
+        oc, op = own_at(dates[j])
+        return oc[i] * cap_dist[j] + op[i] * pro_dist[j]
+
     for i, p in enumerate(people):
+        # Ledger (#21): every part of this person's cash, dated, by account (the vehicle's units, the manager, a partner
+        # loan, a buy-in). Positive = cash to the person. On every date the parts add up to the person's flows.
+        led = []
+
+        def add(d, account, kind, amount, counterparty=None, units=None, price=None):
+            if amount != 0:
+                led.append({"date": d.isoformat(), "account": account, "kind": kind, "amount": amount,
+                            "counterparty": counterparty, "units": units, "price": price})
+
+        def add_moves(k, j, d):
+            for (mk, mj, lo_, bo_, amt_, q_, kind_) in moves:
+                if mk == k and mj == j:
+                    if i == bo_:
+                        add(d, f"loan:{q_}", kind_, amt_ if kind_ == "loan_advance" else -amt_, people[lo_]["name"])
+                    if i == lo_:
+                        add(d, f"loan:{q_}", kind_, -amt_ if kind_ == "loan_advance" else amt_, people[bo_]["name"])
+
+        if P[i]:
+            add(close, "vehicle", "warehouse_loan" if role[i] == "loan" else "units_bought", -P[i])
+        if p["manager_capital"]:
+            add(close, "manager", "manager_capital", -p["manager_capital"])
+        add_moves(-1, -1, close)
         c0 = -(P[i] + p["manager_capital"])
         if custom:
             c0 -= lent[i]
@@ -1070,8 +1122,16 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                 v = shares[j] * W[i] * prices[j]
             else:
                 v = 0.0
+            bname = people[buyer_person[j]]["name"] if buyer_person[j] is not None else buyer_names[j]
+            if role[i] == "loan":
+                add(t_dates[j], "vehicle", "warehouse_loan_repaid", v)
+            elif role[i] == "warehouse":
+                add(t_dates[j], "vehicle", "unit_sale", v, bname, shares[j] * W[i], prices[j])
             if mine[j]:
                 v -= units_sold[j] * prices[j]
+                add(t_dates[j], "vehicle", "unit_purchase", -units_sold[j] * prices[j], None, units_sold[j], prices[j])
+            add(t_dates[j], "manager", "manager_cash", mgr_pre(0, j, i))
+            add_moves(0, j, t_dates[j])
             if custom:
                 tr_flows.append(v + m_tr[j][i])
                 from_mgr += m_tr[j][i]
@@ -1087,6 +1147,10 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
             else:
                 v = pu_s[t] * W[i]
             oc, op = own_at(dates[t])
+            add(dates[t], "vehicle", "distribution", v)
+            add(dates[t], "vehicle", "distribution_bought_units", bought_cash(mine, t))
+            add(dates[t], "manager", "manager_cash", mgr_pre(1, t, i))
+            add_moves(1, t, dates[t])
             if custom:
                 dist.append(v + bought_cash(mine, t) + m_dist[t][i])
                 from_mgr += m_dist[t][i]
@@ -1094,11 +1158,17 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                 dist.append(v + bought_cash(mine, t) + oc[i] * cap_dist[t] + op[i] * pro_dist[t])
                 from_mgr += oc[i] * cap_dist[t] + op[i] * pro_dist[t]
         x_flows = [(x["paid"] if x["seller"] == i else 0.0) - (x["paid"] if x["buyer"] == i else 0.0) for x in xfers]
+        for q, x in enumerate(xfers):
+            if x["seller"] == i:
+                add(x["date"], f"buyin:{q}", "buyin_sale", x["paid"], people[x["buyer"]]["name"] if x["buyer"] is not None else None)
+            if x["buyer"] == i:
+                add(x["date"], f"buyin:{q}", "buyin_purchase", -x["paid"], people[x["seller"]]["name"] if x["seller"] is not None else None)
+        led.sort(key=lambda e: e["date"])
         flows = [c0] + tr_flows + x_flows + dist
         cash_in, at_sales, at_buyins = -c0, sum(tr_flows), sum(x_flows)
         at_risk = cash_in - at_sales - at_buyins
         out_people.append({
-            "name": p["name"], "flows": flows,
+            "name": p["name"], "flows": flows, "ledger": led,
             "summary": {"cash_in": cash_in, "returned_at_selldown": at_sales, "at_buyins": at_buyins,
                         "at_risk": at_risk, "manager_share_end": pro[i], "manager_capital_share_end": cap[i],
                         "profit": sum(flows), "irr": xirr(flows, all_dates),
@@ -1146,6 +1216,7 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                                "interest": x["interest"], "share": x["share"], "paid": x["paid"],
                                "price_100": x["price_100"]} for x in xfers],
         "manager_split": split_tot, "manager_loans": loans_out, "manager_departures": departures,
+        "loan_schedules": schedules,
         "summary": {
             "people": [x["summary"] for x in out_people],
             "buyers": [g["summary"] for g in groups],
