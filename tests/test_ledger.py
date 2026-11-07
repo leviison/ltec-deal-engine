@@ -42,7 +42,7 @@ def check_ledger(r):
             continue
         assert sch[0]["kind"] == "advance" and sch[0]["balance"] == pytest.approx(ln["amount"])
         paid = sum(x["paid"] for x in sch)
-        assert paid == pytest.approx(ln["repaid"] + (ln["owed_end"] if ln["settled"] == "paid_at_end" else 0), abs=1e-6)
+        assert paid == pytest.approx(ln["repaid"] + (ln["owed_end"] if ln["settled"] in ("paid_at_end", "paid_at_maturity", "paid_on_leaving") else 0), abs=1e-6)
         assert sum(x["interest"] for x in sch) == pytest.approx(ln["interest"], abs=1e-6)
         assert sch[-1]["balance"] == pytest.approx(0 if ln["settled"] != "forgiven" else ln["owed_end"], abs=1e-6)
 

@@ -1,5 +1,5 @@
 {
-  "schema_version": 7,
+  "schema_version": 8,
   "meta": {
     "slug": "siena-villas",
     "name": "Siena Villas",
@@ -187,6 +187,55 @@
               "cliff_years": 1,
               "leaves": "2028-11-05",
               "terms": "keep_vested"
+            }
+          ]
+        }
+      },
+      {
+        "name": "{manager} F · {levi}'s loan, interest only, balloon at exit",
+        "note": "As C, but {thaxter}'s {manager} cash pays only the 8% interest as it comes in; the $175,000 is repaid at the end (the balloon). {thaxter} keeps the rest of his {manager} cash along the way.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 175000.0,
+          "warehouse.people[levi].manager_share": 0.5,
+          "warehouse.people[thaxter].manager_capital": 175000.0,
+          "warehouse.people[thaxter].manager_share": 0.5,
+          "warehouse.manager_loans": [
+            {
+              "lender": "levi",
+              "borrower": "thaxter",
+              "amount": 175000.0,
+              "rate": 0.08,
+              "rate_type": "simple",
+              "recourse": true,
+              "repayment": "interest_only",
+              "source": "manager_cash",
+              "maturity": "",
+              "on_leave": "due",
+              "preset": "interest_only_balloon"
+            }
+          ]
+        }
+      },
+      {
+        "name": "{manager} G · {levi}'s loan forgiven if {thaxter} stays 3 years",
+        "note": "As C, but nothing is repaid: the loan is forgiven on Nov 5, 2029 if {thaxter} is still a partner; if he leaves first, the balance is due.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 175000.0,
+          "warehouse.people[levi].manager_share": 0.5,
+          "warehouse.people[thaxter].manager_capital": 175000.0,
+          "warehouse.people[thaxter].manager_share": 0.5,
+          "warehouse.manager_loans": [
+            {
+              "lender": "levi",
+              "borrower": "thaxter",
+              "amount": 175000.0,
+              "rate": 0.08,
+              "rate_type": "simple",
+              "recourse": false,
+              "repayment": "none",
+              "maturity": "2029-11-05",
+              "on_leave": "due",
+              "preset": "forgivable"
             }
           ]
         }

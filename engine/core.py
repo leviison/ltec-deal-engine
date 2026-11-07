@@ -731,6 +731,26 @@ def _key(name: str) -> str:
     return name.strip().lower()
 
 
+LOAN_TERM_DEFAULTS = {"repayment": "sweep", "sweep_pct": 1.0, "term_years": 5.0, "source": "manager_cash",
+                      "maturity": "", "on_leave": "continues"}
+
+
+def loan_terms_of(ln: dict) -> dict:
+    """A partner loan's repayment terms (#24), with the defaults that reproduce the original rule filled in."""
+    return {k: (ln.get(k) if ln.get(k) is not None else v) for k, v in LOAN_TERM_DEFAULTS.items()}
+
+
+def apply_loan_preset(ln: dict, preset: str, lib: dict) -> dict:
+    """A copy of loan `ln` with a library preset's terms (engine/loan_terms.json); who, amount and rate are kept."""
+    out = dict(ln)
+    for k in LOAN_TERM_DEFAULTS:
+        out.pop(k, None)
+    out.update(lib["presets"][preset]["terms"])
+    out["preset"] = preset
+    return out
+
+
+
 def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dates=None, yfs=None) -> dict:
     """Vehicle results for one Siena case. siena_lp_dists = Siena cash the vehicle collects for each of its
     payment dates (default: the five close anniversaries); yfs = each period's length in years.
@@ -1028,33 +1048,80 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
             lent[bo] -= a_l
             moves.append((-1, -1, lo, bo, a_l, q_l, "loan_advance"))
             sched.append({"date": close.isoformat(), "kind": "advance", "interest": 0.0, "paid": 0.0, "balance": a_l})
+            # Terms (#24): how and when the loan is repaid. Defaults = the original rule (every dollar of the
+            # borrower's manager cash repays it; what's left at the end is paid (recourse) or forgiven).
+            tm = loan_terms_of(ln)
+            rec["terms"] = tm
             simple_l = ln.get("rate_type", "simple") == "simple"
-            prin, acc, bal, prev = a_l, 0.0, a_l, close
-            for d, k, j in ev:
+            r_l, rp = ln["rate"], tm["repayment"]
+            mat = date.fromisoformat(tm["maturity"]) if tm["maturity"] else None
+            leave = None
+            if tm["on_leave"] != "continues":
+                ls = [date.fromisoformat(v["leaves"]) for v in vest_in
+                      if v.get("leaves") and pidx.get(_key(v["person"])) == bo]
+                leave = min(ls) if ls else None
+            prin, acc, prev, done = a_l, 0.0, close, False
+            for e, (d, k, j) in enumerate(ev):
                 a = (d - prev).days / 365
                 prev = d
-                if simple_l:
-                    accrued = prin * ln["rate"] * a
-                    acc += accrued
-                else:
-                    accrued = bal * ((1 + ln["rate"]) ** a - 1)
-                    bal *= (1 + ln["rate"]) ** a
+                accrued = prin * r_l * a if simple_l else (prin + acc) * ((1 + r_l) ** a - 1)
+                acc += accrued
                 row = m_tr[j] if k == 0 else m_dist[j]
-                pay = min(max(0.0, row[bo]), prin + acc if simple_l else bal)
+                cash = max(0.0, row[bo])
+                owed = prin + acc
+                ends = "leaving" if leave is not None and d >= leave else (
+                    "maturity" if mat is not None and d >= mat else None)
+                if ends == "leaving":
+                    pay = 0.0 if tm["on_leave"] == "forgiven" else min(owed, cash)
+                elif ends == "maturity":
+                    pay = 0.0 if rp == "none" else min(owed, cash)
+                elif rp == "sweep":
+                    pay = min(tm["sweep_pct"] * cash, owed)
+                else:
+                    if rp == "interest_only":
+                        due = acc
+                    elif rp == "equal_principal":
+                        left = a_l * max(0.0, 1 - (d - close).days / 365 / tm["term_years"]) if tm["term_years"] > 0 else 0.0
+                        due = acc + max(0.0, prin - left)
+                    elif rp == "at_exit":
+                        due = owed if e == len(ev) - 1 else 0.0
+                    else:
+                        due = 0.0
+                    pay = min(due, owed) if tm["source"] == "borrower" else min(due, cash, owed)
+                pay = max(0.0, pay)
                 row[bo] -= pay
                 row[lo] += pay
                 rec["repaid"] += pay
-                if simple_l:
-                    ti = min(pay, acc)
-                    acc -= ti
-                    prin -= pay - ti
-                else:
-                    bal -= pay
+                ti = min(pay, acc)
+                acc -= ti
+                prin -= pay - ti
                 if pay > 0:
                     moves.append((k, j, lo, bo, pay, q_l, "loan_repayment"))
                 sched.append({"date": d.isoformat(), "kind": "period", "interest": accrued, "paid": pay,
-                              "balance": prin + acc if simple_l else bal})
-            owed = max(0.0, prin + acc if simple_l else bal)
+                              "balance": prin + acc})
+                if ends:
+                    left_ = max(0.0, prin + acc)
+                    rec["interest"] = rec["repaid"] + left_ - a_l
+                    rec["owed_end"] = left_
+                    rec["due_date"] = d.isoformat()
+                    if left_ <= 1e-9:
+                        rec["settled"] = "repaid"
+                    elif ends == "leaving" and tm["on_leave"] == "forgiven" or ends == "maturity" and not ln.get("recourse", True):
+                        rec["settled"] = "forgiven"
+                        sched.append({"date": d.isoformat(), "kind": "forgiven", "interest": 0.0, "paid": 0.0,
+                                      "balance": left_})
+                    else:
+                        row[bo] -= left_
+                        row[lo] += left_
+                        rec["settled"] = "paid_on_leaving" if ends == "leaving" else "paid_at_maturity"
+                        moves.append((k, j, lo, bo, left_, q_l, "loan_settlement"))
+                        sched.append({"date": d.isoformat(), "kind": rec["settled"], "interest": 0.0, "paid": left_,
+                                      "balance": 0.0})
+                    done = True
+                    break
+            if done:
+                continue
+            owed = max(0.0, prin + acc)
             rec["interest"] = rec["repaid"] + owed - a_l
             rec["owed_end"] = owed
             if owed > 1e-9 and ln.get("recourse", True) and ev:
@@ -1293,7 +1360,7 @@ def apply_structure(inp: dict, key: str, lib: dict | None = None, partners: list
     w = out["warehouse"]
     w.update({
         "structure": key,
-        "names": {"vehicle": t["vehicle_name"].replace("{deal}", deal_name), "manager": w0["names"]["manager"],
+        "names": {"vehicle": t["vehicle_name"].replace("{deal}", deal_name).replace("{manager}", w0["names"]["manager"]), "manager": w0["names"]["manager"],
                   "buyers": w0["names"]["buyers"]},
         "unit_price": 1000.0, "reserve": reserve, "manager_commitment": mc, "manager_reserve": 0.0,
         "admin_cost_per_year": t["admin_cost_per_year"], "admin_cost_method": "fixed",

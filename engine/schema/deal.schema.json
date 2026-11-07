@@ -21,7 +21,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 7
+      "const": 8
     },
     "meta": {
       "type": "object",
@@ -718,7 +718,7 @@
         "manager_loans": {
           "type": "array",
           "maxItems": 3,
-          "description": "A partner lends another part of their manager capital; the borrower's manager cash repays it first.",
+          "description": "A partner lends another part of their manager capital. Terms (#24, engine/loan_terms.json) say how it's repaid; left out = the original rule (every dollar of the borrower's manager cash repays it).",
           "items": {
             "type": "object",
             "required": [
@@ -752,6 +752,45 @@
               },
               "recourse": {
                 "type": "boolean"
+              },
+              "preset": {
+                "type": "string",
+                "description": "The engine/loan_terms.json preset the terms came from (a label; the parts below are what count)."
+              },
+              "repayment": {
+                "enum": [
+                  "sweep",
+                  "interest_only",
+                  "equal_principal",
+                  "at_exit",
+                  "none"
+                ]
+              },
+              "sweep_pct": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "term_years": {
+                "type": "number",
+                "minimum": 0
+              },
+              "source": {
+                "enum": [
+                  "manager_cash",
+                  "borrower"
+                ]
+              },
+              "maturity": {
+                "type": "string",
+                "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$"
+              },
+              "on_leave": {
+                "enum": [
+                  "continues",
+                  "due",
+                  "forgiven"
+                ]
               }
             }
           }

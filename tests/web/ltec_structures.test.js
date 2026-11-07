@@ -34,6 +34,8 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
     if (/leaves/.test(v.name)) check(/leaves 2028-11-05/.test(ui.table) && /keeps 50%/.test(ui.sums), `${v.name}: departure not shown (${ui.sums})`);
   }
   // edit through the panel: open the group, add a step to the LTEC waterfall, add a partner loan and a vesting
+  // (from variant E: LTEC's waterfall on, one vesting, no loans)
+  await p.evaluate(() => [...document.querySelectorAll('#sec-variants [data-v]')].find((x) => x.textContent.includes('GP partner leaves')).click()); await p.waitForTimeout(250);
   await p.evaluate(() => { const g = document.querySelector('[data-grp="wh-ltec"]'); if (g && g.classList.contains('collapsed')) g.querySelector('.grp-head').click(); });
   await p.evaluate(() => document.getElementById('addTier').click()); await p.waitForTimeout(150);
   await p.evaluate(() => document.getElementById('addMLoan').click()); await p.waitForTimeout(150);

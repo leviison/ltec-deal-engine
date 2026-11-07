@@ -1,5 +1,5 @@
 {
-  "_about": "How LTEC holds a deal. A template builds the deal's warehouse (vehicle) inputs from the deal's check (investor.check) and the vehicle close date, with LTEC's partners. Applied by apply_structure (core.py) / applyStructure (core.js), or scripts/apply_structure.py. Amounts in a template are fractions of the check (reserve_pct, manager_commitment_pct); everything else is copied. Defaults follow SV26 (Siena, Nov 3 memo) as LTEC's precedent; change them here to change the house terms. A template's note may use {manager} and any of its own numbers ({sale_carry}, {promote}, ...), filled by template_note / templateNote.",
+  "_about": "How LTEC holds a deal. A template builds the deal's warehouse (vehicle) inputs from the deal's check (investor.check) and the vehicle close date, with LTEC's partners. Applied by apply_structure (core.py) / applyStructure (core.js), or scripts/apply_structure.py. Amounts in a template are fractions of the check (reserve_pct, manager_commitment_pct); everything else is copied. Defaults follow SV26 (Siena, Nov 3 memo) as LTEC's precedent; change them here to change the house terms. A template's label, note and vehicle_name may use {manager} (the deal's manager name; vehicle_name also {deal}) and any of its own numbers ({sale_carry}, {promote}, ...), filled by template_note / templateNote.",
   "partners": [
     {
       "id": "levi",
@@ -16,9 +16,9 @@
   ],
   "templates": {
     "direct": {
-      "label": "Direct: LTEC invests",
+      "label": "Direct: {manager} invests",
       "note": "{manager} itself writes the check into the deal. No SPV, no SPV fees or promote. {manager}'s partners own {manager} by their capital, and {manager}'s terms between its partners apply.",
-      "vehicle_name": "LTEC (direct)",
+      "vehicle_name": "{manager} (direct)",
       "reserve_pct": 0.0,
       "manager_commitment_pct": 1.0,
       "acq_fee_pct": 0.0,
@@ -42,7 +42,7 @@
       "outside": "members"
     },
     "spv_warehouse": {
-      "label": "SPV with warehouse & sell-down (SV26-style)",
+      "label": "SPV with warehouse & sell-down",
       "note": "As the fully subscribed SPV ({reserve_pct} reserve, {manager} commits {manager_commitment_pct}, {acq_fee_pct} acquisition fee, {promote} promote over {member_hurdle_irr}), but the lead partner funds the outside share at close (warehouses it) and sells it to new members {sale_months} months later at par plus {sale_carry} simple carry.",
       "vehicle_name": "{deal} SPV",
       "reserve_pct": 0.05,

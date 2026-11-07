@@ -5,6 +5,30 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.6.0 — 2026-11-07
+
+- Loan terms (#24, schema 8): a partner loan says how it's repaid. Parts: repayment (a share of the borrower's
+  LTEC cash, interest only, equal principal over N years, at exit, or nothing along the way), the share swept, the
+  years, whether the borrower covers a shortfall, a maturity date, recourse, and what happens if the borrower leaves
+  (vesting). A library of known methods (`engine/loan_terms.json`: cash sweep, half sweep, interest only with a
+  balloon, interest paid current, amortizing, accrue to exit, forgivable if the borrower stays) fills the parts;
+  any part can then be edited ("edited" shows on the loan). Loans without terms keep the original rule, so all
+  results are unchanged.
+- Both engines, identical (randomized terms in the parity test); every term writes ledger entries and schedule
+  rows (paid at maturity, paid on leaving, forgiven). Hand calculations in `tests/test_loan_terms.py`.
+- Siena variants **LTEC F** (interest only, balloon at exit) and **LTEC G** (forgiven if Thaxter stays 3 years).
+- Dashboard: Terms on each loan card with a plain-English "In short"; the same words on the statement's loan
+  schedule, Compare and both exports. Ask: `list_inputs` lists the presets and parts; `get_vehicle` and
+  `get_statement` return each loan's terms and due date.
+- Exports show people's names (not ids) for partner loans and vesting.
+- Names are labels everywhere: renaming the manager, vehicle, default buyers, investor or a person re-renders every
+  card (the side-letter label, timing and others were left stale); variant titles read with the names in use and a
+  variant keeps them when clicked; sales to the default buyers follow their rename; the loan-terms library and
+  structure templates write `{manager}` instead of "LTEC" (the direct template's vehicle is "{manager} (direct)").
+  New page test `tests/web/names.test.js` renames everything on every variant and fails on any old name left;
+  `tests/test_deal_files.py` checks variant titles use placeholders.
+- Month and year in period labels read "Jun 2030" (was "Jun 30", which looked like a day).
+
 ## 2.5.0 — 2026-11-07
 
 - Ledger (#21): `warehouse_case` returns each person's dated entries by account (the vehicle's units, the manager,
