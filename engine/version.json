@@ -1,5 +1,5 @@
 {
-  "engine": "2.2.1",
+  "engine": "2.3.0",
   "released": "2026-11-06",
   "_about": "The engine release. Bump with every release to the main dashboard (semver: major = results change on purpose or schema breaks; minor = new inputs or features, results unchanged when they're off; patch = fixes). Add a CHANGELOG.md entry with the same version, then tag vX.Y.Z."
 }
