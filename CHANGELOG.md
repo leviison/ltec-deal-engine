@@ -5,6 +5,18 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.7.0 — 2026-11-07
+
+- Summary of terms (#25): **Export terms** saves a Word document (.docx) of how we hold the deal, written from the
+  inputs with the same labels as the panel: the investment, the people, the vehicle's terms (or holding directly),
+  the manager's terms between its partners (pooled waterfall, each partner loan with its method, parts and terms
+  in words, vesting, buy-ins), each term with its source and marked when it differs from the deal file; the
+  projected outcome for each person and loan by case; each loan's projected schedule as an exhibit; and the terms
+  still to confirm (TODO or assumption sources, and changes from the deal file), grouped. Uses the names on screen.
+  A business summary for partners and counsel, not a legal document.
+- Ask: `get_terms_summary` returns the same summary (for a deal, a saved scenario or changes).
+- Dev dependency: docx 8.5.0 (the page loads the same version from jsDelivr when someone exports).
+
 ## 2.6.0 — 2026-11-07
 
 - Loan terms (#24, schema 8): a partner loan says how it's repaid. Parts: repayment (a share of the borrower's

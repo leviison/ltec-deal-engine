@@ -3,6 +3,7 @@
   "private": true,
   "description": "Dev dependencies for the dashboard's page tests (the published page loads the same versions from jsDelivr). Playwright comes from the environment.",
   "devDependencies": {
+    "docx": "^8.5.0",
     "exceljs": "4.4.0",
     "jspdf": "2.5.1",
     "jspdf-autotable": "3.8.2"
