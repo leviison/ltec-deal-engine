@@ -570,6 +570,7 @@ function loanTermsText(spec, borrowerName, mgr) {
   else if (!["interest_only", "at_exit"].includes(t.repayment)) parts.push(`what's left is paid at ${end}`);
   if (t.on_leave === "due") parts.push(`due if ${b} leaves`);
   if (t.on_leave === "forgiven") parts.push(`forgiven if ${b} leaves`);
+  if (t.maturity && t.at_maturity === "sweep") parts.push(`if not paid by ${t.maturity}, ${b}'s ${M} cash repays it from then on`);
   if (t.due_on === "exact_date" && (t.maturity || t.on_leave !== "continues")) parts.push(`settled on the exact date from ${b}'s own money`);
   if ((t.paydowns || []).length) parts.push(`${b} pays down ${t.paydowns.map((x) => `${fmt.usd(x.amount)} on ${x.date}`).join(", ")} from their own money`);
   return parts.join("; ");
@@ -1149,7 +1150,7 @@ function renderStatement(me) {
     return `<tr class="${later ? "later" : ""}"><td class="lbl">${head ? esc(r.when) : ""}</td><td>${r.label}${r.n > 1 ? ` <span class="muted small">× ${r.n}</span>` : ""}</td><td class="n ${r.amount >= 0 ? "pos" : "neg"}">${fmt.usd(r.amount)}</td><td class="n">${fmt.usd(cum)}</td></tr>`;
   }).join("");
   const loans = personLoans(me).map(({ ln, sch, spec, lends }) => {
-    const rowsL = sch.map((x) => `<tr class="${cbpAsOf && x.date > cbpAsOf ? "later" : ""}"><td class="lbl">${esc(x.date)}</td><td>${x.kind === "advance" ? "Lent" : x.kind === "paid_at_end" ? "Rest paid at the end" : x.kind === "paid_at_maturity" ? "Rest paid at maturity" : x.kind === "paid_on_leaving" ? "Rest paid on leaving" : x.kind === "forgiven" ? "Rest forgiven" : x.kind === "paydown" ? "Pay-down (own money)" : x.kind === "due" ? "Due" : "Period"}</td><td class="n">${x.interest ? fmt.usd(x.interest) : "—"}</td><td class="n">${x.paid ? fmt.usd(x.paid) : "—"}</td><td class="n">${fmt.usd(x.balance)}</td></tr>`).join("");
+    const rowsL = sch.map((x) => `<tr class="${cbpAsOf && x.date > cbpAsOf ? "later" : ""}"><td class="lbl">${esc(x.date)}</td><td>${x.kind === "advance" ? "Lent" : x.kind === "paid_at_end" ? "Rest paid at the end" : x.kind === "paid_at_maturity" ? "Rest paid at maturity" : x.kind === "paid_on_leaving" ? "Rest paid on leaving" : x.kind === "forgiven" ? "Rest forgiven" : x.kind === "paydown" ? "Pay-down (own money)" : x.kind === "due" ? "Due" : x.kind === "switch" ? `Not paid at maturity: ${esc(inputs.warehouse.names.manager)} cash repays it from here` : x.switched ? `Period · not paid at maturity: ${esc(inputs.warehouse.names.manager)} cash repays it from here` : "Period"}</td><td class="n">${x.interest ? fmt.usd(x.interest) : "—"}</td><td class="n">${x.paid ? fmt.usd(x.paid) : "—"}</td><td class="n">${fmt.usd(x.balance)}</td></tr>`).join("");
     return `<details class="loan-sched"><summary>Partner loan: ${esc(ln.lender)} → ${esc(ln.borrower)}, ${fmt.usd(ln.amount)} at ${fmt.pct(spec.rate, 1)} ${spec.rate_type === "compound" ? "compounding" : "simple"} · ${fmt.usd(ln.interest)} interest · ${esc(settledText(ln))}<br><span class="muted small">${esc(loanTermsText(spec, ln.borrower))}</span></summary>
       <div class="tablewrap"><table><thead><tr><th>Date</th><th></th><th class="n">Interest</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody>${rowsL}</tbody></table></div></details>`;
   }).join("");
@@ -1302,8 +1303,11 @@ function whFields() {
       if (["interest_only", "equal_principal", "at_exit"].includes(t.repayment)) list.push(Object.assign(F(Q + "source", L.parts.source.label, "select", null, opt("source")), { dflt: t.source }));
       list.push(Object.assign(F(Q + "maturity", L.parts.maturity.label, "date", L.parts.maturity.note), { allowEmpty: true, dflt: t.maturity }),
                 Object.assign(F(Q + "due_on", L.parts.due_on.label, "select", null, opt("due_on")), { dflt: t.due_on }),
+                ...(t.maturity ? [Object.assign(F(Q + "at_maturity", L.parts.at_maturity.label, "select", null, opt("at_maturity")), { dflt: t.at_maturity })] : []),
                 F(Q + "recourse", L.parts.recourse.label, "bool", L.parts.recourse.note),
                 Object.assign(F(Q + "on_leave", L.parts.on_leave.label, "select", null, opt("on_leave")), { dflt: t.on_leave }));
+      // every part changes the "In short" words and which parts show: re-render the card (selects, dates, the box)
+      list.forEach((f) => { if (f.kind !== "pct" && f.kind !== "num") rr(f); });
       return list;
     },
     paydown: (q, k) => [F(`${P}manager_loans.${q}.paydowns.${k}.date`, "Pay-down date", "date"),
@@ -3374,7 +3378,7 @@ function termsSummaryOf(inp, wres, cases, slug, opts) {
   });
   const exhibits = (w.manager_loans || []).map((x, q) => {
     const sch = (wres[prim] || wres[keys[0]]).loan_schedules[q] || [];
-    const kindT = { advance: "Lent", period: "Payment date", paid_at_end: "Rest paid at the end", paid_at_maturity: "Rest paid at maturity", paid_on_leaving: "Rest paid on leaving", forgiven: "Rest forgiven", paydown: "Pay-down (own money)", due: "Due" };
+    const kindT = { advance: "Lent", period: "Payment date", paid_at_end: "Rest paid at the end", paid_at_maturity: "Rest paid at maturity", paid_on_leaving: "Rest paid on leaving", forgiven: "Rest forgiven", paydown: "Pay-down (own money)", due: "Due", switch: `Not paid at maturity: ${n.manager} cash repays it from here` };
     return { title: `Partner loan ${q + 1}: projected schedule (${cases[prim] || prim})`, columns: ["Date", "", "Interest", "Paid", "Balance"],
       rows: sch.map((e) => [e.date, kindT[e.kind] || e.kind, e.interest ? fmt.usd(e.interest) : "—", e.paid ? fmt.usd(e.paid) : "—", fmt.usd(e.balance)]) };
   }).filter((e) => e.rows.length);

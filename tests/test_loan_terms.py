@@ -257,3 +257,33 @@ def test_bridge_and_buyin_variants_load():
     i = run_all(apply_variant(d, alts["{manager} I"]))["warehouse"]["base"]
     assert h["manager_loans"][0]["settled"] == "paid_at_maturity"
     assert i["manager_transfers"][0]["paid"] == pytest.approx(h["manager_loans"][0]["owed_end"])
+
+
+# ---- the late case of a bridge (#33): not paid at maturity, the borrower's LTEC cash repays it from then on
+
+@pytest.mark.parametrize("k", CASES)
+@pytest.mark.parametrize("due_on", ["exact_date", "cash_date"])
+def test_bridge_paid_late_from_manager_cash(k, due_on):
+    t = dict({x: v for x, v in apply_loan_preset(LOAN, "bridge_fallback", LIB).items() if x not in LOAN}, maturity="2027-06-30", due_on=due_on)
+    _, r = run(**t)
+    r = r[k]
+    close = r["dates"][0]
+    # by hand: nothing paid before the maturity; from then on every dollar of Thaxter's LTEC cash (simple interest)
+    pays, left, _, _ = hand(r, close, lambda d, c, p, i, last: min(c, p + i) if d >= "2027-06-30" else 0.0)
+    assert engine_pays(r) == pytest.approx(pays, abs=1e-6)
+    ln = r["manager_loans"][0]
+    assert ln["switched_on"] >= "2027-06-30" and ln["settled"] in ("repaid", "paid_at_end")
+    assert ln["owed_end"] == pytest.approx(left if left > 1e-9 else 0.0, abs=1e-6)
+    sch = r["loan_schedules"][0]
+    marks = [x for x in sch if x["kind"] == "switch" or x.get("switched")]
+    assert len(marks) == 1 and marks[0]["date"] == ln["switched_on"]
+    # no payment from Thaxter's own money
+    assert not [e for e in r["people"][1]["ledger"] if e["kind"] in ("loan_paydown",)]
+
+
+def test_settle_is_the_default_at_maturity():
+    t = dict({x: v for x, v in apply_loan_preset(LOAN, "bridge", LIB).items() if x not in LOAN}, maturity="2027-06-30")
+    _, a = run(**t)
+    _, b = run(**dict(t, at_maturity="settle"))
+    assert json.dumps(a["base"]["people"], default=str) == json.dumps(b["base"]["people"], default=str)
+    assert a["base"]["manager_loans"][0]["settled"] == "paid_at_maturity"

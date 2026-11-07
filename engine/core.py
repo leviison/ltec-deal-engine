@@ -732,7 +732,8 @@ def _key(name: str) -> str:
 
 
 LOAN_TERM_DEFAULTS = {"repayment": "sweep", "sweep_pct": 1.0, "term_years": 5.0, "source": "manager_cash",
-                      "maturity": "", "on_leave": "continues", "due_on": "cash_date", "paydowns": []}
+                      "maturity": "", "on_leave": "continues", "due_on": "cash_date", "paydowns": [],
+                      "at_maturity": "settle"}
 
 
 def loan_terms_of(ln: dict) -> dict:
@@ -1107,7 +1108,7 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                 elif ends == "leaving":
                     pay = 0.0 if tm["on_leave"] == "forgiven" else min(owed, cash)
                 elif ends == "maturity":
-                    pay = 0.0 if rp == "none" else min(owed, cash)
+                    pay = 0.0 if rp == "none" and tm["at_maturity"] != "sweep" else min(owed, cash)
                 elif rp == "sweep":
                     pay = min(tm["sweep_pct"] * cash, owed)
                 else:
@@ -1133,6 +1134,16 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                     moves.append((mk, j, lo, bo, pay, q_l, "loan_paydown" if k == 2 else "loan_repayment"))
                 sched.append({"date": d.isoformat(), "kind": "paydown" if k == 2 else "due" if k == 3 else "period",
                               "interest": accrued, "paid": pay, "balance": prin + acc})
+                # not paid at maturity (#33): from then on the borrower's manager cash repays it (a cash sweep)
+                if ends == "maturity" and tm["at_maturity"] == "sweep":
+                    tm = dict(tm, repayment="sweep", sweep_pct=1.0)
+                    rp, mat, exact = "sweep", None, False
+                    rec["switched_on"] = d.isoformat()
+                    if k == 3:
+                        sched[-1]["kind"] = "switch"
+                    else:
+                        sched[-1]["switched"] = True
+                    continue
                 if ends:
                     left_ = max(0.0, prin + acc)
                     rec["interest"] = rec["repaid"] + left_ - a_l

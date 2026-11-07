@@ -66,6 +66,8 @@
   borrower's own money on their own dates; those dates are a flow column between buy-ins and distributions
   (`loan_payment_dates`; layout close · sales · buy-ins · loan dates · distributions). Funding a share later by
   ownership instead of a loan is a buy-in (`manager_transfers`); Siena LTEC H / I show both.
+  `at_maturity` (#33, schema 10): "settle" (default) or "sweep" = not paid at maturity, the borrower's manager cash
+  repays it from then on (`switched_on`).
   Next: the warehouse lender on the same parts (#26), legal drafts (#27, roadmap).
 - Summary of terms (#25): `termsSummary(inp, wres, cases, slug)` in the page writes the term sheet from the inputs using
   the panel's field specs (`whFields`), each term with its source; "Export terms" (`buildTermsDocx`, docx 8.5.0 from
