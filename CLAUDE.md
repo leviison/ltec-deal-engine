@@ -62,6 +62,10 @@
   `applyLoanPreset`), embedded in the page as `LOAN_TERMS`; the page words terms with `loanTermsText`. Payments fall
   on the deal's cash dates; a maturity or departure settles on the next one. A new term or preset: both engines,
   the library, `tests/test_loan_terms.py` (hand calculation), the randomizers, and a field on the loan card.
+  Bridges (#31, schema 9): `paydowns` [{date, amount}] and `due_on` ("cash_date" | "exact_date") pay from the
+  borrower's own money on their own dates; those dates are a flow column between buy-ins and distributions
+  (`loan_payment_dates`; layout close · sales · buy-ins · loan dates · distributions). Funding a share later by
+  ownership instead of a loan is a buy-in (`manager_transfers`); Siena LTEC H / I show both.
   Next: the warehouse lender on the same parts (#26), legal drafts (#27, roadmap).
 - Summary of terms (#25): `termsSummary(inp, wres, cases, slug)` in the page writes the term sheet from the inputs using
   the panel's field specs (`whFields`), each term with its source; "Export terms" (`buildTermsDocx`, docx 8.5.0 from

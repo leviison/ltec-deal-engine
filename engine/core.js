@@ -486,7 +486,7 @@
   const nameKey = (s) => s.trim().toLowerCase();
 
   // A partner loan's repayment terms (#24), defaults = the original rule (see core.py)
-  const LOAN_TERM_DEFAULTS = { repayment: "sweep", sweep_pct: 1, term_years: 5, source: "manager_cash", maturity: "", on_leave: "continues" };
+  const LOAN_TERM_DEFAULTS = { repayment: "sweep", sweep_pct: 1, term_years: 5, source: "manager_cash", maturity: "", on_leave: "continues", due_on: "cash_date", paydowns: [] };
   function loanTermsOf(ln) {
     const out = {};
     Object.keys(LOAN_TERM_DEFAULTS).forEach((k) => { out[k] = ln[k] !== undefined && ln[k] !== null ? ln[k] : LOAN_TERM_DEFAULTS[k]; });
@@ -494,7 +494,7 @@
   }
   function applyLoanPreset(ln, preset, lib) {
     const out = Object.assign({}, ln);
-    Object.keys(LOAN_TERM_DEFAULTS).forEach((k) => { delete out[k]; });
+    Object.keys(LOAN_TERM_DEFAULTS).forEach((k) => { if (k !== "paydowns") delete out[k]; });
     Object.assign(out, JSON.parse(JSON.stringify(lib.presets[preset].terms)));
     out.preset = preset;
     return out;
@@ -709,6 +709,21 @@
     const splitTot = { enabled: splitOn, to_capital: 0, to_promote: 0, capital: mcap };
     const loansOut = [], lent = people.map(() => 0);
     const moves = [], schedules = [];  // partner-loan cash between people (ledger) and each loan's schedule
+    // Off-cycle loan payments (#31, see core.py)
+    const lastEv = ev.length ? ev[ev.length - 1][0] : closeDay;
+    const leaveOf = (b) => { const ls = vestIn.filter((v) => v.leaves && pidx[nameKey(v.person)] === b).map((v) => toDay(v.leaves)); return ls.length ? Math.min(...ls) : null; };
+    const loanExtra = (ln) => {
+      const tm = loanTermsOf(ln), b = nameKey(ln.borrower) in pidx ? pidx[nameKey(ln.borrower)] : null, out = [];
+      tm.paydowns.forEach((pd) => out.push([toDay(pd.date), 2, pd.amount || 0]));
+      if (tm.due_on === "exact_date") {
+        if (tm.maturity) out.push([toDay(tm.maturity), 3, "maturity"]);
+        const lv = tm.on_leave !== "continues" && b !== null ? leaveOf(b) : null;
+        if (lv !== null) out.push([lv, 3, "leaving"]);
+      }
+      return out.filter((x) => closeDay < x[0] && x[0] <= lastEv);
+    };
+    const lDays = custom ? [...new Set(mLoans.flatMap((ln) => loanExtra(ln).map((x) => x[0])))].sort((a, b) => a - b) : [];
+    const lDates = lDays.map(fromDay), lCash = lDays.map(() => people.map(() => 0));
     const evIso = (k, j) => (k === 0 ? trs[j].date : dates[j]);
     let mTr = null, mDist = null, mTr0 = null, mDist0 = null;
     if (custom) {
@@ -749,24 +764,29 @@
         const simpleL = (ln.rate_type || "simple") === "simple";
         const rL = ln.rate, rp = tm.repayment;
         const mat = tm.maturity ? toDay(tm.maturity) : null;
-        let leave = null;
-        if (tm.on_leave !== "continues") {
-          const ls = vestIn.filter((v) => v.leaves && pidx[nameKey(v.person)] === bo).map((v) => toDay(v.leaves));
-          leave = ls.length ? Math.min(...ls) : null;
-        }
-        let prin = aL, acc = 0, prev = closeDay, done = false;
-        for (let e = 0; e < ev.length; e++) {
-          const [d, k, j] = ev[e];
+        const leave = tm.on_leave !== "continues" ? leaveOf(bo) : null;
+        const exact = tm.due_on === "exact_date";
+        const evl = ev.map(([d, k, j]) => [d, k, j, null]).concat(loanExtra(ln).map(([d, k, x]) => [d, k, lDays.indexOf(d), x]));
+        evl.sort((p1, p2) => p1[0] - p2[0] || p1[1] - p2[1] || p1[2] - p2[2]);
+        let prin = aL, acc = 0, prev = closeDay, done = false, nCash = 0;
+        for (const [d, k, j, x] of evl) {
           const a = (d - prev) / 365;
           prev = d;
           const accrued = simpleL ? prin * rL * a : (prin + acc) * (Math.pow(1 + rL, a) - 1);
           acc += accrued;
-          const row = k === 0 ? mTr[j] : mDist[j];
-          const cash = Math.max(0, row[bo]);
           const owed = prin + acc;
-          const ends = leave !== null && d >= leave ? "leaving" : (mat !== null && d >= mat ? "maturity" : null);
+          let row, cash, ends;
+          if (k >= 2) { row = lCash[j]; cash = 0; ends = k === 3 ? x : null; }
+          else {
+            nCash += 1;
+            row = k === 0 ? mTr[j] : mDist[j];
+            cash = Math.max(0, row[bo]);
+            ends = exact ? null : (leave !== null && d >= leave ? "leaving" : (mat !== null && d >= mat ? "maturity" : null));
+          }
           let pay;
-          if (ends === "leaving") pay = tm.on_leave === "forgiven" ? 0 : Math.min(owed, cash);
+          if (k === 2) pay = Math.min(Math.max(0, x), owed);
+          else if (k === 3) pay = 0;
+          else if (ends === "leaving") pay = tm.on_leave === "forgiven" ? 0 : Math.min(owed, cash);
           else if (ends === "maturity") pay = rp === "none" ? 0 : Math.min(owed, cash);
           else if (rp === "sweep") pay = Math.min(tm.sweep_pct * cash, owed);
           else {
@@ -775,7 +795,7 @@
             else if (rp === "equal_principal") {
               const left = tm.term_years > 0 ? aL * Math.max(0, 1 - (d - closeDay) / 365 / tm.term_years) : 0;
               due = acc + Math.max(0, prin - left);
-            } else if (rp === "at_exit") due = e === ev.length - 1 ? owed : 0;
+            } else if (rp === "at_exit") due = nCash === ev.length ? owed : 0;
             else due = 0;
             pay = tm.source === "borrower" ? Math.min(due, owed) : Math.min(due, cash, owed);
           }
@@ -786,23 +806,24 @@
           const ti = Math.min(pay, acc);
           acc -= ti;
           prin -= pay - ti;
-          if (pay > 0) moves.push([k, j, lo, bo, pay, qL, "loan_repayment"]);
-          sched.push({ date: evIso(k, j), kind: "period", interest: accrued, paid: pay, balance: prin + acc });
+          const mk = k >= 2 ? 2 : k, iso = k >= 2 ? lDates[j] : evIso(k, j);
+          if (pay > 0) moves.push([mk, j, lo, bo, pay, qL, k === 2 ? "loan_paydown" : "loan_repayment"]);
+          sched.push({ date: iso, kind: k === 2 ? "paydown" : k === 3 ? "due" : "period", interest: accrued, paid: pay, balance: prin + acc });
           if (ends) {
             const left_ = Math.max(0, prin + acc);
             rec.interest = rec.repaid + left_ - aL;
             rec.owed_end = left_;
-            rec.due_date = evIso(k, j);
+            rec.due_date = iso;
             if (left_ <= 1e-9) rec.settled = "repaid";
             else if ((ends === "leaving" && tm.on_leave === "forgiven") || (ends === "maturity" && ln.recourse === false)) {
               rec.settled = "forgiven";
-              sched.push({ date: evIso(k, j), kind: "forgiven", interest: 0, paid: 0, balance: left_ });
+              sched.push({ date: iso, kind: "forgiven", interest: 0, paid: 0, balance: left_ });
             } else {
               row[bo] -= left_;
               row[lo] += left_;
               rec.settled = ends === "leaving" ? "paid_on_leaving" : "paid_at_maturity";
-              moves.push([k, j, lo, bo, left_, qL, "loan_settlement"]);
-              sched.push({ date: evIso(k, j), kind: rec.settled, interest: 0, paid: left_, balance: 0 });
+              moves.push([mk, j, lo, bo, left_, qL, "loan_settlement"]);
+              sched.push({ date: iso, kind: rec.settled, interest: 0, paid: left_, balance: 0 });
             }
             done = true;
             break;
@@ -831,7 +852,7 @@
     }
 
     // ---- people
-    const allDates = [close].concat(trs.map((tr) => tr.date), xfers.map((x) => x.date), dates);
+    const allDates = [close].concat(trs.map((tr) => tr.date), xfers.map((x) => x.date), lDates, dates);
     // the manager's cash to person i at an event (k 0 = a sale, 1 = a distribution), before partner loans
     const mgrPre = (k, j, i) => {
       if (custom) return (k === 0 ? mTr0[j] : mDist0[j])[i];
@@ -897,8 +918,10 @@
         if (x.seller === i) add(x.date, `buyin:${q}`, "buyin_sale", x.paid, x.buyer !== null ? people[x.buyer].name : null);
         if (x.buyer === i) add(x.date, `buyin:${q}`, "buyin_purchase", -x.paid, x.seller !== null ? people[x.seller].name : null);
       });
+      const lFlows = lDates.map((_, m) => lCash[m][i]);
+      lDates.forEach((d, m) => addMoves(2, m, d));
       led.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-      const flows = [c0].concat(trFlows, xFlows, dist);
+      const flows = [c0].concat(trFlows, xFlows, lFlows, dist);
       const cashIn = -c0, atSales = sum(trFlows), atBuyins = sum(xFlows), atRisk = cashIn - atSales - atBuyins;
       return { name: p.name, flows, ledger: led,
         summary: { cash_in: cashIn, returned_at_selldown: atSales, at_buyins: atBuyins,
@@ -924,9 +947,10 @@
     const r2 = (x) => Math.round(x * 100) / 100;
     let check = Math.abs(r2(-raised - mr - sum(outPeople.map((x) => x.flows[0]))));
     xfers.forEach((_, q) => { check += Math.abs(r2(sum(outPeople.map((x) => x.flows[1 + trs.length + q])))); });
+    lDates.forEach((_, m) => { check += Math.abs(r2(sum(outPeople.map((x) => x.flows[1 + trs.length + xfers.length + m])))); });
     trs.forEach((_, j) => { check += Math.abs(r2(sum(outPeople.map((x) => x.flows[1 + j])) + sum(groups.map((g) => g.flows[j])))); });
     for (let t = 0; t < N; t++) {
-      const k = 1 + trs.length + xfers.length + t;
+      const k = 1 + trs.length + xfers.length + lDates.length + t;
       check += Math.abs(r2(sum(outPeople.map((x) => x.flows[k])) + sum(groups.map((g) => g.flows[trs.length + t])) - (distCash[t] - fee[t]) - (t === N - 1 ? mr : 0)));
     }
 
@@ -940,7 +964,7 @@
         buyer: x.buyer !== null ? people[x.buyer].name : null, seller: x.seller !== null ? people[x.seller].name : null,
         interest: x.interest, share: x.share, paid: x.paid, price_100: x.price_100 })),
       manager_split: splitTot, manager_loans: loansOut, manager_departures: departures,
-      loan_schedules: schedules,
+      loan_schedules: schedules, loan_payment_dates: lDates,
       summary: {
         people: outPeople.map((x) => x.summary),
         buyers: groups.map((g) => g.summary),

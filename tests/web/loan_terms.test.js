@@ -62,7 +62,7 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
     const st = T('get_statement').execute({ deal: 'siena-villas', case: 'base', person: 'thaxter', changes: { 'warehouse.manager_loans': [loan] } });
     return { presets: Object.keys(li.loan_terms.presets), settled: st.partner_loans[0].settled, words: st.partner_loans[0].terms_in_words };
   });
-  check(r.presets.includes('forgivable') && r.presets.includes('cash_sweep') && r.settled === 'forgiven' && /nothing repaid/.test(r.words), `Ask: ${JSON.stringify(r)}`);
+  check(r.presets.includes('forgivable') && r.presets.includes('cash_sweep') && r.settled === 'forgiven' && /nothing from Thaxter's/.test(r.words), `Ask: ${JSON.stringify(r)}`);
 
   // the worked examples F and G load and show their preset
   for (const [name, key] of [['interest only, balloon', 'interest_only_balloon'], ['forgiven if Thaxter stays', 'forgivable']]) {
