@@ -93,6 +93,9 @@ aside.rail { position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); 
 .flash { animation: flash 1.4s ease-out; }
 @keyframes flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
 .flow .node { cursor: pointer; }
+table.stmt tr.later td, .loan-sched tr.later td { opacity: .45; }
+.loan-sched { margin-top: 10px; font-size: 13px; }
+.loan-sched summary { cursor: pointer; padding: 6px 0; }
 .edit-link { all: unset; cursor: pointer; border-bottom: 1px dotted transparent; }
 .edit-link:hover, .edit-link:focus-visible { border-bottom-color: var(--accent); color: var(--accent); }
 .edit-link .pencil { margin-left: 4px; font-size: .85em; opacity: 0; transition: opacity .15s; }
@@ -462,7 +465,10 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
           <label class="cbp-pick"><span class="eyebrow">Show</span><select id="cbpParty" aria-label="Person or investor"></select></label>
           <div class="seg" id="cbpCases" role="group" aria-label="Case"></div>
           <div class="seg" id="cbpFreq" role="group" aria-label="Period length"></div>
+          <div class="seg" id="cbpView" role="group" aria-label="View"></div>
+          <label class="cbp-pick"><span class="eyebrow">Balances as of</span><input class="text" type="date" id="cbpAsOf" aria-label="Balances as of"></label>
         </div>
+        <div class="readout" id="cbpBalances" hidden></div>
         <div class="tablewrap" style="max-height:560px;overflow:auto" id="cbpTable"></div>
         <p class="note" id="cbpNote"></p>
       </section>
@@ -987,7 +993,7 @@ function renderTimingInputs() {
 }
 
 /* ------------------------------------------------------------ cash by person */
-let cbpParty = "p0", cbpCase = PRIMARY, cbpFreq = 12;
+let cbpParty = "p0", cbpCase = PRIMARY, cbpFreq = 12, cbpView = "periods", cbpAsOf = "";
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monLabel = (iso) => { const [y, m] = iso.split("-"); return `${MON[+m - 1]} ${y.slice(2)}`; };
 function cbpParties() {
@@ -1013,6 +1019,91 @@ function cbpParties() {
     flows: [{ date: close, amount: -d.check, kind: "in" }].concat(d.payments.map((a, j) => ({ date: pd[j], amount: a, kind: "dist" }))) }));
   return list;
 }
+// ---------- ledger views (#21): a person's statement, their loans' schedules, and balances as of a date
+// One entry per dated part of a person's cash (the engine's ledger), described in words.
+function ledgerLabel(e) {
+  const w = inputs.warehouse, M = esc(w.names.manager), V = esc(w.names.vehicle), cp = esc(e.counterparty || "");
+  const n0 = (x) => Math.round(x).toLocaleString("en-US");
+  switch (e.kind) {
+    case "units_bought": return `Buys units in ${V}`;
+    case "warehouse_loan": return `Lends to ${V} (warehouse loan)`;
+    case "manager_capital": return `Puts capital into ${M}`;
+    case "loan_advance": return e.amount < 0 ? `Lends ${cp} toward their ${M} capital` : `Loan from ${cp} toward ${M} capital`;
+    case "warehouse_loan_repaid": return "Warehouse loan repaid with interest";
+    case "unit_sale": return `Sells ${n0(e.units)} units to ${cp} at ${fmt.usd(e.price)}`;
+    case "unit_purchase": return `Buys ${n0(e.units)} units at ${fmt.usd(e.price)}`;
+    case "manager_cash": return e.amount >= 0 ? `From ${M}` : `Into ${M}`;
+    case "distribution": return `${V} distribution on units held`;
+    case "distribution_bought_units": return "Distribution on units bought";
+    case "loan_repayment": return e.amount < 0 ? `Repays ${cp} (partner loan)` : `Repayment from ${cp} (partner loan)`;
+    case "loan_settlement": return e.amount < 0 ? `Pays ${cp} what's left on the loan` : `${cp} pays what's left on the loan`;
+    case "buyin_sale": return `Sells part of ${M} to ${cp}`;
+    case "buyin_purchase": return `Buys part of ${M} from ${cp}`;
+    default: return esc(e.kind);
+  }
+}
+// The selected party's dated entries: a vehicle person's ledger, or (for outside buyers and investors) their flows.
+function partyEntries(me) {
+  const R = results.warehouse[cbpCase], m = me.id.match(/^p(\d+)$/);
+  if (m) return R.people[+m[1]].ledger.map((e) => ({ date: e.date, amount: e.amount, label: ledgerLabel(e), account: e.account }));
+  return me.flows.filter((f) => f.amount).map((f) => ({ date: f.date, amount: f.amount, label: f.kind === "in" ? (f.amount < 0 ? "Pays in" : "Receives") : "Distribution", account: "" }));
+}
+function personLoans(me) {
+  const m = me.id.match(/^p(\d+)$/);
+  if (!m) return [];
+  const R = results.warehouse[cbpCase], nm = R.people[+m[1]].name;
+  return R.manager_loans.map((ln, q) => ({ ln, q, sch: R.loan_schedules[q], spec: inputs.warehouse.manager_loans[q] }))
+    .filter((x) => x.ln.settled !== "invalid" && (x.ln.lender === nm || x.ln.borrower === nm)).map((x) => Object.assign(x, { lends: x.ln.lender === nm }));
+}
+function renderBalances(me) {
+  const box = document.getElementById("cbpBalances");
+  if (!cbpAsOf) { box.hidden = true; return; }
+  const es = partyEntries(me).filter((e) => e.date <= cbpAsOf);
+  const pin = -es.filter((e) => e.amount < 0).reduce((a, e) => a + e.amount, 0), got = es.filter((e) => e.amount > 0).reduce((a, e) => a + e.amount, 0);
+  const lines = [`<b>${esc(me.name)}</b> by ${esc(cbpAsOf)} (${esc(results.cases[cbpCase].label)}): put in ${fmt.usd(pin)}, received ${fmt.usd(got)}, net <b class="${got - pin >= 0 ? "pos" : "neg"}">${fmt.usd(got - pin)}</b>.`];
+  personLoans(me).forEach(({ ln, sch, lends }) => {
+    const past = sch.filter((x) => x.date <= cbpAsOf), bal = past.length ? past[past.length - 1].balance : 0;
+    const settledAt = past.find((x) => x.kind === "paid_at_end" || x.kind === "forgiven");
+    lines.push(lends ? `${esc(ln.borrower)} owes ${esc(me.name)} ${fmt.usd(bal)} on the partner loan${settledAt && settledAt.kind === "forgiven" ? " (forgiven)" : ""}.`
+      : `${esc(me.name)} owes ${esc(ln.lender)} ${fmt.usd(bal)} on the partner loan${settledAt && settledAt.kind === "forgiven" ? " (forgiven)" : ""}.`);
+  });
+  box.hidden = false;
+  box.innerHTML = lines.join("<br>");
+}
+function renderStatement(me) {
+  const close = inputs.warehouse.close_date, es = partyEntries(me);
+  const periodOf = (d) => {
+    if (!cbpFreq || d <= close) return null;
+    for (let p = 0; p < 400; p++) { const st = E.addMonths(close, p * cbpFreq), en = E.addMonths(close, (p + 1) * cbpFreq); if (d > st && d <= en) return { p, st, en }; }
+    return null;
+  };
+  const rows = [];
+  es.forEach((e) => {
+    const per = periodOf(e.date), key = per ? `p${per.p}` : e.date;
+    const when = !per ? (e.date <= close ? `At close · ${e.date}` : e.date) : cbpFreq === 12 ? `Year ${per.p + 1} · ${monLabel(per.st)}–${monLabel(per.en)}` : `${monLabel(per.st)}–${monLabel(per.en)}`;
+    const r = rows.find((x) => x.key === key && x.label === e.label);
+    if (r) { r.amount += e.amount; r.last = e.date; r.n += 1; } else rows.push({ key, when, label: e.label, amount: e.amount, first: e.date, last: e.date, n: 1, account: e.account });
+  });
+  let cum = 0, prevKey = null;
+  const body = rows.map((r) => {
+    cum += r.amount;
+    const later = cbpAsOf && r.first > cbpAsOf, head = r.key !== prevKey;
+    prevKey = r.key;
+    return `<tr class="${later ? "later" : ""}"><td class="lbl">${head ? esc(r.when) : ""}</td><td>${r.label}${r.n > 1 ? ` <span class="muted small">× ${r.n}</span>` : ""}</td><td class="n ${r.amount >= 0 ? "pos" : "neg"}">${fmt.usd(r.amount)}</td><td class="n">${fmt.usd(cum)}</td></tr>`;
+  }).join("");
+  const loans = personLoans(me).map(({ ln, sch, spec, lends }) => {
+    const rowsL = sch.map((x) => `<tr class="${cbpAsOf && x.date > cbpAsOf ? "later" : ""}"><td class="lbl">${esc(x.date)}</td><td>${x.kind === "advance" ? "Lent" : x.kind === "paid_at_end" ? "Rest paid at the end" : x.kind === "forgiven" ? "Rest forgiven" : "Period"}</td><td class="n">${x.interest ? fmt.usd(x.interest) : "—"}</td><td class="n">${x.paid ? fmt.usd(x.paid) : "—"}</td><td class="n">${fmt.usd(x.balance)}</td></tr>`).join("");
+    return `<details class="loan-sched"><summary>Partner loan: ${esc(ln.lender)} → ${esc(ln.borrower)}, ${fmt.usd(ln.amount)} at ${fmt.pct(spec.rate, 1)} ${spec.rate_type === "compound" ? "compounding" : "simple"}${spec.recourse ? ", recourse" : ", forgiven if unpaid"} · ${fmt.usd(ln.interest)} interest · ${ln.settled === "repaid" ? "repaid" : ln.settled === "paid_at_end" ? `${fmt.usd(ln.owed_end)} paid at the end` : `${fmt.usd(ln.owed_end)} forgiven`}</summary>
+      <div class="tablewrap"><table><thead><tr><th>Date</th><th></th><th class="n">Interest</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody>${rowsL}</tbody></table></div></details>`;
+  }).join("");
+  const R = results.warehouse[cbpCase], mm = me.id.match(/^p(\d+)$/);
+  const deps = mm ? R.manager_departures.filter((x) => x.valid && x.person === R.people[+mm[1]].name) : [];
+  const depNote = deps.map((x) => `${esc(x.person)} leaves ${esc(inputs.warehouse.names.manager)} on ${esc(x.date)}, keeping ${fmt.pct(x.vested, 0)} of their fees &amp; promote share vested (${fmt.pct(x.share_kept, 1)} of the total).`).join(" ");
+  document.getElementById("cbpTable").innerHTML = `<table class="stmt"><thead><tr><th>When</th><th>What</th><th class="n">Amount</th><th class="n">Running total</th></tr></thead><tbody>${body}
+    <tr class="total"><td class="lbl">Total</td><td></td><td class="n ${cum >= 0 ? "pos" : "neg"}">${fmt.usd(cum)}</td><td></td></tr></tbody></table>${loans}`;
+  document.getElementById("cbpSummary").innerHTML = `<b>${esc(me.name)}</b>'s statement in ${esc(results.cases[cbpCase].label)}: every payment in and out, by ${cbpFreq ? "period" : "date"}; profit <b class="${cum >= 0 ? "pos" : "neg"}">${fmt.usd(cum)}</b>`;
+  document.getElementById("cbpNote").innerHTML = `${depNote ? depNote + " " : ""}Positive = cash to ${esc(me.name)}. ${cbpAsOf ? "Rows after the as-of date are greyed. " : ""}Projected by the engine from this case's assumptions; not actual payments.`;
+}
 function renderCashByPerson() {
   const parties = cbpParties();
   let me = parties.find((p) => p.id === cbpParty);
@@ -1022,7 +1113,13 @@ function renderCashByPerson() {
   sel.innerHTML = groups.map((g) => `<optgroup label="${esc(g)}">${parties.filter((p) => p.group === g).map((p) => `<option value="${p.id}"${p.id === cbpParty ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>`).join("");
   sel.title = `${me.name} · ${me.group}`;
   document.getElementById("cbpCases").innerHTML = CASES.map((k) => `<button type="button" data-cbp-case="${k}" aria-pressed="${k === cbpCase}">${shortLabel(k)}</button>`).join("");
-  document.getElementById("cbpFreq").innerHTML = [[12, "Year"], [6, "Half-year"], [3, "Quarter"], [1, "Month"]].map(([m, l]) => `<button type="button" data-cbp-freq="${m}" aria-pressed="${m === cbpFreq}">${l}</button>`).join("");
+  const freqs = [[12, "Year"], [6, "Half-year"], [3, "Quarter"], [1, "Month"]].concat(cbpView === "statement" ? [[0, "Each date"]] : []);
+  if (cbpView !== "statement" && cbpFreq === 0) cbpFreq = 12;
+  document.getElementById("cbpFreq").innerHTML = freqs.map(([m, l]) => `<button type="button" data-cbp-freq="${m}" aria-pressed="${m === cbpFreq}">${l}</button>`).join("");
+  document.getElementById("cbpView").innerHTML = [["periods", "Totals"], ["statement", "Statement"]].map(([v, l]) => `<button type="button" data-cbp-view="${v}" aria-pressed="${v === cbpView}">${l}</button>`).join("");
+  document.getElementById("cbpAsOf").value = cbpAsOf;
+  renderBalances(me);
+  if (cbpView === "statement") { renderStatement(me); return; }
   const close = inputs.warehouse.close_date, annual = inputs.timing.mode !== "schedule";
   // period p covers (close + p*m months, close + (p+1)*m months]; flows on the close date get their own row
   const lastDate = me.flows.reduce((a, f) => (f.date > a ? f.date : a), close);
@@ -1908,6 +2005,8 @@ document.addEventListener("click", (e) => {
   if (cc) { cbpCase = cc.dataset.cbpCase; renderCashByPerson(); return; }
   const cf = e.target.closest("button[data-cbp-freq]");
   if (cf) { cbpFreq = +cf.dataset.cbpFreq; renderCashByPerson(); return; }
+  const cv = e.target.closest("button[data-cbp-view]");
+  if (cv) { cbpView = cv.dataset.cbpView; renderCashByPerson(); return; }
   const from = e.target.closest("button[data-from]");
   if (from) { startFrom(from.dataset.from); return; }
   const w = inputs.warehouse;
@@ -1971,6 +2070,7 @@ document.addEventListener("click", (e) => {
   if (group === "detailTabs" || group === "flowTabs") { detailCase = t.dataset.k; renderDetail(); renderChart(); renderExit(); renderWarehouse(); renderDirect(); }
 });
 document.getElementById("cbpParty").addEventListener("change", (e) => { cbpParty = e.target.value; renderCashByPerson(); });
+document.getElementById("cbpAsOf").addEventListener("change", (e) => { cbpAsOf = /^\d{4}-\d{2}-\d{2}$/.test(e.target.value) ? e.target.value : ""; renderCashByPerson(); });
 document.getElementById("resetBtn").addEventListener("click", () => { inputs = clone(DEFAULTS); activeScenario = null; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); });
 
 function inputsText() { const o = clone(inputs); o.as_of = new Date().toISOString().slice(0, 10); return JSON.stringify(o, null, 2) + "\n"; }
@@ -2592,6 +2692,7 @@ function vehicleIssueItems(inp, sm) {
   (w.manager_vesting || []).forEach((x, q) => {
     if (findP(x.person) && x.leaves && x.leaves <= w.close_date) out.push(`Vesting ${q + 1}: ${nameOf(x.person)} leaves on or before the close.`, `warehouse.manager_vesting.${q}.leaves`);
   });
+  w.people.forEach((pp, i) => { if (pp.role === "warehouse" && pp.amount > 0.5 && !w.selldown.tranches.length) out.push(`${pp.name} warehouses ${Math.round(pp.amount).toLocaleString("en-US")} of units but no sale is set, so they keep them for the whole hold.`, "warehouse.selldown"); });
   if ((w.manager_waterfall || {}).enabled && mcap <= 0) out.push(`${n.manager} has no capital, so "capital back first" has nothing to pay back.`, "warehouse.manager_waterfall.enabled");
   if (sm && Math.abs(sm.check) >= 0.05 && !out.length) out.push(`${n.vehicle}'s cash doesn't reconcile by ${Math.round(sm.check).toLocaleString("en-US")}.`, "warehouse");
   return items;
@@ -2619,6 +2720,33 @@ const ASK_TOOLS = [
         } catch (_) {}
         return out;
       }));
+    } },
+  { name: "get_statement",
+    description: "One vehicle person's statement for a deal and case (the engine's ledger): every payment in and out by date and account (units, the manager, partner loans, buy-ins), totals by year, the schedule of any partner loan they're in, and balances as of a date (put in, received, owed). Use it for who owes whom when, payback timing, and what a person has in at a date.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string" }, person: { type: "string", description: "a vehicle person's id or name" },
+      as_of: { type: "string", description: "optional ISO date for balances" }, scenario: { type: "string", description: "optional: a saved scenario's name" },
+      changes: { type: "object", description: "optional: dotted path -> value" }, detail: { type: "boolean", description: "optional: every dated entry, not just totals by year" } }, required: ["deal", "case", "person"] },
+    execute: ({ deal, case: k, person, as_of, scenario, changes, detail }) => {
+      const slug = needDeal(deal), inp = changes ? withChanges(slug, changes, null, scenario) : baseInputs(slug, scenario), ck = needCase(inp, k);
+      const v = E.warehouse(inp, { [ck]: E.runCase(ck, inp) })[ck], key = String(person || "").trim().toLowerCase();
+      const i = inp.warehouse.people.findIndex((pp) => pp.id === key || pp.name.trim().toLowerCase() === key);
+      if (i < 0) throw new Error(`person: one of ${inp.warehouse.people.map((pp) => `${pp.name} (${pp.id})`).join(", ")}`);
+      setAskStatus(`Reading ${inp.warehouse.people[i].name}'s statement · ${inp.cases[ck].label}…`);
+      const led = v.people[i].ledger, nm = v.people[i].name;
+      const byYear = {};
+      led.forEach((e) => { const y = e.date.slice(0, 4), kk = `${y}|${e.kind}|${e.counterparty || ""}`; byYear[kk] = byYear[kk] || { year: y, kind: e.kind, counterparty: e.counterparty, amount: 0, payments: 0 }; byYear[kk].amount += e.amount; byYear[kk].payments += 1; });
+      const upto = as_of ? led.filter((e) => e.date <= as_of) : null;
+      const loans = v.manager_loans.map((ln, q) => ({ ln, q })).filter(({ ln }) => ln.settled !== "invalid" && (ln.lender === nm || ln.borrower === nm)).map(({ ln, q }) => {
+        const sch = v.loan_schedules[q], past = as_of ? sch.filter((x) => x.date <= as_of) : sch;
+        return { lender: ln.lender, borrower: ln.borrower, amount: r0(ln.amount), interest: r0(ln.interest), settled: ln.settled, owed_at_end: r0(ln.owed_end),
+          balance_as_of: as_of ? r0(past.length ? past[past.length - 1].balance : 0) : undefined,
+          schedule: sch.map((x) => ({ date: x.date, kind: x.kind, interest: r0(x.interest), paid: r0(x.paid), balance: r0(x.balance) })) };
+      });
+      return { deal: slug, case: ck, label: inp.cases[ck].label, person: nm, id: inp.warehouse.people[i].id, note: "Positive = cash to the person. Projected from this case's assumptions, not actual payments.",
+        totals_by_year: Object.values(byYear).map((x) => Object.assign(x, { amount: r0(x.amount) })),
+        entries: detail ? led.map((e) => ({ date: e.date, account: e.account, kind: e.kind, amount: r0(e.amount), counterparty: e.counterparty })) : undefined,
+        as_of: as_of ? { date: as_of, put_in: r0(-upto.filter((e) => e.amount < 0).reduce((a, e) => a + e.amount, 0)), received: r0(upto.filter((e) => e.amount > 0).reduce((a, e) => a + e.amount, 0)) } : undefined,
+        partner_loans: loans, total: r0(led.reduce((a, e) => a + e.amount, 0)) };
     } },
   { name: "get_vehicle",
     description: "Our own vehicle (SPV) for one deal and case: its settings (raise, fees, member hurdle, promote, reserve, sell-down tranches, manager buy-ins, and the manager's own terms between its partners: manager_waterfall = capital + pref back first then splits, manager_loans = one partner funding another's capital, manager_vesting = promote share vesting and leaving) and results per person (incl. from_manager = cash from the manager after its own split and loans) (cash in, returned at sell-down, profit, IRR, multiple on money at risk, manager share at the end), outside buyers, and the manager's fees and promote. Works on the dashboard's inputs, a saved scenario, and/or changes.",
@@ -2810,6 +2938,7 @@ function askContext() {
     "- When you name an input the viewer could change, link it so they can jump to it: [exit cap](input:cases.downside.exit_cap) for the deal on screen, or [loan amount](input:the-bend/deal.loan_amount) for another deal. Use exact paths from list_inputs or your tool calls (people by id, e.g. warehouse.people[levi].manager_capital). Link only real inputs, never results like IRR.",
     "- To fix or adjust a saved scenario, use propose_scenario with scenario and replaces set to its name; the viewer clicks Update. Never claim a scenario was changed.",
     "- Saved scenarios: list_scenarios shows them; pass a scenario's name as `scenario` to any tool to work from it (what-ifs then build on it). get_vehicle covers our SPV: each person's cash, profit and IRR, buyers, fees and promote.",
+    "- For payback timing, who owes whom on a date, or what a person has in by a date, use get_statement (a person's dated ledger, partner-loan schedules and balances as of a date).",
     "- For questions about who in our vehicle gets what, measure the person: sweep / solve_for take metric person_profit, person_irr or person_from_manager with `person`; run_what_if and propose_scenario return each person's results when you change warehouse.*.",
     "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",

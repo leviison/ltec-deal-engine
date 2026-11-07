@@ -77,6 +77,14 @@ def test_randomized_match_and_reconcile(slug):
         res = run_all(inp)
         for k, wcase in res["warehouse"].items():
             assert wcase["summary"]["check"] < 0.05, (slug, seed, k, wcase["summary"]["check"])
+            for p in wcase["people"]:  # the ledger (#21) adds up to each person's flows on every date
+                by_date, led = {}, {}
+                for d, f in zip(wcase["dates"], p["flows"]):
+                    by_date[d] = by_date.get(d, 0.0) + f
+                for e in p["ledger"]:
+                    led[e["date"]] = led.get(e["date"], 0.0) + e["amount"]
+                for d in set(by_date) | set(led):
+                    assert abs(led.get(d, 0.0) - by_date.get(d, 0.0)) < 1e-6, (slug, seed, k, p["name"], d)
         errs = compare(json.loads(json.dumps(res, default=str)), js(inp))
         assert not errs, (slug, seed, errs[:10])
 
