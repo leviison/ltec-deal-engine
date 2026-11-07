@@ -485,6 +485,21 @@
   }
   const nameKey = (s) => s.trim().toLowerCase();
 
+  // A partner loan's repayment terms (#24), defaults = the original rule (see core.py)
+  const LOAN_TERM_DEFAULTS = { repayment: "sweep", sweep_pct: 1, term_years: 5, source: "manager_cash", maturity: "", on_leave: "continues" };
+  function loanTermsOf(ln) {
+    const out = {};
+    Object.keys(LOAN_TERM_DEFAULTS).forEach((k) => { out[k] = ln[k] !== undefined && ln[k] !== null ? ln[k] : LOAN_TERM_DEFAULTS[k]; });
+    return out;
+  }
+  function applyLoanPreset(ln, preset, lib) {
+    const out = Object.assign({}, ln);
+    Object.keys(LOAN_TERM_DEFAULTS).forEach((k) => { delete out[k]; });
+    Object.assign(out, JSON.parse(JSON.stringify(lib.presets[preset].terms)));
+    out.preset = preset;
+    return out;
+  }
+
   function warehouseCase(dists, inp, pctSold, dates, yfs) {
     const w = inp.warehouse, invest = inp.investor.check, par = w.unit_price, close = w.close_date;
     const raised = invest + w.reserve, mc = w.manager_commitment;
@@ -728,33 +743,73 @@
         lent[bo] -= aL;
         moves.push([-1, -1, lo, bo, aL, qL, "loan_advance"]);
         sched.push({ date: close, kind: "advance", interest: 0, paid: 0, balance: aL });
+        // Terms (#24, see core.py)
+        const tm = loanTermsOf(ln);
+        rec.terms = tm;
         const simpleL = (ln.rate_type || "simple") === "simple";
-        let prin = aL, acc = 0, bal = aL, prev = closeDay;
-        ev.forEach(([d, k, j]) => {
+        const rL = ln.rate, rp = tm.repayment;
+        const mat = tm.maturity ? toDay(tm.maturity) : null;
+        let leave = null;
+        if (tm.on_leave !== "continues") {
+          const ls = vestIn.filter((v) => v.leaves && pidx[nameKey(v.person)] === bo).map((v) => toDay(v.leaves));
+          leave = ls.length ? Math.min(...ls) : null;
+        }
+        let prin = aL, acc = 0, prev = closeDay, done = false;
+        for (let e = 0; e < ev.length; e++) {
+          const [d, k, j] = ev[e];
           const a = (d - prev) / 365;
           prev = d;
-          let accrued;
-          if (simpleL) {
-            accrued = prin * ln.rate * a;
-            acc += accrued;
-          } else {
-            accrued = bal * (Math.pow(1 + ln.rate, a) - 1);
-            bal *= Math.pow(1 + ln.rate, a);
-          }
+          const accrued = simpleL ? prin * rL * a : (prin + acc) * (Math.pow(1 + rL, a) - 1);
+          acc += accrued;
           const row = k === 0 ? mTr[j] : mDist[j];
-          const pay = Math.min(Math.max(0, row[bo]), simpleL ? prin + acc : bal);
+          const cash = Math.max(0, row[bo]);
+          const owed = prin + acc;
+          const ends = leave !== null && d >= leave ? "leaving" : (mat !== null && d >= mat ? "maturity" : null);
+          let pay;
+          if (ends === "leaving") pay = tm.on_leave === "forgiven" ? 0 : Math.min(owed, cash);
+          else if (ends === "maturity") pay = rp === "none" ? 0 : Math.min(owed, cash);
+          else if (rp === "sweep") pay = Math.min(tm.sweep_pct * cash, owed);
+          else {
+            let due;
+            if (rp === "interest_only") due = acc;
+            else if (rp === "equal_principal") {
+              const left = tm.term_years > 0 ? aL * Math.max(0, 1 - (d - closeDay) / 365 / tm.term_years) : 0;
+              due = acc + Math.max(0, prin - left);
+            } else if (rp === "at_exit") due = e === ev.length - 1 ? owed : 0;
+            else due = 0;
+            pay = tm.source === "borrower" ? Math.min(due, owed) : Math.min(due, cash, owed);
+          }
+          pay = Math.max(0, pay);
           row[bo] -= pay;
           row[lo] += pay;
           rec.repaid += pay;
-          if (simpleL) {
-            const ti = Math.min(pay, acc);
-            acc -= ti;
-            prin -= pay - ti;
-          } else bal -= pay;
+          const ti = Math.min(pay, acc);
+          acc -= ti;
+          prin -= pay - ti;
           if (pay > 0) moves.push([k, j, lo, bo, pay, qL, "loan_repayment"]);
-          sched.push({ date: evIso(k, j), kind: "period", interest: accrued, paid: pay, balance: simpleL ? prin + acc : bal });
-        });
-        const owed = Math.max(0, simpleL ? prin + acc : bal);
+          sched.push({ date: evIso(k, j), kind: "period", interest: accrued, paid: pay, balance: prin + acc });
+          if (ends) {
+            const left_ = Math.max(0, prin + acc);
+            rec.interest = rec.repaid + left_ - aL;
+            rec.owed_end = left_;
+            rec.due_date = evIso(k, j);
+            if (left_ <= 1e-9) rec.settled = "repaid";
+            else if ((ends === "leaving" && tm.on_leave === "forgiven") || (ends === "maturity" && ln.recourse === false)) {
+              rec.settled = "forgiven";
+              sched.push({ date: evIso(k, j), kind: "forgiven", interest: 0, paid: 0, balance: left_ });
+            } else {
+              row[bo] -= left_;
+              row[lo] += left_;
+              rec.settled = ends === "leaving" ? "paid_on_leaving" : "paid_at_maturity";
+              moves.push([k, j, lo, bo, left_, qL, "loan_settlement"]);
+              sched.push({ date: evIso(k, j), kind: rec.settled, interest: 0, paid: left_, balance: 0 });
+            }
+            done = true;
+            break;
+          }
+        }
+        if (done) return;
+        const owed = Math.max(0, prin + acc);
         rec.interest = rec.repaid + owed - aL;
         rec.owed_end = owed;
         if (owed > 1e-9 && ln.recourse !== false && ev.length) {
@@ -1054,7 +1109,7 @@
     w.people.forEach((p) => { if (p.id) names[p.id] = p.name; });
     return (text || "").replace(/\{([a-z0-9_]+)\}/g, (m0, k) => (k in names ? names[k] : m0));
   }
-  const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths, applyStructure, structurePartners,
+  const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths, applyStructure, structurePartners, loanTermsOf, applyLoanPreset, LOAN_TERM_DEFAULTS,
     personId, getPath, setPath, mergeDeep, applyVariant, fillLabel, referenceIssues, templateNote };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DealEngine = api;

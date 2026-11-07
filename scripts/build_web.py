@@ -32,7 +32,7 @@ def build(slugs, out, title, preview=False):
     tpl = (ROOT / "web" / "index.template.html").read_text()
     engine = (ROOT / "engine" / "core.js").read_text()
     deals = {s: load_deal(s) for s in slugs}
-    for marker in ("/*__ENGINE__*/", "/*__DEALS__*/null", "/*__BUILD__*/null", "/*__STRUCTURES__*/null", "__DEAL_NAME__", "__PAGE_TITLE__"):
+    for marker in ("/*__ENGINE__*/", "/*__DEALS__*/null", "/*__BUILD__*/null", "/*__STRUCTURES__*/null", "/*__LOAN_TERMS__*/null", "__DEAL_NAME__", "__PAGE_TITLE__"):
         assert marker in tpl, marker
     # JSON inside <script>: keep "</" from closing the tag
     data = json.dumps(deals).replace("</", "<\\/")
@@ -40,6 +40,7 @@ def build(slugs, out, title, preview=False):
                .replace("/*__DEALS__*/null", data)
                .replace("/*__BUILD__*/null", json.dumps(build_info(preview)))
                .replace("/*__STRUCTURES__*/null", (ROOT / "engine" / "structures.json").read_text().replace("</", "<\\/"))
+               .replace("/*__LOAN_TERMS__*/null", (ROOT / "engine" / "loan_terms.json").read_text().replace("</", "<\\/"))
                .replace("__PAGE_TITLE__", html.escape(title))
                .replace("__DEAL_NAME__", html.escape(deals[slugs[0]]["meta"]["name"])))
     out.parent.mkdir(parents=True, exist_ok=True)

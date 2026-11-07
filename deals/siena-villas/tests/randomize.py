@@ -89,4 +89,12 @@ def randomized(base, seed):
     w["manager_vesting"] = [{"person": r.choice(pn), "years": r.choice([0, 3, 4]), "cliff_years": r.choice([0, 1]),
                              "leaves": r.choice(["", "2027-06-30", "2028-11-05", "2030-01-01"]),
                              "terms": r.choice(["keep_vested", "forfeit"])} for _ in range(r.randint(0, 2))] if r.random() < 0.5 else []
+    rt = random.Random(seed + 7919)  # loan terms (#24) on their own stream so earlier draws stay the same
+    for ln in w["manager_loans"]:
+        if rt.random() < 0.7:
+            ln.update({"repayment": rt.choice(["sweep", "interest_only", "equal_principal", "at_exit", "none"]),
+                       "sweep_pct": rt.choice([1.0, 0.5, 0.25]), "term_years": rt.choice([0, 3, 5, 10]),
+                       "source": rt.choice(["manager_cash", "borrower"]),
+                       "maturity": rt.choice(["", "", "2028-06-30", "2029-10-10", "2040-01-01"]),
+                       "on_leave": rt.choice(["continues", "due", "forgiven"])})
     return inp
