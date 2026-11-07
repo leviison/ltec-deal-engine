@@ -330,6 +330,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
       <div class="row" id="exportBtns" style="gap:6px" hidden>
         <button class="btn" type="button" id="expPdf" title="A summary to share: cases, chart, assumptions, diligence">Export PDF</button>
         <button class="btn" type="button" id="expXlsx" title="Every case year by year, the waterfall, inputs with sources">Export Excel</button>
+        <button class="btn deal-only" type="button" id="expTerms" title="Summary of terms (Word): how we hold the deal, the vehicle, the manager's terms between its partners and each loan, with sources; outcomes by case; loan schedules; terms still to confirm">Export terms</button>
         <span class="toast" id="expToast" aria-live="polite"></span>
       </div>
       <label class="deal-pick deal-only" id="dealPickWrap" hidden><span class="eyebrow">Deal</span><select id="dealPick" aria-label="Deal"></select></label>
@@ -2789,6 +2790,21 @@ const ASK_TOOLS = [
         return out;
       }));
     } },
+  { name: "get_terms_summary",
+    description: "The summary of terms (a term sheet) for how we hold one deal, written from the inputs: the investment, the people, the vehicle's terms, the manager's terms between its partners (waterfall, each partner loan's terms in words, vesting, buy-ins), each term with its source; the projected outcome by case; each loan's schedule; and the terms still to confirm (TODO or assumption sources, and changes from the deal file). The viewer can download it as a Word file with Export terms. A business summary, not a legal document.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name" },
+      changes: { type: "object", description: "optional: dotted path -> value" } }, required: ["deal"] },
+    execute: ({ deal, scenario, changes }) => {
+      const slug = needDeal(deal), inp = changes ? withChanges(slug, changes, null, scenario) : baseInputs(slug, scenario);
+      setAskStatus(`Writing the summary of terms for ${DEALS[slug].meta.name}…`);
+      const keys = Object.keys(inp.cases), wres = E.warehouse(inp, Object.fromEntries(keys.map((k) => [k, E.runCase(k, inp)])));
+      const t = termsSummary(inp, wres, Object.fromEntries(keys.map((k) => [k, inp.cases[k].label])), slug, { basis: scenario ? `Saved scenario “${scenario}”` : changes ? "Deal file with changes" : "Deal file as underwritten" });
+      const slim = (r) => ({ term: r.term, value: r.value, source: r.source || undefined, changed: r.changed || undefined, path: r.path || undefined });
+      return { title: t.title, subtitle: t.subtitle, basis: t.basis, disclaimer: t.disclaimer,
+        sections: t.sections.map((x) => ({ heading: x.heading, table: x.table, rows: x.rows.map(slim), loans: (x.subsections || []).map((y) => ({ title: y.title, rows: y.rows.map(slim) })) })),
+        outcome_by_case: t.outcome, loan_schedules: t.exhibits.map((x) => ({ title: x.title, rows: x.rows })), still_to_confirm: t.open,
+        download: "The viewer's Export terms button saves this as a Word document." };
+    } },
   { name: "get_statement",
     description: "One vehicle person's statement for a deal and case (the engine's ledger): every payment in and out by date and account (units, the manager, partner loans, buy-ins), totals by year, the schedule of any partner loan they're in, and balances as of a date (put in, received, owed). Use it for who owes whom when, payback timing, and what a person has in at a date.",
     inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string" }, person: { type: "string", description: "a vehicle person's id or name" },
@@ -3012,7 +3028,7 @@ function askContext() {
     "- Saved scenarios: list_scenarios shows them; pass a scenario's name as `scenario` to any tool to work from it (what-ifs then build on it). get_vehicle covers our SPV: each person's cash, profit and IRR, buyers, fees and promote.",
     "- For payback timing, who owes whom on a date, or what a person has in by a date, use get_statement (a person's dated ledger, partner-loan schedules and balances as of a date).",
     "- For questions about who in our vehicle gets what, measure the person: sweep / solve_for take metric person_profit, person_irr or person_from_manager with `person`; run_what_if and propose_scenario return each person's results when you change warehouse.*.",
-    "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. A partner loan's terms (repayment: sweep / interest_only / equal_principal / at_exit / none, sweep_pct, term_years, source, maturity, recourse, on_leave; presets in list_inputs loan_terms) decide when the borrower repays; get_statement shows the result by date. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
+    "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. For a term sheet or a summary of the terms, use get_terms_summary and point to the Export terms button. A partner loan's terms (repayment: sweep / interest_only / equal_principal / at_exit / none, sweep_pct, term_years, source, maturity, recourse, on_leave; presets in list_inputs loan_terms) decide when the borrower repays; get_statement shows the result by date. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
     "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),
@@ -3239,6 +3255,171 @@ async function connectAsk() {
 }
 
 
+/* ------------------------------------------------------------ summary of terms (#25) */
+// The business terms of how we hold a deal, written from the inputs with the same labels the panel uses, each with
+// its source; the projected outcome by case; each partner loan's schedule as an exhibit; terms still to confirm.
+// A term sheet for partners and counsel, not a legal document. Used by "Export terms" (Word) and Ask's
+// get_terms_summary. `inp` is the deal's inputs; `wres` the vehicle results by case ({case: warehouseCase});
+// `cases` the case labels by key; `slug` the deal.
+function termsSummary(inp, wres, cases, slug, opts) {
+  const keep = inputs; inputs = inp;  // whFields() reads the page's inputs: words come from the same field specs
+  try { return termsSummaryOf(inp, wres, cases, slug, opts || {}); } finally { inputs = keep; }
+}
+function termsSummaryOf(inp, wres, cases, slug, opts) {
+  const D = DEALS[slug], M = D.meta, w = inp.warehouse, n = w.names, fx = whFields(), base = D;
+  const prim = (D.meta.ui || {}).primary_case || Object.keys(cases)[0], keys = Object.keys(cases);
+  const nameOf = (r) => (w.people.find((q) => q.id === r || q.name === r) || {}).name || r;
+  const srcOf = (path) => sourceFor(slug, path);
+  const pctT = (x) => x == null ? "—" : `${+(x * 100).toFixed(2)}%`;
+  const val = (f, v) => {
+    if (v === undefined && f.dflt !== undefined) v = f.dflt;
+    if (f.kind === "pct") return pctT(v);
+    if (f.kind === "usd") return fmt.usd(v);
+    if (f.kind === "bool") return v ? "Yes" : "No";
+    if (f.kind === "select") { const o = (f.opts || []).find(([k]) => String(k) === String(v)); return o ? nameOf(o[1]) : nameOf(String(v ?? "")); }
+    if (f.kind === "date") return v || "—";
+    if (f.kind === "num") return `${v}${f.unit ? " " + f.unit : ""}`;
+    return v == null || v === "" ? "—" : String(v);
+  };
+  const used = [];
+  const row = (f, label) => {
+    const v = get(inp, f.path), b = get(base, f.path);
+    used.push(f.path);
+    // changed: "new" = not in the deal file (set in this version), true = a different value from the deal file
+    const changed = v === undefined || JSON.stringify(b) === JSON.stringify(v) ? false : b === undefined ? "new" : true;
+    return { term: label || f.label, value: val(f, v), source: srcOf(f.path), changed, path: f.path };
+  };
+  const text = (term, value, path) => ({ term, value, source: path ? srcOf(path) : "", changed: false, path: path || null });
+  const sections = [];
+  // 1. the investment
+  const tpl = STRUCTURES && STRUCTURES.templates[w.structure];
+  const inv = [text("Deal", `${M.name}${M.location ? ", " + M.location : ""}`), text("Sponsor", M.sponsor || "—"),
+    text("Investor", inp.investor.name, "investor.name"), text("Check", fmt.usd(inp.investor.check), "investor.check")];
+  const sl = inp.investor.side_letter;
+  if (sl && Object.keys((base.investor.side_letter || {}).terms || {}).length) inv.push(text("Side letter", sl.enabled ? [sl.terms.pref_rate != null ? `${pctT(sl.terms.pref_rate)} pref` : "", sl.terms.residual_lp_share != null ? `${Math.round(sl.terms.residual_lp_share * 100)}/${Math.round(100 - sl.terms.residual_lp_share * 100)} split` : ""].filter(Boolean).join(", ") || "On" : "Not applied", "investor.side_letter"));
+  inv.push(text(`How ${n.manager} holds it`, tpl ? `${E.fillLabel(tpl.label, inp)}. ${E.templateNote(tpl, inp)}` : "Set up by hand (no structure template).", "warehouse.structure"));
+  fx.names.slice(0, 2).forEach((f) => inv.push(row(f)));
+  sections.push({ heading: "The investment", rows: inv });
+  // 2. the people
+  const roleT = { member: "Keeps units", warehouse: "Warehouses units to sell", loan: `Lends to ${n.manager}` };
+  sections.push({ heading: "The people", table: { columns: ["Person", `In ${n.vehicle}`, `Into ${n.manager}`, `${n.manager} fees & promote`],
+    rows: w.people.map((q) => [q.name, q.amount ? `${fmt.usd(q.amount)} · ${roleT[q.role] || q.role}${q.role === "loan" ? ` at ${pctT(q.loan_rate)} simple` : ""}` : "—", fmt.usd(q.manager_capital), pctT(q.manager_share)]) },
+    rows: [], note: `Each person's share of ${n.manager}'s units and reserve follows their capital into ${n.manager}; fees & promote follow the share shown.` });
+  w.people.forEach((q, i) => fx.person(i).forEach((f) => used.push(f.path)));
+  // 3. the vehicle
+  const direct = w.structure === "direct";
+  const vrows = [];
+  if (!direct) {
+    fx.vehicle.forEach((f) => vrows.push(row(f)));
+    fx.fees.filter((f) => !(f.path.endsWith("admin_cost_per_year") && w.admin_cost_method === "pct_raise") && !(f.path.endsWith("admin_cost_pct") && w.admin_cost_method !== "pct_raise")).forEach((f) => vrows.push(row(f)));
+    (w.selldown.tranches || []).forEach((t, j) => vrows.push(text(`Sale ${j + 1}`, `${t.date}: ${pctT(t.share)} of the warehoused units to ${nameOf(t.buyer || n.buyers)} at ${t.pricing === "premium" ? `par ${t.rate >= 0 ? "+" : "−"} ${pctT(Math.abs(t.rate))}` : `par + ${pctT(t.rate)} ${t.pricing === "carry_compound" ? "compound" : "simple"} carry`}`, "warehouse.selldown.tranches")));
+  } else vrows.push(row(fx.vehicle[0]), text("Vehicle terms", `None: ${n.manager} writes the check itself (no vehicle fees or promote).`, "warehouse.structure"));
+  sections.push({ heading: direct ? "Holding directly" : `The vehicle: ${n.vehicle}`, rows: vrows });
+  // 4. the manager and its partners
+  const mrows = [], mw = w.manager_waterfall || {};
+  if (mw.enabled) {
+    mrows.push(text(`${n.manager}'s cash`, `All ${n.manager} cash is pooled: whoever funded ${n.manager} gets their capital plus a ${pctT(mw.pref)} ${mw.pref_type === "simple" ? "simple" : "compounding"} pref back first.`, "warehouse.manager_waterfall"));
+    (mw.tiers || []).forEach((t, k) => mrows.push(text(`Then, step ${k + 1}`, `${pctT(t.capital_share)} to capital holders until their IRR reaches ${pctT(t.to_irr)}; the rest by fees & promote shares.`, "warehouse.manager_waterfall.tiers")));
+    mrows.push(text("After that", `${pctT(mw.residual_capital_share)} to capital holders, the rest by fees & promote shares.`, "warehouse.manager_waterfall.residual_capital_share"));
+  } else mrows.push(text(`${n.manager}'s cash`, `Shared pro rata: each partner gets their capital share of ${n.manager}'s units and reserve, and their share of its fees & promote.`, "warehouse.manager_waterfall"));
+  const loans = [];
+  (w.manager_loans || []).forEach((x, q) => {
+    const st = loanPresetState(x), pr = st.key && loanLib(inp).presets[st.key], lf = fx.loan(q), tf = fx.loanTerms(q);
+    lf.concat(tf).forEach((f) => used.push(f.path));
+    loans.push({ title: `Partner loan ${q + 1}: ${nameOf(x.lender)} to ${nameOf(x.borrower)}`, rows: [
+      ...lf.map((f) => row(f)),
+      ...(pr ? [text("Method", `${pr.title}${st.edited ? " (edited)" : ""}: ${pr.summary}`, `warehouse.manager_loans.${q}.preset`)] : []),
+      ...tf.filter((f) => !f.path.endsWith(".preset")).map((f) => row(f)),
+      text("In short", loanTermsText(x, nameOf(x.borrower), n.manager) + ".", `warehouse.manager_loans.${q}`)] });
+  });
+  const vest = (w.manager_vesting || []).map((x, q) => { fx.vest(q).forEach((f) => used.push(f.path));
+    return text(`Vesting ${q + 1}: ${nameOf(x.person)}`, `${n.manager} fees & promote share vests over ${x.years || 0} yrs from close${x.cliff_years ? `, nothing before ${x.cliff_years} yr${x.cliff_years > 1 ? "s" : ""}` : ""}; ${x.terms === "forfeit" ? "forfeits all of it on leaving" : "keeps the vested part on leaving"}${x.leaves ? `. Leaves ${x.leaves} (as modeled)` : ""}.`, `warehouse.manager_vesting.${q}`); });
+  const buys = (w.manager_transfers || []).map((x, q) => { fx.xfer(q).forEach((f) => used.push(f.path));
+    const what = x.interest === "promote" ? "fees & promote" : x.interest === "capital" ? "capital" : "capital + fees & promote";
+    return text(`Buy-in ${q + 1}`, `${x.date}: ${nameOf(x.buyer)} buys ${x.mode === "amount" ? fmt.usd(x.amount) + " of" : pctT(x.share) + " of"} ${nameOf(x.seller)}'s ${n.manager} ${what}, ${x.interest === "promote" ? `for ${fmt.usd(x.price)}` : x.pricing === "premium" ? `at cost ${x.rate >= 0 ? "+" : "−"} ${pctT(Math.abs(x.rate))}` : `at cost + ${pctT(x.rate)} ${x.pricing === "carry_compound" ? "compound" : "simple"} interest`}${x.credit_distributions ? ", less cash the seller already got on it" : ""}.`, `warehouse.manager_transfers.${q}`); });
+  sections.push({ heading: `${n.manager} and its partners`, rows: mrows.concat(vest, buys), subsections: loans });
+  // 5. projected outcome by case
+  const outcome = { columns: ["", ...keys.map((k) => cases[k])], rows: [] };
+  w.people.forEach((q, i) => {
+    outcome.rows.push([`${q.name}: profit`, ...keys.map((k) => fmt.usd(wres[k].summary.people[i].profit))]);
+    outcome.rows.push([`${q.name}: IRR`, ...keys.map((k) => wres[k].summary.people[i].irr == null ? "—" : fmt.pct(wres[k].summary.people[i].irr))]);
+  });
+  (w.manager_loans || []).forEach((x, q) => {
+    if (!keys.length || wres[keys[0]].manager_loans[q].settled === "invalid") return;
+    outcome.rows.push([`Loan ${q + 1}: interest`, ...keys.map((k) => fmt.usd(wres[k].manager_loans[q].interest))]);
+    outcome.rows.push([`Loan ${q + 1}: at the end`, ...keys.map((k) => settledText(wres[k].manager_loans[q]))]);
+  });
+  const exhibits = (w.manager_loans || []).map((x, q) => {
+    const sch = (wres[prim] || wres[keys[0]]).loan_schedules[q] || [];
+    const kindT = { advance: "Lent", period: "Payment date", paid_at_end: "Rest paid at the end", paid_at_maturity: "Rest paid at maturity", paid_on_leaving: "Rest paid on leaving", forgiven: "Rest forgiven" };
+    return { title: `Partner loan ${q + 1}: projected schedule (${cases[prim] || prim})`, columns: ["Date", "", "Interest", "Paid", "Balance"],
+      rows: sch.map((e) => [e.date, kindT[e.kind] || e.kind, e.interest ? fmt.usd(e.interest) : "—", e.paid ? fmt.usd(e.paid) : "—", fmt.usd(e.balance)]) };
+  }).filter((e) => e.rows.length);
+  // terms still to confirm: anything used whose source is a TODO or an assumption, and anything changed from the deal file
+  // one line per status and source, listing the terms it covers
+  const allRows = sections.flatMap((x) => x.rows.map((r) => [r, ""]).concat(...(x.subsections || []).map((y) => y.rows.map((r) => [r, y.title.replace(/:.*/, "")]))));
+  const open = [], byKey = {};
+  allRows.forEach(([r, where]) => {
+    const s = r.source || "";
+    const why = r.changed === "new" ? "Set in this version, not in the deal file" : r.changed ? "Changed from the deal file" : /TODO/i.test(s) ? "To confirm" : /^Assumption/i.test(s) ? "Assumption" : null;
+    if (!why || r.term === "In short" || r.term === "Method") return;
+    const key = why + "|" + s;
+    if (!byKey[key]) open.push(byKey[key] = { groups: {}, why, source: s });
+    const g = byKey[key].groups[where] = byKey[key].groups[where] || [];
+    if (!g.includes(r.term)) g.push(r.term);
+  });
+  open.forEach((o) => { o.term = Object.entries(o.groups).map(([where, ts]) => (where ? `${where}: ` : "") + ts.join(", ")).join("; "); delete o.groups; });
+  return {
+    title: "Summary of terms", subtitle: `${M.name} · ${n.vehicle} and ${n.manager}`,
+    basis: opts.basis || "Deal file as underwritten", prepared: today(), engine: `${ENGINE_LABEL} · build ${BUILD.commit}`, primary: cases[prim] || prim,
+    disclaimer: "Draft for discussion. A summary of business terms from the deal engine, not a legal document: counsel drafts the agreements. Outcomes and schedules are projections from each case's assumptions, not actual payments.",
+    sections, outcome, exhibits, open,
+  };
+}
+
+// ---------- Word (docx): the summary of terms as a document to mark up
+async function buildTermsDocx(t) {
+  const d = window.docx, { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType, ShadingType } = d;
+  const P = (txt, o = {}) => new Paragraph({ spacing: { after: 80 }, ...o, children: [].concat(txt).map((x) => typeof x === "string" ? new TextRun({ text: x, size: o.size || 20, color: o.color, italics: o.italics, bold: o.bold }) : x) });
+  const thin = { style: BorderStyle.SINGLE, size: 4, color: "C8CED6" };
+  const borders = { top: thin, bottom: thin, left: thin, right: thin, insideHorizontal: thin, insideVertical: thin };
+  const cell = (txt, o = {}) => new TableCell({ width: o.w ? { size: o.w, type: WidthType.PERCENTAGE } : undefined, shading: o.head ? { type: ShadingType.CLEAR, fill: "EEF1F5", color: "auto" } : undefined,
+    margins: { top: 50, bottom: 50, left: 90, right: 90 }, children: [new Paragraph({ alignment: o.right ? AlignmentType.RIGHT : AlignmentType.LEFT, children: [new TextRun({ text: String(txt ?? ""), size: o.size || 18, bold: !!o.head || !!o.bold, color: o.color })] })] });
+  const termTable = (rows) => new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders, rows: [
+    new TableRow({ tableHeader: true, children: [cell("Term", { head: true, w: 24 }), cell("Terms", { head: true, w: 50 }), cell("Source", { head: true, w: 26 })] }),
+    ...rows.map((r, i) => { const pre = (x) => x.changed === "new" ? "Set in this version (not in the deal file). " : x.changed ? "Changed from the deal file. " : "";
+      const src = pre(r) + (r.source || ""), prev = i ? pre(rows[i - 1]) + (rows[i - 1].source || "") : null;
+      return new TableRow({ children: [cell(r.term, { w: 24, bold: true }), cell(r.value, { w: 50 }), cell(src && src === prev ? "As above" : src, { w: 26, size: 16, color: "5A6472" })] }); })] });
+  const grid = (g) => new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders, rows: [
+    new TableRow({ tableHeader: true, children: g.columns.map((c, i) => cell(c, { head: true, right: i > 0 && /^[\d$−—]/.test(String((g.rows[0] || [])[i] || "")) })) }),
+    ...g.rows.map((r) => new TableRow({ children: r.map((c, i) => cell(c, { right: i > 0 && /^[\d$−—-]/.test(String(c)), bold: i === 0 })) }))] });
+  const H = (txt, level) => new Paragraph({ heading: level, spacing: { before: 240, after: 100 }, children: [new TextRun({ text: txt })] });
+  const kids = [
+    new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun({ text: t.title })] }),
+    P(t.subtitle, { size: 26, bold: true }),
+    P(`Version: ${t.basis} · Outcomes: every case; schedules: ${t.primary} · Prepared ${t.prepared} · ${t.engine}`, { size: 16, color: "5A6472" }),
+    P(t.disclaimer, { size: 18, italics: true, color: "7A4E0B" }),
+  ];
+  t.sections.forEach((s, i) => {
+    kids.push(H(`${i + 1}. ${s.heading}`, HeadingLevel.HEADING_1));
+    if (s.table) kids.push(grid(s.table));
+    if (s.note) kids.push(P(s.note, { size: 18, color: "5A6472" }));
+    if (s.rows.length) kids.push(termTable(s.rows));
+    (s.subsections || []).forEach((x) => { kids.push(H(x.title, HeadingLevel.HEADING_2)); kids.push(termTable(x.rows)); });
+  });
+  kids.push(H(`${t.sections.length + 1}. Projected outcome by case`, HeadingLevel.HEADING_1), grid(t.outcome),
+    P("Projections from each case's assumptions in the deal engine; not a promise of results.", { size: 16, color: "5A6472" }));
+  t.exhibits.forEach((x, i) => { kids.push(H(`Exhibit ${String.fromCharCode(65 + i)}. ${x.title}`, HeadingLevel.HEADING_1), grid(x)); });
+  kids.push(H("Terms still to confirm", HeadingLevel.HEADING_1));
+  if (t.open.length) kids.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders, rows: [
+    new TableRow({ tableHeader: true, children: [cell("Terms", { head: true, w: 34 }), cell("Status", { head: true, w: 18 }), cell("Source / note", { head: true, w: 48 })] }),
+    ...t.open.map((o) => new TableRow({ children: [cell(o.term, { w: 34, bold: true }), cell(o.why, { w: 18 }), cell(o.source, { w: 48, size: 16 })] }))] }));
+  else kids.push(P("None: every term shown has a document source."));
+  const doc = new Document({ creator: ENGINE_LABEL, title: `${t.title}: ${t.subtitle}`, styles: { default: { document: { run: { font: "Calibri" } } } },
+    sections: [{ properties: { page: { margin: { top: 1000, bottom: 1000, left: 1000, right: 1000 } } }, children: kids }] });
+  return Packer.toBlob(doc);
+}
+
 /* ------------------------------------------------------------ export: PDF summary and Excel workbook */
 // Libraries load from jsDelivr only when someone exports. Files go out through the downloads capability (the viewer
 // confirms each save). Both exports follow the current view: one deal (with your edits) or the comparison columns.
@@ -3246,6 +3427,7 @@ const LIBS = {
   exceljs: "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js",
   jspdf: "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js",
   autotable: "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js",
+  docx: "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js",
 };
 const libLoads = {};
 function loadLib(k) {
@@ -3268,13 +3450,18 @@ function exportState() {
 }
 function expMsg(msg, err) { const t = document.getElementById("expToast"); t.className = "toast" + (err ? " err" : ""); t.textContent = msg; }
 async function doExport(type) {
-  const btn = document.getElementById(type === "pdf" ? "expPdf" : "expXlsx");
+  const btn = document.getElementById(type === "pdf" ? "expPdf" : type === "terms" ? "expTerms" : "expXlsx");
   btn.disabled = true; const label = btn.textContent; btn.textContent = "Preparing…";
   try {
     const st = exportState();
     const base = st.kind === "compare" ? "deal-comparison" : st.slug;
     let data, filename;
-    if (type === "pdf") { await loadLib("jspdf"); await loadLib("autotable"); data = buildPdf(st); filename = `${base}-summary-${today()}.pdf`; }
+    if (type === "terms") {
+      await loadLib("docx");
+      const cases = Object.fromEntries(CASES.map((k) => [k, results.cases[k].label]));
+      data = await buildTermsDocx(termsSummary(inputs, results.warehouse, cases, META.slug, { basis: st.scenario ? `Saved scenario “${st.scenario}”` : activeVariant != null ? `Variant “${E.fillLabel(META.alternatives[activeVariant].name, inputs)}”` : st.edits.length ? `Deal file with ${st.edits.length} edit${st.edits.length > 1 ? "s" : ""}` : "Deal file as underwritten" }));
+      filename = `${st.slug}-terms-${today()}.docx`;
+    } else if (type === "pdf") { await loadLib("jspdf"); await loadLib("autotable"); data = buildPdf(st); filename = `${base}-summary-${today()}.pdf`; }
     else { await loadLib("exceljs"); data = await buildXlsx(st); filename = `${base}-model-${today()}.xlsx`; }
     await downloadsApi.save({ filename, data });
     expMsg("Exported " + filename);
@@ -3637,6 +3824,7 @@ function buildPdf(st) {
 (() => {
   document.getElementById("expPdf").addEventListener("click", () => doExport("pdf"));
   document.getElementById("expXlsx").addEventListener("click", () => doExport("xlsx"));
+  document.getElementById("expTerms").addEventListener("click", () => doExport("terms"));
 })();
 
 /* ------------------------------------------------------------ boot and deal switching */

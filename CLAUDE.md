@@ -62,7 +62,11 @@
   `applyLoanPreset`), embedded in the page as `LOAN_TERMS`; the page words terms with `loanTermsText`. Payments fall
   on the deal's cash dates; a maturity or departure settles on the next one. A new term or preset: both engines,
   the library, `tests/test_loan_terms.py` (hand calculation), the randomizers, and a field on the loan card.
-  Next: a Summary of terms export (#25), the warehouse lender on the same parts (#26), legal drafts (#27, roadmap).
+  Next: the warehouse lender on the same parts (#26), legal drafts (#27, roadmap).
+- Summary of terms (#25): `termsSummary(inp, wres, cases, slug)` in the page writes the term sheet from the inputs using
+  the panel's field specs (`whFields`), each term with its source; "Export terms" (`buildTermsDocx`, docx 8.5.0 from
+  jsDelivr) and Ask's `get_terms_summary` use it. A new vehicle or manager input appears there through its field;
+  give it a source. tests/web/terms_export.test.js opens the .docx and checks it.
 - Names are labels (#29 checks): any text that shows a manager / vehicle / buyers / person name takes it from the inputs
   (or `{manager}`-style placeholders filled by `fill_label` = `fillLabel`), never a literal; library files
   (`structures.json`, `loan_terms.json`) use placeholders too. tests/web/names.test.js renames everything on every
