@@ -5,6 +5,14 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.9.1 — 2026-11-17
+
+- Cash by person (#35): in month, quarter and half-year views under annual timing, each year's operating
+  distribution is spread across the year (its share of the deal's cash that year, from the case's results) and any
+  lump is shown in the period it's paid: the sale in the last year, a refinance's proceeds in its year. Before, the
+  final year's periods were blank until the last one (and a refinance year was spread evenly). Follows the hold,
+  rents, other income and refinance inputs. Totals and profit are unchanged. Page test `tests/web/cash_spread.test.js`.
+
 ## 2.9.0 — 2026-11-07
 
 - Bridge fallback (#33, schema 10): a partner loan's new part **If not paid at maturity**: settled then (paid or
