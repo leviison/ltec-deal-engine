@@ -1052,6 +1052,14 @@ let cbpParty = "p0", cbpCase = PRIMARY, cbpFreq = 12, cbpView = "periods", cbpAs
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // "Jun 2030" (month and year; "Jun 30" read like a day of the month)
 const monLabel = (iso) => { const [y, m] = iso.split("-"); return `${MON[+m - 1]} ${y}`; };
+// The share of a case's last distribution that is the final year's operating cash (the rest is the sale and any
+// reserves released); 0 when there is no operating cash left (#35).
+function finalYearOpsShare(k) {
+  const C = results.cases[k], cash = C.waterfall.cash, last = cash[cash.length - 1] || 0;
+  if (last <= 0) return 0;
+  const ops = last - Math.max(0, C.exit.net_sale_proceeds || 0) - (C.exit.reserves_returned || 0);
+  return Math.min(1, Math.max(0, ops / last));
+}
 function cbpParties() {
   const w = inputs.warehouse, k = cbpCase, R = results.warehouse[k], C = results.cases[k];
   // flows: close, sales, buy-ins, loan pay-downs on their own dates (#31), then distributions
@@ -1190,12 +1198,20 @@ function renderCashByPerson() {
     r[kind] += amt;
   };
   const lastDist = me.flows.filter((f) => f.kind === "dist").reduce((a, f) => (f.date > a ? f.date : a), "");
+  const opsShare = finalYearOpsShare(cbpCase);
+  const spread = (f, amt) => {  // annual timing: show finer periods as equivalents, the year's distribution spread evenly
+    const start = E.addMonths(f.date, -12), n = 12 / cbpFreq;
+    for (let q = 0; q < n; q++) put(E.addMonths(start, (q + 1) * cbpFreq), "dist", amt / n);
+  };
   me.flows.forEach((f) => {
-    if (annual && f.kind === "dist" && cbpFreq < 12 && f.date !== lastDist) {
-      // annual timing: show finer periods as equivalents, spreading the year's distribution evenly over it
-      const start = E.addMonths(f.date, -12), n = 12 / cbpFreq;
-      for (let q = 0; q < n; q++) put(E.addMonths(start, (q + 1) * cbpFreq), "dist", f.amount / n);
-    } else put(f.date, f.kind, f.amount);
+    if (!(annual && f.kind === "dist" && cbpFreq < 12)) put(f.date, f.kind, f.amount);
+    else if (f.date !== lastDist) spread(f, f.amount);
+    else {
+      // the last distribution is the final year's operating cash plus the sale (#35): spread the operating part
+      // like any year (its share of the deal's last distribution), and show the sale part when it's paid
+      spread(f, f.amount * opsShare);
+      put(f.date, "dist", f.amount * (1 - opsShare));
+    }
   });
   let cum = 0;
   const fmtCell = (v) => (Math.abs(v) < 0.5 ? `<span class="muted">—</span>` : fmt.usd(v));
@@ -1211,7 +1227,7 @@ function renderCashByPerson() {
   const y1 = rows.slice(0, 12 / cbpFreq).reduce((a, r) => a + r.dist, 0);
   document.getElementById("cbpSummary").innerHTML = `<b>${esc(me.name)}</b> in ${esc(results.cases[cbpCase].label)}: profit <b class="${tot.in + tot.back + tot.dist >= 0 ? "pos" : "neg"}">${fmt.usd(tot.in + tot.back + tot.dist)}</b>, IRR <b>${fmt.pct(me.irr)}</b> · first-year distributions ${fmt.usd(y1)} ≈ ${fmt.usd(y1 / 12)}/month`;
   document.getElementById("cbpNote").textContent = annual
-    ? (cbpFreq < 12 ? "Annual timing: each year's distribution is shown spread evenly across the year (equivalents). The final distribution includes the sale and is shown in the period it's paid. Switch Distribution timing to the Redstone schedule for actual payment dates." : "Annual timing: one distribution a year on the close anniversary. The final year includes the sale.")
+    ? (cbpFreq < 12 ? "Annual timing: each year's distribution is shown spread evenly across the year (equivalents), the final year's too; the sale proceeds are shown in the period they're paid. Switch Distribution timing to the Redstone schedule for actual payment dates." : "Annual timing: one distribution a year on the close anniversary. The final year includes the sale.")
     : `${UI.sponsor_short} schedule: ${UI.deal_short} pays ${({ 4: "quarterly", 2: "semiannually", 1: "annually" })[inputs.timing.siena_frequency]} from ${inputs.timing.first_distribution}; ${inputs.warehouse.names.vehicle} pays its members ${({ 0: "when Siena pays", 4: "quarterly", 2: "semiannually", 1: "annually" })[inputs.timing.vehicle_frequency]}${inputs.timing.vehicle_frequency ? ` from ${inputs.timing.vehicle_first_distribution}` : ""}, holding back ${fmt.pct(inputs.timing.vehicle_holdback, 0)} until the final distribution. Amounts are on their actual dates.`;
 }
 function E_monthsBetween(a, b) { const [y1, m1, d1] = a.split("-").map(Number), [y2, m2, d2] = b.split("-").map(Number); return (y2 - y1) * 12 + (m2 - m1) + (d2 > d1 ? 1 : 0); }
