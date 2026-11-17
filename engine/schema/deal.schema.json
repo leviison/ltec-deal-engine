@@ -21,7 +21,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 10
+      "const": 11
     },
     "meta": {
       "type": "object",
@@ -889,6 +889,24 @@
         "required": [
           "name",
           "check"
+        ]
+      }
+    },
+    "screens": {
+      "type": "object",
+      "description": "Optional: this deal's own thresholds for the quick checks (#37), overriding engine/screens.json by check id, e.g. its loan's actual DSCR covenant. Give each a source.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "green": {},
+          "amber": {},
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
         ]
       }
     }

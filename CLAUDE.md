@@ -77,8 +77,15 @@
   (or `{manager}`-style placeholders filled by `fill_label` = `fillLabel`), never a literal; library files
   (`structures.json`, `loan_terms.json`) use placeholders too. tests/web/names.test.js renames everything on every
   variant and fails on any old name outside the deal file's own text; extend its exceptions only with a reason.
+- Quick checks (#37, schema 11): `quick_checks(case_res, inp, house)` = `quickChecks` compute per-year and deal-level
+  screens from a case's standard outputs only (no deal-specific code), rated by `engine/screens.json` (house rules:
+  metric, worst/first/deal, higher/lower/range, green/amber); a deal overrides a check in `screens` {id: {green, amber,
+  source}}. Missing data (no loan, no units) reads "n/a", never red. A new check: add it to screens.json (with `why`),
+  compute its metric in both engines, and tests/test_screens.py covers it on every deal; the page panel, Ask
+  (`get_quick_checks`, sweep/solve_for metrics) read the same function.
 - New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from
   the sponsor case; defaults in `engine/standard_cases.json`), then tune them to the deal's diligence and source them.
+  The quick checks need no setup; if the loan has a covenant (DSCR, debt yield), add it under `screens` with its source.
 - Tests: `python -m pytest` runs engine, deal-file, tie-out AND page tests (`tests/web/*.test.js` in headless Chromium,
   via `tests/test_web.py`; needs `npm install` once for the export libraries; `-m "not web"` skips them). Page fixtures
   are generated from the deal files by `tests/web/fixtures.py`. Every UI bug gets a page test that fails before the fix

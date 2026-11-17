@@ -1,0 +1,55 @@
+{
+  "_about": "LTEC's quick checks (issue #37): standard first-pass tests of a deal, computed from each case's own numbers by quick_checks (core.py) = quickChecks (core.js). Each check reads one metric (over the whole hold: its worst year, or year 1) and rates it green / amber / red against the thresholds here. These are house rules of thumb for multifamily, not lender or legal requirements; a deal can override a threshold in its deal file (deal.json 'screens': {id: {green, amber, source}}), e.g. its loan's actual covenant. Edit this file and every deal follows.",
+  "checks": [
+    {
+      "id": "dscr",
+      "label": "Debt-service coverage (DSCR)",
+      "metric": "dscr", "over": "worst", "better": "higher", "format": "x",
+      "green": 1.25, "amber": 1.10,
+      "why": "NOI ÷ debt service. Lenders typically require 1.20–1.25× or more; below 1.0× the property doesn't cover its loan payments."
+    },
+    {
+      "id": "debt_yield",
+      "label": "Debt yield",
+      "metric": "debt_yield", "over": "first", "better": "higher", "format": "pct",
+      "green": 0.08, "amber": 0.07,
+      "why": "Year-1 NOI ÷ the loan. Lenders typically look for 8–10%: it's their return if they had to take the property."
+    },
+    {
+      "id": "rent_needed",
+      "label": "Breakeven: share of rent needed",
+      "metric": "rent_needed", "over": "worst", "better": "lower", "format": "pct",
+      "green": 0.85, "amber": 0.95,
+      "why": "Operating costs, debt service, reserves and the AM fee, less other income, as a share of the rent the case collects. The rest is the cushion: how far rent can fall before cash flow after debt hits zero."
+    },
+    {
+      "id": "exit_vs_entry_cap",
+      "label": "Exit cap vs going-in cap",
+      "metric": "cap_spread", "over": "deal", "better": "higher", "format": "bps",
+      "green": 0.0, "amber": -0.0025,
+      "why": "Exit cap rate minus the going-in cap rate. Below zero, the sale assumes the market pays more per dollar of NOI than we did: value growth from the market alone, a common optimistic assumption."
+    },
+    {
+      "id": "ltv",
+      "label": "Loan-to-value at purchase",
+      "metric": "ltv", "over": "deal", "better": "lower", "format": "pct",
+      "green": 0.65, "amber": 0.75,
+      "why": "Loan ÷ purchase price. More leverage lifts returns and the risk that a dip in value wipes out the equity."
+    },
+    {
+      "id": "expense_ratio",
+      "label": "Expense ratio",
+      "metric": "expense_ratio", "over": "first", "better": "range", "format": "pct",
+      "green": [0.30, 0.50], "amber": [0.25, 0.55],
+      "why": "Year-1 operating expenses ÷ income. Multifamily typically runs 35–50%; well below that often means a budget missing items (taxes reset at sale, insurance, payroll)."
+    },
+    {
+      "id": "other_income_share",
+      "label": "Other income share",
+      "metric": "other_income_share", "over": "first", "better": "lower", "format": "pct",
+      "green": 0.15, "amber": 0.25,
+      "why": "Other income (fees, RUBS, parking…) ÷ total income in year 1. A large share is less certain than rent."
+    }
+  ],
+  "info": ["price_per_unit", "going_in_cap", "exit_cap", "grm", "rent_per_unit_month", "breakeven_rent_debt", "breakeven_rent_all", "cash_on_cash_y1"]
+}
