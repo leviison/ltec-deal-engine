@@ -1561,6 +1561,92 @@ def warehouse(inp: dict, cases: dict) -> dict:
     return out
 
 
+# ---- quick checks (#37): standard first-pass tests of a deal from a case's own numbers --------------------------
+
+def _rate(v, chk):
+    """green / amber / red for value v against a check's thresholds; "n/a" when there's nothing to measure."""
+    if v is None:
+        return "n/a"
+    g, a, b = chk["green"], chk["amber"], chk["better"]
+    if b == "range":
+        return "green" if g[0] <= v <= g[1] else "amber" if a[0] <= v <= a[1] else "red"
+    if b == "higher":
+        return "green" if v >= g else "amber" if v >= a else "red"
+    return "green" if v <= g else "amber" if v <= a else "red"
+
+
+def load_screens() -> dict:
+    """LTEC's house thresholds for the quick checks (engine/screens.json)."""
+    return json.loads((Path(__file__).resolve().parent / "screens.json").read_text())
+
+
+def all_quick_checks(inp: dict, res: dict | None = None, house: dict | None = None) -> dict:
+    """quick_checks for every case: {case: {...}}."""
+    res = res or run_all(inp)
+    house = house or load_screens()
+    return {k: quick_checks(c, inp, house) for k, c in res["cases"].items()}
+
+
+def quick_checks(case_res: dict, inp: dict, house: dict) -> dict:
+    """Per-year metrics, deal-level metrics and rated checks for one case. Thresholds from `house`
+    (engine/screens.json), overridden per check by the deal's own `screens` (e.g. its loan's covenant)."""
+    o, d, ex = case_res["operations"], inp["deal"], case_res["exit"]
+    units, price, loan = d.get("units") or 0, d.get("purchase_price") or 0, d.get("loan_amount") or 0
+    n = len(o["noi"])
+    per = lambda x: x / units / 12 if units else None
+    years = []
+    for t in range(n):
+        noi, ds = o["noi"][t], o["debt_service"][t]
+        bal = loan if t == 0 else o["loan_balance_end"][t - 1]
+        rents, other, inc = o["rents"][t], o["other_income"][t], o["total_income"][t]
+        below = (o.get("below_noi_income") or [0.0] * n)[t]
+        costs = o["opex"][t] + ds + o["capex"][t] + o["asset_mgmt_fee"][t]
+        years.append({
+            "year": t + 1, "noi": noi, "debt_service": ds,
+            "dscr": noi / ds if ds > 0 else None,
+            "debt_yield": noi / bal if bal > 0 else None,
+            "rent_per_unit_month": per(rents),
+            "breakeven_rent_debt": per(ds),
+            "cost_per_unit_month": per(costs),
+            "other_cash_per_unit_month": per(other + below),
+            "breakeven_rent_all": per(costs - other - below),
+            "rent_needed": (costs - other - below) / rents if rents > 0 else None,
+            "expense_ratio": o["opex"][t] / inc if inc > 0 else None,
+            "other_income_share": other / inc if inc > 0 else None,
+        })
+    gi = o["noi"][0] / price if price > 0 else None
+    xc = ex.get("exit_cap")
+    check0 = (inp.get("investor") or {}).get("check") or 0
+    dist0 = ((case_res.get("investor") or {}).get("distributions") or [0.0])[0]
+    deal = {
+        "price_per_unit": price / units if units else None, "going_in_cap": gi, "exit_cap": xc,
+        "cap_spread": xc - gi if xc is not None and gi is not None else None,
+        "ltv": loan / price if price > 0 else None,
+        "grm": price / o["total_income"][0] if o["total_income"][0] > 0 else None,
+        "cash_on_cash_y1": dist0 / check0 if check0 > 0 else None,
+    }
+    over = inp.get("screens") or {}
+    checks = []
+    for c in house["checks"]:
+        c = dict(c, **{k: v for k, v in (over.get(c["id"]) or {}).items() if k in ("green", "amber", "source")})
+        if c["over"] == "deal":
+            v, yr = deal.get(c["metric"]), None
+        else:
+            vals = [(y[c["metric"]], y["year"]) for y in (years if c["over"] == "worst" else years[:1]) if y[c["metric"]] is not None]
+            if not vals:
+                v, yr = None, None
+            elif c["over"] == "first":
+                v, yr = vals[0]
+            else:
+                pick = min if c["better"] == "higher" else max
+                v, yr = pick(vals, key=lambda z: z[0])
+        checks.append({"id": c["id"], "label": c["label"], "value": v, "year": yr, "status": _rate(v, c),
+                       "green": c["green"], "amber": c["amber"], "better": c["better"], "format": c["format"],
+                       "source": c.get("source") or "House rule (engine/screens.json)"})
+    return {"years": years, "deal": deal, "checks": checks}
+
+
+
 def run_all(inp: dict) -> dict:
     cases = {k: run_case(k, inp) for k in inp["cases"]}
     return {

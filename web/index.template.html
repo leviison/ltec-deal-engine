@@ -145,6 +145,10 @@ table.stmt tr.later td, .loan-sched tr.later td { opacity: .45; }
 #whPersonTabs button { white-space: nowrap; padding: 6px 10px; }
 .sumline.warn { color: var(--warn-fg); background: var(--warn-bg); border-radius: 5px; padding: 4px 8px; }
 th.shown, td.shown { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.qc-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.qc-green { background: #2e8b57; } .qc-amber { background: #d99a1e; } .qc-red { background: #c0392b; } .qc-na { background: #b8bec7; }
+.qc-h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 6px; font-weight: 600; }
+#qcTable td.lbl { cursor: help; }
 th.shown { color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
 th.hl, td.hl { background: color-mix(in srgb, var(--c-custom) 9%, transparent); }
 th.hl { color: var(--c-custom); }
@@ -429,6 +433,14 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
         <div class="tablewrap" id="detailTable"></div>
       </section>
 
+      <section class="panel" id="qcPanel">
+        <header><h2>Quick checks</h2><span class="muted small" id="qcSub"></span></header>
+        <div class="tablewrap" id="qcTable"></div>
+        <h3 class="qc-h3" id="qcUnitTitle"></h3>
+        <div class="tablewrap" id="qcUnits"></div>
+        <p class="note" id="qcNote"></p>
+      </section>
+
       <section class="panel">
         <header><h2 id="exitTitle">Exit &amp; sensitivity</h2><span class="muted small">Follows the case picked in Case detail above</span></header>
         <div class="two">
@@ -542,6 +554,8 @@ const ENGINE_LABEL = `LTEC Deal Engine v${BUILD.engine}`;
 const STRUCTURES = /*__STRUCTURES__*/null;
 // Known ways a partner loan is repaid (engine/loan_terms.json, #24): presets built from the loan's term parts.
 const LOAN_TERMS = /*__LOAN_TERMS__*/null;
+// LTEC's house thresholds for the quick checks (engine/screens.json, #37)
+const SCREENS = /*__SCREENS__*/null;
 // The library's words with this deal's names filled in ({manager} etc.); `inp` defaults to the page's inputs.
 function loanLib(inp) {
   const fill = (o) => typeof o === "string" ? E.fillLabel(o, inp || inputs) : Array.isArray(o) ? o.map(fill) : o && typeof o === "object" ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, fill(v)])) : o;
@@ -1837,6 +1851,45 @@ function renderChart() {
 }
 function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const m = raw / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p; }
 
+/* ------------------------------------------------------------ quick checks (#37) */
+// Standard first-pass tests of the deal, from each case's own numbers (E.quickChecks); thresholds are LTEC's house
+// rules (engine/screens.json) unless the deal file overrides one with its source.
+const qcAll = (inp, res) => Object.fromEntries(Object.keys(res.cases).map((k) => [k, E.quickChecks(res.cases[k], inp, SCREENS)]));
+function qcFmt(v, f) {
+  if (v === null || v === undefined) return "n/a";
+  if (f === "x") return `${v.toFixed(2)}×`;
+  if (f === "bps") return `${v >= 0 ? "+" : "−"}${Math.round(Math.abs(v) * 10000)} bps`;
+  return fmt.pct(v);
+}
+function qcRule(c) {
+  const t = (x) => qcFmt(x, c.format);
+  if (c.better === "range") return `green ${t(c.green[0])}–${t(c.green[1])}, amber ${t(c.amber[0])}–${t(c.amber[1])}`;
+  return c.better === "higher" ? `green ≥ ${t(c.green)}, amber ≥ ${t(c.amber)}` : `green ≤ ${t(c.green)}, amber ≤ ${t(c.amber)}`;
+}
+function renderQuickChecks() {
+  if (!SCREENS) return;
+  const all = qcAll(inputs, results), why = Object.fromEntries(SCREENS.checks.map((c) => [c.id, c.why]));
+  const head = `<tr><th>Check</th>${CASES.map((k) => `<th class="n${k === detailCase ? " shown" : ""}">${esc(shortLabel(k))}</th>`).join("")}</tr>`;
+  const rows = SCREENS.checks.map((c0, i) => `<tr><td class="lbl" title="${esc(why[c0.id])}">${esc(c0.label)}</td>${CASES.map((k) => {
+    const c = all[k].checks[i], st = c.status === "n/a" ? "na" : c.status;
+    return `<td class="n${k === detailCase ? " shown" : ""}" title="${esc(`${qcRule(c)} · ${c.source}`)}"><span class="qc-dot qc-${st}" aria-label="${c.status}"></span>${qcFmt(c.value, c.format)}${c.year ? `<span class="muted small"> · yr ${c.year}</span>` : ""}</td>`; }).join("")}</tr>`).join("");
+  const q = all[detailCase], d = q.deal, u = (x) => (x === null ? "n/a" : fmt.usd(x));
+  document.getElementById("qcTable").innerHTML = `<table><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+  document.getElementById("qcSub").textContent = `Price ${u(d.price_per_unit)}/unit · going-in cap ${qcFmt(d.going_in_cap)} · exit cap ${qcFmt(d.exit_cap)} · GRM ${d.grm === null ? "n/a" : d.grm.toFixed(1)} · year-1 cash-on-cash ${qcFmt(d.cash_on_cash_y1)} (${shortLabel(detailCase)})`;
+  document.getElementById("qcUnitTitle").textContent = `Per unit, per month · ${results.cases[detailCase].label}`;
+  const yr = q.years, line = (label, key, f, tip) => `<tr><td class="lbl"${tip ? ` title="${esc(tip)}"` : ""}>${label}</td>${yr.map((y) => `<td class="n">${f(y[key])}</td>`).join("")}</tr>`;
+  document.getElementById("qcUnits").innerHTML = `<table><thead><tr><th></th>${yr.map((y) => `<th class="n">Year ${y.year}</th>`).join("")}</tr></thead><tbody>
+    ${line("Rent collected", "rent_per_unit_month", u)}
+    ${line("Debt service (rent needed for the loan alone)", "breakeven_rent_debt", u, "The quick screen: debt service ÷ units ÷ 12.")}
+    ${line("All-in cost: operating costs, debt, reserves, AM fee", "cost_per_unit_month", u)}
+    ${line("Less other income (and below-NOI cash)", "other_cash_per_unit_month", (x) => (x === null ? "n/a" : `−${fmt.usd(x)}`))}
+    ${line("<b>Rent needed to break even</b>", "breakeven_rent_all", (x) => `<b>${u(x)}</b>`, "Cash flow after debt is zero at this rent.")}
+    ${line("Share of rent needed", "rent_needed", (x) => qcFmt(x))}
+    ${line("DSCR", "dscr", (x) => qcFmt(x, "x"))}
+    ${line("Debt yield", "debt_yield", (x) => qcFmt(x))}</tbody></table>`;
+  const ov = Object.keys(inputs.screens || {});
+  document.getElementById("qcNote").textContent = `Each check reads the case's worst year over the hold (or year 1, or the deal as bought) against our house thresholds; hover a figure for its rule${ov.length ? `, this deal's own threshold for ${ov.join(", ")}` : ""}. Rules of thumb for a first pass, not lender or legal requirements. Follows the case picked in Case detail.`;
+}
 function renderDetail() {
   document.getElementById("detailTabs").innerHTML = CASES.map((k) =>
     `<button type="button" data-k="${k}" aria-pressed="${k === detailCase}">${shortLabel(k)}</button>`).join("");
@@ -2096,7 +2149,7 @@ function renderDirect() {
 
 function recompute() {
   results = E.runAll(inputs);
-  renderCards(); renderChart(); renderDetail(); renderExit(); renderWarehouse(); renderDirect(); renderCashByPerson(); renderReadout(); updateWhSums(); updateLoanReadout(); updateRefiReadout(); updateExtrasReadout(); markChanged();
+  renderCards(); renderChart(); renderDetail(); renderQuickChecks(); renderExit(); renderWarehouse(); renderDirect(); renderCashByPerson(); renderReadout(); updateWhSums(); updateLoanReadout(); updateRefiReadout(); updateExtrasReadout(); markChanged();
 }
 
 /* ------------------------------------------------------------ events */
@@ -2175,7 +2228,7 @@ document.addEventListener("click", (e) => {
   if (!t) return;
   const group = t.parentElement.id;
   if (group === "caseTabs") { editCase = t.dataset.k; renderCaseFields(); recompute(); }
-  if (group === "detailTabs" || group === "flowTabs") { detailCase = t.dataset.k; renderDetail(); renderChart(); renderExit(); renderWarehouse(); renderDirect(); }
+  if (group === "detailTabs" || group === "flowTabs") { detailCase = t.dataset.k; renderDetail(); renderQuickChecks(); renderChart(); renderExit(); renderWarehouse(); renderDirect(); }
 });
 document.getElementById("cbpParty").addEventListener("change", (e) => { cbpParty = e.target.value; renderCashByPerson(); });
 document.getElementById("cbpAsOf").addEventListener("change", (e) => { cbpAsOf = /^\d{4}-\d{2}-\d{2}$/.test(e.target.value) ? e.target.value : ""; renderCashByPerson(); });
@@ -2674,6 +2727,11 @@ function caseResult(r, inp) {
     net_sale_proceeds: r0(ex.net_sale_proceeds), min_dscr: r4(Math.min(...o.noi.map((n, i) => (o.debt_service[i] ? n / o.debt_service[i] : Infinity)))),
     sponsor_promote: r0(r.gp_promote_total),
   };
+  if (SCREENS) {  // quick checks (#37): the worst year's share of rent needed, year-1 debt yield, exit vs going-in cap
+    const q = E.quickChecks(r, inp, SCREENS), by = Object.fromEntries(q.checks.map((c) => [c.id, c.value]));
+    Object.assign(out, { debt_yield: r4(by.debt_yield), rent_needed: r4(by.rent_needed), cap_spread: r4(by.exit_vs_entry_cap),
+      going_in_cap: r4(q.deal.going_in_cap), breakeven_rent_y1: r0(q.years[0].breakeven_rent_all), debt_rent_y1: r0(q.years[0].breakeven_rent_debt) });
+  }
   if (inv.side_letter) Object.assign(out, { our_irr_without_side_letter: r4(inv.side_letter.regular_irr), side_letter_extra_dollars: r0(inv.side_letter.uplift) });
   return out;
 }
@@ -2844,6 +2902,20 @@ const ASK_TOOLS = [
         outcome_by_case: t.outcome, loan_schedules: t.exhibits.map((x) => ({ title: x.title, rows: x.rows })), still_to_confirm: t.open,
         download: "The viewer's Export terms button saves this as a Word document." };
     } },
+  { name: "get_quick_checks",
+    description: "The quick checks for one deal (a first-pass screen, every figure from each case's own numbers): DSCR (worst year), debt yield, breakeven (share of rent needed, worst year), exit cap vs going-in cap, loan-to-value, expense ratio, other-income share, each rated green / amber / red against LTEC's house thresholds (or the deal's own, with its source), by case; per unit per month by year for one case: rent collected, debt service per unit (the rent needed for the loan alone), all-in cost, other income, rent needed to break even, DSCR, debt yield; and price per unit, going-in and exit cap, GRM, year-1 cash-on-cash. Rules of thumb, not lender requirements.",
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "case for the per-unit table (default: the deal's primary)" }, scenario: { type: "string" },
+      changes: { type: "object", description: "optional: dotted path -> value" } }, required: ["deal"] },
+    execute: ({ deal, case: k, scenario, changes }) => {
+      const slug = needDeal(deal), inp = changes ? withChanges(slug, changes, null, scenario) : baseInputs(slug, scenario);
+      const ck = k ? needCase(inp, k) : ((DEALS[slug].meta.ui || {}).primary_case || Object.keys(inp.cases)[0]);
+      setAskStatus(`Running the quick checks on ${DEALS[slug].meta.name}…`);
+      const res = E.runAll(inp), all = qcAll(inp, res), why = Object.fromEntries(SCREENS.checks.map((c) => [c.id, c.why]));
+      const rr = (o) => Object.fromEntries(Object.entries(o).map(([x, v]) => [x, typeof v === "number" ? (Math.abs(v) >= 100 ? r0(v) : r4(v)) : v]));
+      return { deal: slug, checks: SCREENS.checks.map((c0, i) => ({ id: c0.id, check: c0.label, why: why[c0.id], rule: qcRule(all[ck].checks[i]), source: all[ck].checks[i].source,
+          by_case: Object.fromEntries(Object.keys(all).map((kk) => [kk, { value: r4(all[kk].checks[i].value), year: all[kk].checks[i].year, status: all[kk].checks[i].status }])) })),
+        per_unit_case: ck, per_unit_per_month_by_year: all[ck].years.map(rr), deal_level: rr(all[ck].deal) };
+    } },
   { name: "get_statement",
     description: "One vehicle person's statement for a deal and case (the engine's ledger): every payment in and out by date and account (units, the manager, partner loans, buy-ins), totals by year, the schedule of any partner loan they're in, and balances as of a date (put in, received, owed). Use it for who owes whom when, payback timing, and what a person has in at a date.",
     inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string" }, person: { type: "string", description: "a vehicle person's id or name" },
@@ -2977,7 +3049,7 @@ const ASK_TOOLS = [
     } },
   { name: "sweep",
     description: "Sensitivity probe: recompute one case across values of one input (or a grid of two inputs) and return a table of a metric (lp_irr, our_irr, lp_multiple, our_profit, min_dscr; or for one person in our vehicle, with `person`: person_profit, person_irr, person_from_manager). E.g. exit cap 5.5-7.5% against rent_factor 0.9-1.05, or warehouse.manager_waterfall.pref 0-12% for Thaxter's person_profit. At most 15 values per input. Optional other_changes and custom_from apply first.",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr", "person_profit", "person_irr", "person_from_manager"] }, person: { type: "string", description: "for person_* metrics: a vehicle person's name" },
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr", "debt_yield", "rent_needed", "cap_spread", "breakeven_rent_y1", "person_profit", "person_irr", "person_from_manager"] }, person: { type: "string", description: "for person_* metrics: a vehicle person's name" },
       path: { type: "string" }, values: { type: "array", items: { type: "number" } }, path2: { type: "string" }, values2: { type: "array", items: { type: "number" } },
       other_changes: { type: "object" }, custom_from: { type: "string" } }, required: ["deal", "case", "metric", "path", "values"] },
     execute: ({ deal, scenario, case: k, metric, person, path, values, path2, values2, other_changes, custom_from }) => {
@@ -3004,9 +3076,9 @@ const ASK_TOOLS = [
       return { staged: true, name, lp_irr_by_case: res, vehicle, warnings: changeWarnings(inp, ch, Object.keys(inp.cases)) };
     } },
   { name: "solve_for",
-    description: "Find the value of one numeric input that makes a result hit a target, by search between low and high (the engine recomputes each try). metric: lp_irr, our_irr, lp_multiple, our_profit, or for one person in our vehicle (pass `person`) person_profit, person_irr, person_from_manager. E.g. the exit cap at which our Downside's LP IRR is 0, the pref rate that gives our check 15%, or the LTEC pref (warehouse.manager_waterfall.pref) at which Thaxter's person_profit equals a target. Returns the value, the result achieved, and the result at both ends.",
+    description: "Find the value of one numeric input that makes a result hit a target, by search between low and high (the engine recomputes each try). metric: lp_irr, our_irr, lp_multiple, our_profit, the quick checks (min_dscr, debt_yield, rent_needed = worst year's share of rent needed to break even, cap_spread = exit cap minus going-in, breakeven_rent_y1 per unit per month), or for one person in our vehicle (pass `person`) person_profit, person_irr, person_from_manager. E.g. the exit cap at which our Downside's LP IRR is 0, the pref rate that gives our check 15%, or the LTEC pref (warehouse.manager_waterfall.pref) at which Thaxter's person_profit equals a target. Returns the value, the result achieved, and the result at both ends.",
     inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, path: { type: "string", description: "dotted input path" },
-      metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "person_profit", "person_irr", "person_from_manager"] }, person: { type: "string", description: "for person_* metrics: a vehicle person's name" }, target: { type: "number" }, low: { type: "number" }, high: { type: "number" },
+      metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr", "debt_yield", "rent_needed", "cap_spread", "breakeven_rent_y1", "person_profit", "person_irr", "person_from_manager"] }, person: { type: "string", description: "for person_* metrics: a vehicle person's name" }, target: { type: "number" }, low: { type: "number" }, high: { type: "number" },
       other_changes: { type: "object", description: "optional fixed changes applied first" }, custom_from: { type: "string", description: "optional: rebuild Custom from this case first" } }, required: ["deal", "case", "path", "metric", "target", "low", "high"] },
     execute: ({ deal, scenario, case: k, path, metric, person, target, low, high, other_changes, custom_from }) => {
       const slug = needDeal(deal), ck = needCase(baseInputs(slug, scenario), k), M = String(metric), T = Number(target);
@@ -3067,7 +3139,7 @@ function askContext() {
     "- Saved scenarios: list_scenarios shows them; pass a scenario's name as `scenario` to any tool to work from it (what-ifs then build on it). get_vehicle covers our SPV: each person's cash, profit and IRR, buyers, fees and promote.",
     "- For payback timing, who owes whom on a date, or what a person has in by a date, use get_statement (a person's dated ledger, partner-loan schedules and balances as of a date).",
     "- For questions about who in our vehicle gets what, measure the person: sweep / solve_for take metric person_profit, person_irr or person_from_manager with `person`; run_what_if and propose_scenario return each person's results when you change warehouse.*.",
-    "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. For a term sheet or a summary of the terms, use get_terms_summary and point to the Export terms button. A partner loan's terms (repayment: sweep / interest_only / equal_principal / at_exit / none, sweep_pct, term_years, source, maturity, due_on cash_date / exact_date, paydowns [{date, amount}] from the borrower's own money, recourse, on_leave; a bridge = preset bridge with a maturity; the other way to fund a share later is a buy-in, warehouse.manager_transfers; presets in list_inputs loan_terms) decide when the borrower repays; get_statement shows the result by date. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
+    "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. For a quick screen of a deal (DSCR, debt yield, breakeven rent per unit, cap rates, LTV), use get_quick_checks. For a term sheet or a summary of the terms, use get_terms_summary and point to the Export terms button. A partner loan's terms (repayment: sweep / interest_only / equal_principal / at_exit / none, sweep_pct, term_years, source, maturity, due_on cash_date / exact_date, paydowns [{date, amount}] from the borrower's own money, recourse, on_leave; a bridge = preset bridge with a maturity; the other way to fund a share later is a buy-in, warehouse.manager_transfers; presets in list_inputs loan_terms) decide when the borrower repays; get_statement shows the result by date. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
     "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),

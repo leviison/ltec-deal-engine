@@ -5,6 +5,21 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.10.0 — 2026-11-17
+
+- Quick checks (#37, schema 11): a new panel of standard first-pass screens, computed from each case's own numbers by
+  `quick_checks` (core.py) = `quickChecks` (core.js): DSCR (worst year), debt yield, breakeven (share of rent needed,
+  worst year), exit cap vs going-in cap, loan-to-value, expense ratio and other-income share, each green / amber / red
+  against LTEC's house thresholds in `engine/screens.json`; a deal file can override a threshold with its source
+  (`screens`, e.g. its loan's covenant). A per-unit, per-month table by year for the case picked in Case detail:
+  rent collected, debt service per unit (the rent needed for the loan alone), all-in cost, other income, the rent
+  needed to break even, DSCR and debt yield; plus price per unit, going-in and exit cap, GRM and year-1 cash-on-cash.
+- Ask: `get_quick_checks`; `sweep` and `solve_for` take min_dscr, debt_yield, rent_needed, cap_spread and
+  breakeven_rent_y1 (e.g. the loan rate at which DSCR is 1.25×).
+- Tests: hand calculations for both deals, every deal / case / variant (new deals included automatically), an
+  all-cash deal (reads n/a, not red), a deal override, both engines on defaults, variants and randomized set-ups
+  (`tests/test_screens.py`), and the page for every deal (`tests/web/quick_checks.test.js`).
+
 ## 2.9.1 — 2026-11-17
 
 - Cash by person (#35): in month, quarter and half-year views under annual timing, each year's operating

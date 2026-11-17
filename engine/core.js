@@ -1005,6 +1005,73 @@
     return out;
   }
 
+  // ---- quick checks (#37, see core.py)
+  function rateCheck(v, chk) {
+    if (v === null || v === undefined) return "n/a";
+    const g = chk.green, a = chk.amber, b = chk.better;
+    if (b === "range") return g[0] <= v && v <= g[1] ? "green" : a[0] <= v && v <= a[1] ? "amber" : "red";
+    if (b === "higher") return v >= g ? "green" : v >= a ? "amber" : "red";
+    return v <= g ? "green" : v <= a ? "amber" : "red";
+  }
+  function quickChecks(caseRes, inp, house) {
+    const o = caseRes.operations, d = inp.deal, ex = caseRes.exit;
+    const units = d.units || 0, price = d.purchase_price || 0, loan = d.loan_amount || 0;
+    const n = o.noi.length;
+    const per = (x) => (units ? x / units / 12 : null);
+    const years = [];
+    for (let t = 0; t < n; t++) {
+      const noi = o.noi[t], ds = o.debt_service[t];
+      const bal = t === 0 ? loan : o.loan_balance_end[t - 1];
+      const rents = o.rents[t], other = o.other_income[t], inc = o.total_income[t];
+      const below = (o.below_noi_income || Array(n).fill(0))[t];
+      const costs = o.opex[t] + ds + o.capex[t] + o.asset_mgmt_fee[t];
+      years.push({
+        year: t + 1, noi, debt_service: ds,
+        dscr: ds > 0 ? noi / ds : null,
+        debt_yield: bal > 0 ? noi / bal : null,
+        rent_per_unit_month: per(rents),
+        breakeven_rent_debt: per(ds),
+        cost_per_unit_month: per(costs),
+        other_cash_per_unit_month: per(other + below),
+        breakeven_rent_all: per(costs - other - below),
+        rent_needed: rents > 0 ? (costs - other - below) / rents : null,
+        expense_ratio: inc > 0 ? o.opex[t] / inc : null,
+        other_income_share: inc > 0 ? other / inc : null,
+      });
+    }
+    const gi = price > 0 ? o.noi[0] / price : null;
+    const xc = ex.exit_cap !== undefined ? ex.exit_cap : null;
+    const check0 = (inp.investor || {}).check || 0;
+    const dist0 = (((caseRes.investor || {}).distributions) || [0])[0];
+    const deal = {
+      price_per_unit: units ? price / units : null, going_in_cap: gi, exit_cap: xc,
+      cap_spread: xc !== null && gi !== null ? xc - gi : null,
+      ltv: price > 0 ? loan / price : null,
+      grm: o.total_income[0] > 0 ? price / o.total_income[0] : null,
+      cash_on_cash_y1: check0 > 0 ? dist0 / check0 : null,
+    };
+    const over = inp.screens || {};
+    const checks = house.checks.map((c0) => {
+      const ov = over[c0.id] || {}, c = Object.assign({}, c0);
+      ["green", "amber", "source"].forEach((k) => { if (k in ov) c[k] = ov[k]; });
+      let v, yr;
+      if (c.over === "deal") { v = deal[c.metric] !== undefined ? deal[c.metric] : null; yr = null; }
+      else {
+        const vals = (c.over === "worst" ? years : years.slice(0, 1)).filter((y) => y[c.metric] !== null).map((y) => [y[c.metric], y.year]);
+        if (!vals.length) { v = null; yr = null; }
+        else if (c.over === "first") [v, yr] = vals[0];
+        else {
+          let best = vals[0];
+          vals.forEach((z) => { if (c.better === "higher" ? z[0] < best[0] : z[0] > best[0]) best = z; });
+          [v, yr] = best;
+        }
+      }
+      return { id: c.id, label: c.label, value: v, year: yr, status: rateCheck(v, c), green: c.green, amber: c.amber,
+        better: c.better, format: c.format, source: c.source || "House rule (engine/screens.json)" };
+    });
+    return { years, deal, checks };
+  }
+
   function runAll(inp) {
     const cases = {};
     for (const k of Object.keys(inp.cases)) cases[k] = runCase(k, inp);
@@ -1143,7 +1210,7 @@
     w.people.forEach((p) => { if (p.id) names[p.id] = p.name; });
     return (text || "").replace(/\{([a-z0-9_]+)\}/g, (m0, k) => (k in names ? names[k] : m0));
   }
-  const api = { runAll, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths, applyStructure, structurePartners, loanTermsOf, applyLoanPreset, LOAN_TERM_DEFAULTS,
+  const api = { runAll, quickChecks, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths, applyStructure, structurePartners, loanTermsOf, applyLoanPreset, LOAN_TERM_DEFAULTS,
     personId, getPath, setPath, mergeDeep, applyVariant, fillLabel, referenceIssues, templateNote };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DealEngine = api;
