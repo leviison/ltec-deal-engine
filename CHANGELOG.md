@@ -7,10 +7,11 @@ they are off; patch = fixes.
 
 ## 2.9.1 — 2026-11-17
 
-- Cash by person (#35): in month, quarter and half-year views under annual timing, the final year's operating
-  distribution is now spread across the year like every other year (its share of the deal's last distribution);
-  only the sale part shows in the period it's paid. Before, the final year's periods were blank until the last one.
-  Totals and profit are unchanged. Page test `tests/web/cash_spread.test.js`.
+- Cash by person (#35): in month, quarter and half-year views under annual timing, each year's operating
+  distribution is spread across the year (its share of the deal's cash that year, from the case's results) and any
+  lump is shown in the period it's paid: the sale in the last year, a refinance's proceeds in its year. Before, the
+  final year's periods were blank until the last one (and a refinance year was spread evenly). Follows the hold,
+  rents, other income and refinance inputs. Totals and profit are unchanged. Page test `tests/web/cash_spread.test.js`.
 
 ## 2.9.0 — 2026-11-07
 

@@ -15,7 +15,8 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
     const r = await p.evaluate(() => {
       const out = [];
       for (const k of CASES) {
-        if (finalYearOpsShare(k) <= 0) continue;  // nothing operating in the last year (e.g. a stress case)
+        const C = results.cases[k];
+        if (C.waterfall.cash.slice(-1)[0] <= 0 || C.operations.operating_cash_flow.slice(-1)[0] <= 0) continue;  // nothing to pay in the last year (e.g. a stress case)
         for (const freq of [1, 3]) {
           cbpCase = k; cbpView = 'periods'; cbpFreq = freq; cbpParty = 'v'; renderCashByPerson();
           const rows = [...document.querySelectorAll('#cbpTable tbody tr:not(.total)')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
@@ -35,6 +36,20 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
     }
     check(r.length > 0, `${slug}: checked something`);
   }
+  // follows the inputs: a 7-year hold with a refinance in year 3 (Siena, Sponsor). The year-3 months each get their
+  // operating share and the refinance proceeds land in the month they're paid; the last year is not blank either.
+  await p.goto(PAGE + '#siena-villas'); await p.waitForTimeout(500);
+  const rf = await p.evaluate(() => {
+    inputs.deal.hold_years = 7; inputs.deal.refi.enabled = true; inputs.deal.refi.year = 3; recompute();
+    cbpCase = 'sponsor'; cbpView = 'periods'; cbpFreq = 1; cbpParty = 'v'; renderCashByPerson();
+    const C = results.cases.sponsor, rows = [...document.querySelectorAll('#cbpTable tbody tr:not(.total)')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+    const dist = rows.slice(1).map((x) => x[3]), num = (x) => x.trim() === '—' ? 0 : +x.replace(/[$,]/g, '');
+    const y3 = dist.slice(24, 36).map(num), y7 = dist.slice(72, 84).map(num);
+    const me = cbpParties().find((x) => x.id === 'v'), profit = me.flows.reduce((a, f) => a + f.amount, 0);
+    return { years: C.waterfall.cash.length, refi: C.operations.refi_proceeds[2], y3blank: y3.filter((v) => v === 0).length, y3lump: y3[11] > 5 * y3[0], y7blank: y7.filter((v) => v === 0).length,
+      tot: document.querySelector('#cbpTable tr.total').querySelectorAll('td')[4].textContent, want: fmt.usd(profit) };
+  });
+  check(rf.years === 7 && rf.refi > 0 && rf.y3blank === 0 && rf.y3lump && rf.y7blank === 0 && rf.tot === rf.want, `7-year hold with a year-3 refinance: ${JSON.stringify(rf)}`);
   errs.forEach((e) => fail.push('page error: ' + e));
   await b.close();
   if (fail.length) { console.log('FAIL\n' + fail.join('\n')); process.exitCode = 1; } else console.log('ok');
