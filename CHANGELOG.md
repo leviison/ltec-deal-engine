@@ -11,6 +11,11 @@ they are off; patch = fixes.
   cash in and back for the case shown; the deal box totals every LP check ("3 LPs"); clicking a box opens that
   investor in the panel. The term sheet lists them under The investment ("Alongside: …"). Page test
   `tests/web/flow_direct.test.js`.
+- Typing dates (#41): every date field now waits for a whole, plausible date (1990–2199) before taking it, so a year
+  typed digit by digit (0002 → 0020 → 0202 → 2027) no longer sticks; a card that redraws on a change (loan terms)
+  waits until you leave the date field, so the cursor isn't thrown back to the month mid-entry. Same for "Balances as
+  of". New warnings when a sale, buy-in, loan maturity, pay-down or leaving date falls on or before close or after the
+  last cash date, each linking to the field. Page test `tests/web/date_entry.test.js` types dates by keyboard.
 
 ## 2.10.0 — 2026-11-17
 
