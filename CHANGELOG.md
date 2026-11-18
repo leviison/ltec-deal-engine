@@ -5,6 +5,18 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.10.1 — 2026-11-18
+
+- Flow diagram (#39): investors in the deal directly, outside our vehicle, get their own box off the deal with their
+  cash in and back for the case shown; the deal box totals every LP check ("3 LPs"); clicking a box opens that
+  investor in the panel. The term sheet lists them under The investment ("Alongside: …"). Page test
+  `tests/web/flow_direct.test.js`.
+- Typing dates (#41): every date field now waits for a whole, plausible date (1990–2199) before taking it, so a year
+  typed digit by digit (0002 → 0020 → 0202 → 2027) no longer sticks; a card that redraws on a change (loan terms)
+  waits until you leave the date field, so the cursor isn't thrown back to the month mid-entry. Same for "Balances as
+  of". New warnings when a sale, buy-in, loan maturity, pay-down or leaving date falls on or before close or after the
+  last cash date, each linking to the field. Page test `tests/web/date_entry.test.js` types dates by keyboard.
+
 ## 2.10.0 — 2026-11-17
 
 - Quick checks (#37, schema 11): a new panel of standard first-pass screens, computed from each case's own numbers by

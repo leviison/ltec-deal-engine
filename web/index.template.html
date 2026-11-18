@@ -481,7 +481,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
           <div class="seg" id="cbpCases" role="group" aria-label="Case"></div>
           <div class="seg" id="cbpFreq" role="group" aria-label="Period length"></div>
           <div class="seg" id="cbpView" role="group" aria-label="View"></div>
-          <label class="cbp-pick"><span class="eyebrow">Balances as of</span><input class="text" type="date" id="cbpAsOf" aria-label="Balances as of"></label>
+          <label class="cbp-pick"><span class="eyebrow">Balances as of</span><input class="text" type="date" id="cbpAsOf" min="1990-01-01" max="2199-12-31" aria-label="Balances as of"></label>
         </div>
         <div class="readout" id="cbpBalances" hidden></div>
         <div class="tablewrap" style="max-height:560px;overflow:auto" id="cbpTable"></div>
@@ -709,8 +709,10 @@ function fieldHTML(f) {
   const pre = f.kind === "usd" ? "$" : "", post = f.unit != null ? f.unit : f.kind === "pct" ? "%" : f.kind === "num" ? "×" : "";
   const type = f.kind === "date" ? "date" : "number";
   const step = f.kind === "pct" ? "0.05" : f.kind === "usd" ? "1000" : "0.01";
-  return `<div class="field" data-path="${f.path}">${lab}<div class="in">${pre ? `<span>${pre}</span>` : ""}<input id="${fieldId(f.path)}" type="${type}" step="${step}" value="${displayVal(f.kind, v)}">${post ? `<span>${post}</span>` : ""}</div></div>`;
+  return `<div class="field" data-path="${f.path}">${lab}<div class="in">${pre ? `<span>${pre}</span>` : ""}<input id="${fieldId(f.path)}" type="${type}"${type === "date" ? ` min="${DATE_MIN}" max="${DATE_MAX}"` : ` step="${step}"`} value="${displayVal(f.kind, v)}">${post ? `<span>${post}</span>` : ""}</div></div>`;
 }
+const DATE_MIN = "1990-01-01", DATE_MAX = "2199-12-31";
+const plausibleDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= DATE_MIN && v <= DATE_MAX;
 function bindField(el, f) {
   el.querySelectorAll("input,select").forEach((inp) => {
     const ev = inp.type === "checkbox" || inp.tagName === "SELECT" || f.kind === "text" ? "change" : "input";
@@ -721,7 +723,10 @@ function bindField(el, f) {
       else if (f.kind === "text") { v = inp.value.trim(); if (!v && !f.list) { inp.value = get(inputs, f.path); return; } }
       else if (f.kind === "yrs") { v = get(inputs, f.path).slice(); v[+inp.dataset.i] = (parseFloat(inp.value) || 0) * 1000; }
       else { const n = parseFloat(inp.value); if (!isFinite(n)) return; v = f.kind === "pct" ? n / 100 : n; }
+      if (f.kind === "date" && inp.validity && inp.validity.badInput) return;  // half-typed: not a date yet, not empty either
       if (f.kind === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(v) && !(f.allowEmpty && v === "")) return;
+      // a year typed digit by digit passes through 0002, 0020, 0202 before 2027: wait for a plausible year (#41)
+      if (f.kind === "date" && v && !plausibleDate(v)) return;
       const renamed = /^warehouse\.people\.\d+\.name$/.test(f.path) ? get(inputs, f.path) : null;
       const renamedBuyers = f.path === "warehouse.names.buyers" ? get(inputs, f.path) : null;
       set(inputs, f.path, v);
@@ -743,7 +748,12 @@ function bindField(el, f) {
       if (cm && inputs.cases[cm[1]].kind === "custom") inputs.cases[cm[1]].exit_method = cm[2] === "sale_price" ? "sale_price" : "cap_rate";
       syncExitMethod();
       recompute();
-      if (f.kind === "text" || f.rerender) keepFocus(f.after || (/(^|\.)(names\.\w+|name)$/.test(f.path) ? renderAllFields : renderWarehouseInputs));
+      const redraw = f.after || (/(^|\.)(names\.\w+|name)$/.test(f.path) ? renderAllFields : renderWarehouseInputs);
+      // a date being typed keeps its field until you leave it: redrawing the card mid-entry would put the cursor back
+      // on the month and scramble the rest of what you type (#41)
+      if (f.kind === "date" && f.rerender && document.activeElement === inp) {
+        if (!inp._redrawOnBlur) { inp._redrawOnBlur = true; inp.addEventListener("blur", () => { inp._redrawOnBlur = false; redraw(); }, { once: true }); }
+      } else if (f.kind === "text" || f.rerender) keepFocus(redraw);
     });
   });
 }
@@ -1991,9 +2001,12 @@ function renderFlow() {
   const nodes = [], edges = [];
   // each box opens the panel cards that control it: section | group | field
   const opens = (id) => id === "deal" ? "sec-cases" : id === "veh" ? "sec-wh" : id === "mgr" ? "sec-ltec|wh-ltec"
-    : id[0] === "g" ? "sec-wh|wh-sales" : `sec-wh|wh-people|warehouse.people.${id.slice(1)}.name`;
+    : id[0] === "g" ? "sec-wh|wh-sales" : id[0] === "d" ? `sec-direct||direct_investors.${id.slice(1)}.name` : `sec-wh|wh-people|warehouse.people.${id.slice(1)}.name`;
   const node = (id, col, row, t, sub, cash, hub) => nodes.push({ id, x: X(col), y: 10 + row * (BH + GY), t, sub, cash, hub, open: opens(id) });
-  node("deal", 0, 0, DEALS[META.slug].meta.name, UI.sponsor_short || META.sponsor || "LP interest", `${fmt.usdk(check)} in → ${fmt.usdk(back)} back`);
+  // other investors in the deal directly, beside our vehicle (#39): their own boxes off the deal; the deal box adds them
+  const dis = (inputs.direct_investors || []).map((d, i) => ({ d, i, r: cs.direct_investors[i] })).filter(({ d }) => d.check > 0.5);
+  const inAll = check + sum(dis.map((x) => x.d.check)), backAll = back + sum(dis.map((x) => sum(x.r.payments)));
+  node("deal", 0, 0, DEALS[META.slug].meta.name, dis.length ? `${UI.sponsor_short || META.sponsor || "LP interest"} · ${dis.length + 1} LPs` : (UI.sponsor_short || META.sponsor || "LP interest"), `${fmt.usdk(inAll)} in → ${fmt.usdk(backAll)} back`);
   const pcol = direct ? 2 : 3;
   let mRow = 0;
   if (direct) {
@@ -2007,6 +2020,10 @@ function renderFlow() {
     node("mgr", 2, mRow, n.manager, `${fmt.usdk(mc)} of units`, `fees ${fmt.usdk(sm.manager_fees_total)} · promote ${fmt.usdk(sm.manager_promote_total)}`, true);
     edges.push(["veh", "mgr"]);
   }
+  dis.forEach(({ d, i, r }, k) => {
+    node("d" + i, 1, 1 + k, d.name, `direct LP · outside ${n.vehicle}`, `${fmt.usdk(d.check)} in → ${fmt.usdk(sum(r.payments))} back`);
+    edges.push(["deal", "d" + i]);
+  });
   partners.forEach(({ p, i }, k) => {
     node("p" + i, pcol, (direct ? 0 : mRow) + k, p.name, `${fmt.pct(mcap > 0 ? p.manager_capital / mcap : 0, 0)} capital · ${fmt.pct(p.manager_share, 0)} promote`, `${fmt.usdk(p.manager_capital)} in → ${fmt.usdk(sm.people[i].from_manager)} back`);
     edges.push(["mgr", "p" + i]);
@@ -2231,7 +2248,7 @@ document.addEventListener("click", (e) => {
   if (group === "detailTabs" || group === "flowTabs") { detailCase = t.dataset.k; renderDetail(); renderQuickChecks(); renderChart(); renderExit(); renderWarehouse(); renderDirect(); }
 });
 document.getElementById("cbpParty").addEventListener("change", (e) => { cbpParty = e.target.value; renderCashByPerson(); });
-document.getElementById("cbpAsOf").addEventListener("change", (e) => { cbpAsOf = /^\d{4}-\d{2}-\d{2}$/.test(e.target.value) ? e.target.value : ""; renderCashByPerson(); });
+document.getElementById("cbpAsOf").addEventListener("change", (e) => { if (e.target.value && !plausibleDate(e.target.value)) return; cbpAsOf = e.target.value; renderCashByPerson(); });
 document.getElementById("resetBtn").addEventListener("click", () => { inputs = clone(DEFAULTS); activeScenario = null; renderAllFields(); recompute(); renderSaved(); updateScenarioChip(); });
 
 function inputsText() { const o = clone(inputs); o.as_of = new Date().toISOString().slice(0, 10); return JSON.stringify(o, null, 2) + "\n"; }
@@ -2832,9 +2849,30 @@ function caseInputs(c) {
 
 function vehicleIssues(inp, sm) { return vehicleIssueItems(inp, sm).map((x) => x.msg); }
 // Each issue with the input to fix ({msg, path}), so warnings can take you there.
+// Dates on the vehicle and LTEC's terms that fall before close or after the sale (#41): each with the path to fix.
+function dateIssues(inp) {
+  const w = inp.warehouse, n = w.names, close = w.close_date, items = [];
+  let end = null;
+  try { const d = (results && results.cases[PRIMARY] && results.cases[PRIMARY].payments.dates) || []; end = d[d.length - 1] || null; } catch (_) { end = null; }
+  const nm = (r) => (w.people.find((q) => q.id === r || q.name === r) || {}).name || r;
+  const chk = (v, what, path) => {
+    if (!v) return;
+    if (v <= close) items.push({ msg: `${what} is ${v}, on or before close (${close}); the engine skips or settles it at the first date it can.`, path });
+    else if (end && v > end) items.push({ msg: `${what} is ${v}, after the last cash date (${end}); the engine settles it at the end of the hold.`, path });
+  };
+  (w.selldown.tranches || []).forEach((t, j) => chk(t.date, `Sale ${j + 1}'s date`, `warehouse.selldown.tranches.${j}.date`));
+  (w.manager_transfers || []).forEach((x, j) => chk(x.date, `Buy-in ${j + 1}'s date`, `warehouse.manager_transfers.${j}.date`));
+  (w.manager_loans || []).forEach((x, q) => {
+    chk(x.maturity, `The maturity of ${nm(x.lender)}'s loan to ${nm(x.borrower)}`, `warehouse.manager_loans.${q}.maturity`);
+    (x.paydowns || []).forEach((pd, k) => chk(pd.date, `Pay-down ${k + 1} on ${nm(x.lender)}'s loan`, `warehouse.manager_loans.${q}.paydowns.${k}.date`));
+  });
+  (w.manager_vesting || []).forEach((x, q) => chk(x.leaves, `${nm(x.person)}'s leaving date`, `warehouse.manager_vesting.${q}.leaves`));
+  return items;
+}
 function vehicleIssueItems(inp, sm) {
   const w = inp.warehouse, n = w.names, items = [];
   const out = { push: (msg, path) => items.push({ msg, path: path || "warehouse" }), get length() { return items.length; } };
+  dateIssues(inp).forEach((x) => out.push(x.msg, x.path));
   const sM = w.people.reduce((a, x) => a + x.manager_share, 0), sC = w.people.reduce((a, x) => a + x.manager_capital, 0);
   const mcap = w.manager_commitment + (w.manager_reserve || 0), put = w.people.reduce((a, x) => a + x.amount, 0);
   const gap = inp.investor.check + w.reserve - w.manager_commitment - put;
@@ -3406,6 +3444,7 @@ function termsSummaryOf(inp, wres, cases, slug, opts) {
   const tpl = STRUCTURES && STRUCTURES.templates[w.structure];
   const inv = [text("Deal", `${M.name}${M.location ? ", " + M.location : ""}`), text("Sponsor", M.sponsor || "—"),
     text("Investor", inp.investor.name, "investor.name"), text("Check", fmt.usd(inp.investor.check), "investor.check")];
+  (inp.direct_investors || []).filter((x) => x.check > 0.5).forEach((x, i) => inv.push(text(`Alongside: ${x.name}`, `${fmt.usd(x.check)} into ${M.name} directly, outside ${n.vehicle}, on the same LP terms`, `direct_investors.${i}.check`)));
   const sl = inp.investor.side_letter;
   if (sl && Object.keys((base.investor.side_letter || {}).terms || {}).length) inv.push(text("Side letter", sl.enabled ? [sl.terms.pref_rate != null ? `${pctT(sl.terms.pref_rate)} pref` : "", sl.terms.residual_lp_share != null ? `${Math.round(sl.terms.residual_lp_share * 100)}/${Math.round(100 - sl.terms.residual_lp_share * 100)} split` : ""].filter(Boolean).join(", ") || "On" : "Not applied", "investor.side_letter"));
   inv.push(text(`How ${n.manager} holds it`, tpl ? `${E.fillLabel(tpl.label, inp)}. ${E.templateNote(tpl, inp)}` : "Set up by hand (no structure template).", "warehouse.structure"));

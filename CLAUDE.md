@@ -83,6 +83,10 @@
   source}}. Missing data (no loan, no units) reads "n/a", never red. A new check: add it to screens.json (with `why`),
   compute its metric in both engines, and tests/test_screens.py covers it on every deal; the page panel, Ask
   (`get_quick_checks`, sweep/solve_for metrics) read the same function.
+- Dates (#41): every date field goes through `bindField`, which ignores half-typed dates (`validity.badInput`) and years
+  outside `DATE_MIN`–`DATE_MAX`, and redraws a re-rendering card only on blur; `dateIssues` warns on vehicle / LTEC
+  dates before close or after the last cash date. A new date input: use `F(path, label, "date")` (never a raw input),
+  add its check to `dateIssues`, and tests/web/date_entry.test.js shows how to type one by keyboard.
 - New deal: `python scripts/add_standard_cases.py <slug>` adds LTEC's Adjusted Base / Downside / Stress (derived from
   the sponsor case; defaults in `engine/standard_cases.json`), then tune them to the deal's diligence and source them.
   The quick checks need no setup; if the loan has a covenant (DSCR, debt yield), add it under `screens` with its source.
