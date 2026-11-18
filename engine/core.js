@@ -640,9 +640,33 @@
     const cap = cap0.slice(), pro = pro0.slice(), snaps = [], xfers = [];
     // Partners leaving (manager_vesting): see core.py. Handled in date order with buy-ins.
     const vestIn = w.manager_vesting || [], departures = [];
-    const evs = xsIn.map((x, q) => [x.date, 0, q]).concat(vestIn.map((v, k) => [v.leaves, 1, k]).filter((e) => e[0]));
+    // Forfeiture (#42, see core.py)
+    const lastCash = dDays.length || tDay.length ? Math.max(...dDays, ...tDay) : closeDay;
+    const forfeits = [], fEvs = [];
+    (w.manager_loans || []).forEach((ln, q) => {
+      const tm = loanTermsOf(ln);
+      if (tm.at_maturity !== "forfeit" || !tm.maturity) return;
+      const md = toDay(tm.maturity);
+      const paid = tm.paydowns.filter((pd) => toDay(pd.date) <= md).reduce((a, pd) => a + (pd.amount || 0), 0);
+      const lo = nameKey(ln.lender) in pidx ? pidx[nameKey(ln.lender)] : null, bo = nameKey(ln.borrower) in pidx ? pidx[nameKey(ln.borrower)] : null;
+      if (lo === null || bo === null || lo === bo) return;
+      const due = Math.min(ln.amount, people[bo].manager_capital);
+      if (due > 0 && closeDay < md && md <= lastCash && paid < due - 1e-9) fEvs.push([tm.maturity, 2, q]);
+    });
+    const evs = xsIn.map((x, q) => [x.date, 0, q]).concat(vestIn.map((v, k) => [v.leaves, 1, k]).filter((e) => e[0]), fEvs);
     evs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1] || a[2] - b[2]));
     evs.forEach(([, kind_, q]) => {
+      if (kind_ === 2) {
+        const ln = w.manager_loans[q];
+        const lo = nameKey(ln.lender) in pidx ? pidx[nameKey(ln.lender)] : null, bo = nameKey(ln.borrower) in pidx ? pidx[nameKey(ln.borrower)] : null;
+        const mat = loanTermsOf(ln).maturity;
+        if (lo === null || bo === null || lo === bo) return;
+        forfeits.push({ loan: q, date: mat, from: people[bo].name, to: people[lo].name, capital_share: cap[bo], promote_share: pro[bo] });
+        cap[lo] += cap[bo]; pro[lo] += pro[bo];
+        cap[bo] = 0; pro[bo] = 0;
+        snaps.push([toDay(mat), cap.slice(), pro.slice()]);
+        return;
+      }
       if (kind_ === 1) {
         const v = vestIn[q], d = toDay(v.leaves);
         const i = nameKey(v.person) in pidx ? pidx[nameKey(v.person)] : null;
@@ -810,6 +834,17 @@
           const mk = k >= 2 ? 2 : k, iso = k >= 2 ? lDates[j] : evIso(k, j);
           if (pay > 0) moves.push([mk, j, lo, bo, pay, qL, k === 2 ? "loan_paydown" : "loan_repayment"]);
           sched.push({ date: iso, kind: k === 2 ? "paydown" : k === 3 ? "due" : "period", interest: accrued, paid: pay, balance: prin + acc });
+          // forfeited (#42, see core.py)
+          if (ends === "maturity" && tm.at_maturity === "forfeit" && forfeits.some((f) => f.loan === qL)) {
+            const left_ = Math.max(0, prin + acc);
+            rec.interest = rec.repaid + left_ - aL;
+            rec.owed_end = left_;
+            rec.due_date = iso;
+            rec.settled = "forfeited";
+            sched.push({ date: iso, kind: "forfeited", interest: 0, paid: 0, balance: left_ });
+            done = true;
+            break;
+          }
           // not paid at maturity (#33, see core.py)
           if (ends === "maturity" && tm.at_maturity === "sweep") {
             tm = Object.assign({}, tm, { repayment: "sweep", sweep_pct: 1 });
@@ -928,6 +963,13 @@
         if (x.seller === i) add(x.date, `buyin:${q}`, "buyin_sale", x.paid, x.buyer !== null ? people[x.buyer].name : null);
         if (x.buyer === i) add(x.date, `buyin:${q}`, "buyin_purchase", -x.paid, x.seller !== null ? people[x.seller].name : null);
       });
+      forfeits.forEach((f) => {  // no cash moves: a dated record of the share changing hands (#42)
+        if (p.name === f.from || p.name === f.to) {
+          const out = p.name === f.from;
+          led.push({ date: f.date, account: "manager", kind: out ? "share_forfeited" : "share_received", amount: 0,
+            counterparty: out ? f.to : f.from, units: f.capital_share, price: f.promote_share });
+        }
+      });
       const lFlows = lDates.map((_, m) => lCash[m][i]);
       lDates.forEach((d, m) => addMoves(2, m, d));
       led.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -973,7 +1015,7 @@
       manager_transfers: xfers.map((x) => ({ date: x.date, index: x.index,
         buyer: x.buyer !== null ? people[x.buyer].name : null, seller: x.seller !== null ? people[x.seller].name : null,
         interest: x.interest, share: x.share, paid: x.paid, price_100: x.price_100 })),
-      manager_split: splitTot, manager_loans: loansOut, manager_departures: departures,
+      manager_split: splitTot, manager_loans: loansOut, manager_departures: departures, manager_forfeitures: forfeits,
       loan_schedules: schedules, loan_payment_dates: lDates,
       summary: {
         people: outPeople.map((x) => x.summary),

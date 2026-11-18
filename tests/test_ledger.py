@@ -13,7 +13,7 @@ from engine.core import apply_variant, list_deals, load_deal, run_all  # noqa: E
 
 KINDS = {"units_bought", "warehouse_loan", "manager_capital", "loan_advance", "warehouse_loan_repaid", "unit_sale",
          "unit_purchase", "manager_cash", "distribution", "distribution_bought_units", "loan_repayment",
-         "loan_settlement", "loan_paydown", "buyin_sale", "buyin_purchase"}
+         "loan_settlement", "loan_paydown", "buyin_sale", "buyin_purchase", "share_forfeited", "share_received"}
 
 
 def setups():
@@ -44,7 +44,7 @@ def check_ledger(r):
         paid = sum(x["paid"] for x in sch)
         assert paid == pytest.approx(ln["repaid"] + (ln["owed_end"] if ln["settled"] in ("paid_at_end", "paid_at_maturity", "paid_on_leaving") else 0), abs=1e-6)
         assert sum(x["interest"] for x in sch) == pytest.approx(ln["interest"], abs=1e-6)
-        assert sch[-1]["balance"] == pytest.approx(0 if ln["settled"] != "forgiven" else ln["owed_end"], abs=1e-6)
+        assert sch[-1]["balance"] == pytest.approx(ln["owed_end"] if ln["settled"] in ("forgiven", "forfeited") else 0, abs=1e-6)
 
 
 @pytest.mark.parametrize("slug,name,inp", list(setups()), ids=lambda x: x if isinstance(x, str) else "")

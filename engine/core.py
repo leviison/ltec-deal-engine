@@ -925,9 +925,38 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
     # partners pro rata to their fees & promote shares. Capital stays with them. Handled in date order with buy-ins.
     vest_in = w.get("manager_vesting", [])
     departures = []
+    # Forfeiture (#42): a partner loan with at_maturity "forfeit" that isn't covered by the borrower's own pay-downs
+    # by its maturity: on that date the borrower's whole LTEC interest (capital and fees & promote) goes to the lender
+    # for nothing, and the loan is cancelled. The scenario is the "missed" outcome; "settle" is "paid".
+    last_cash = max([d for d in dates] + t_dates) if (dates or t_dates) else close
+    forfeits, f_evs = [], []
+    for q, ln in enumerate(w.get("manager_loans", []) or []):
+        tm_ = loan_terms_of(ln)
+        if tm_["at_maturity"] != "forfeit" or not tm_["maturity"]:
+            continue
+        md = date.fromisoformat(tm_["maturity"])
+        paid_ = sum(pd.get("amount", 0.0) for pd in tm_["paydowns"] if date.fromisoformat(pd["date"]) <= md)
+        lo_, bo_ = pidx.get(_key(ln["lender"])), pidx.get(_key(ln["borrower"]))
+        if lo_ is None or bo_ is None or lo_ == bo_:
+            continue
+        due_ = min(ln["amount"], people[bo_]["manager_capital"])
+        if due_ > 0 and close < md <= last_cash and paid_ < due_ - 1e-9:
+            f_evs.append((tm_["maturity"], 2, q))
     evs = sorted([(x["date"], 0, q) for q, x in enumerate(xs_in)]
-                 + [(v["leaves"], 1, k) for k, v in enumerate(vest_in) if v.get("leaves")])
+                 + [(v["leaves"], 1, k) for k, v in enumerate(vest_in) if v.get("leaves")] + f_evs)
     for _, kind_, q in evs:
+        if kind_ == 2:
+            ln = w["manager_loans"][q]
+            lo_, bo_ = pidx.get(_key(ln["lender"])), pidx.get(_key(ln["borrower"]))
+            d = date.fromisoformat(loan_terms_of(ln)["maturity"])
+            if lo_ is None or bo_ is None or lo_ == bo_:
+                continue
+            forfeits.append({"loan": q, "date": d.isoformat(), "from": people[bo_]["name"], "to": people[lo_]["name"],
+                             "capital_share": cap[bo_], "promote_share": pro[bo_]})
+            cap[lo_] += cap[bo_]; pro[lo_] += pro[bo_]
+            cap[bo_] = pro[bo_] = 0.0
+            snaps.append((d, list(cap), list(pro)))
+            continue
         if kind_ == 1:
             v = vest_in[q]
             d = date.fromisoformat(v["leaves"])
@@ -1135,6 +1164,16 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                 sched.append({"date": d.isoformat(), "kind": "paydown" if k == 2 else "due" if k == 3 else "period",
                               "interest": accrued, "paid": pay, "balance": prin + acc})
                 # not paid at maturity (#33): from then on the borrower's manager cash repays it (a cash sweep)
+                # forfeited (#42): the lender took the borrower's interest instead; nothing more is paid
+                if ends == "maturity" and tm["at_maturity"] == "forfeit" and any(f["loan"] == q_l for f in forfeits):
+                    left_ = max(0.0, prin + acc)
+                    rec["interest"] = rec["repaid"] + left_ - a_l
+                    rec["owed_end"] = left_
+                    rec["due_date"] = d.isoformat()
+                    rec["settled"] = "forfeited"
+                    sched.append({"date": d.isoformat(), "kind": "forfeited", "interest": 0.0, "paid": 0.0, "balance": left_})
+                    done = True
+                    break
                 if ends == "maturity" and tm["at_maturity"] == "sweep":
                     tm = dict(tm, repayment="sweep", sweep_pct=1.0)
                     rp, mat, exact = "sweep", None, False
@@ -1275,6 +1314,12 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                 add(x["date"], f"buyin:{q}", "buyin_sale", x["paid"], people[x["buyer"]]["name"] if x["buyer"] is not None else None)
             if x["buyer"] == i:
                 add(x["date"], f"buyin:{q}", "buyin_purchase", -x["paid"], people[x["seller"]]["name"] if x["seller"] is not None else None)
+        for f in forfeits:  # no cash moves: a dated record of the share changing hands (#42)
+            if p["name"] in (f["from"], f["to"]):
+                out_ = p["name"] == f["from"]
+                led.append({"date": f["date"], "account": "manager", "kind": "share_forfeited" if out_ else "share_received",
+                            "amount": 0.0, "counterparty": f["to"] if out_ else f["from"],
+                            "units": f["capital_share"], "price": f["promote_share"]})
         l_flows = [l_cash[m][i] for m in range(len(l_dates))]
         for m in range(len(l_dates)):
             add_moves(2, m, l_dates[m])
@@ -1332,7 +1377,7 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                                "seller": people[x["seller"]]["name"] if x["seller"] is not None else None,
                                "interest": x["interest"], "share": x["share"], "paid": x["paid"],
                                "price_100": x["price_100"]} for x in xfers],
-        "manager_split": split_tot, "manager_loans": loans_out, "manager_departures": departures,
+        "manager_split": split_tot, "manager_loans": loans_out, "manager_departures": departures, "manager_forfeitures": forfeits,
         "loan_schedules": schedules, "loan_payment_dates": [d.isoformat() for d in l_dates],
         "summary": {
             "people": [x["summary"] for x in out_people],

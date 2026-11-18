@@ -71,7 +71,8 @@
       },
       "options": {
         "settle": "Settled then: paid or forgiven (box below)",
-        "sweep": "From then on the borrower's {manager} cash repays it"
+        "sweep": "From then on the borrower's {manager} cash repays it",
+        "forfeit": "The borrower's whole {manager} share goes to the lender (the loan is cancelled)"
       }
     },
     "paydowns": {
@@ -181,6 +182,18 @@
         "recourse": true,
         "on_leave": "due",
         "at_maturity": "sweep"
+      }
+    },
+    "bridge_forfeit": {
+      "title": "Bridge, share forfeited if not paid",
+      "summary": "The lender funds the borrower's share now; if the borrower hasn't paid it off from their own money by the maturity date, they sign their whole {manager} share (capital and fees & promote) over to the lender and the loan is cancelled. This models the missed case; switch \"If not paid at maturity\" to settled for the paid case. Pay-downs that cover the loan by the date avoid it.",
+      "terms": {
+        "repayment": "none",
+        "due_on": "exact_date",
+        "maturity": "",
+        "recourse": true,
+        "on_leave": "due",
+        "at_maturity": "forfeit"
       }
     },
     "forgivable": {

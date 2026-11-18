@@ -289,6 +289,58 @@
             }
           ]
         }
+      },
+      {
+        "name": "{manager} J · {thaxter} funds his $175,000 by Mar 15, 2027",
+        "note": "The paid case of a contribute-by-a-date clause: {levi} funds all of {manager}'s capital at close; {thaxter} owns half and pays {levi} $175,000 plus 8% simple from his own money on Mar 15, 2027. Compare with {manager} K.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 175000.0,
+          "warehouse.people[levi].manager_share": 0.5,
+          "warehouse.people[thaxter].manager_capital": 175000.0,
+          "warehouse.people[thaxter].manager_share": 0.5,
+          "warehouse.manager_loans": [
+            {
+              "lender": "levi",
+              "borrower": "thaxter",
+              "amount": 175000.0,
+              "rate": 0.08,
+              "rate_type": "simple",
+              "recourse": true,
+              "repayment": "none",
+              "due_on": "exact_date",
+              "maturity": "2027-03-15",
+              "on_leave": "due",
+              "at_maturity": "settle",
+              "preset": "bridge"
+            }
+          ]
+        }
+      },
+      {
+        "name": "{manager} K · {thaxter} misses Mar 15, 2027: his 50% goes to {levi}",
+        "note": "The missed case of the same clause: {thaxter} doesn't fund by Mar 15, 2027, so he signs his 50% of {manager} (capital and fees & promote) over to {levi} and the bridge is cancelled. Cash before that date stays his. The clause's wording is a TODO until the amendment is signed.",
+        "set": {
+          "warehouse.people[levi].manager_capital": 175000.0,
+          "warehouse.people[levi].manager_share": 0.5,
+          "warehouse.people[thaxter].manager_capital": 175000.0,
+          "warehouse.people[thaxter].manager_share": 0.5,
+          "warehouse.manager_loans": [
+            {
+              "lender": "levi",
+              "borrower": "thaxter",
+              "amount": 175000.0,
+              "rate": 0.08,
+              "rate_type": "simple",
+              "recourse": true,
+              "repayment": "none",
+              "due_on": "exact_date",
+              "maturity": "2027-03-15",
+              "on_leave": "due",
+              "at_maturity": "forfeit",
+              "preset": "bridge_forfeit"
+            }
+          ]
+        }
       }
     ]
   },

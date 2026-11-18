@@ -287,3 +287,54 @@ def test_settle_is_the_default_at_maturity():
     _, b = run(**dict(t, at_maturity="settle"))
     assert json.dumps(a["base"]["people"], default=str) == json.dumps(b["base"]["people"], default=str)
     assert a["base"]["manager_loans"][0]["settled"] == "paid_at_maturity"
+
+
+# ---- contribute by a date or forfeit the share (#42): Siena LTEC J (paid) and LTEC K (missed)
+
+def _jk(k):
+    d = load_deal("siena-villas")
+    alts = {a["name"][:11]: a for a in d["meta"]["alternatives"]}
+    return (run_all(apply_variant(d, alts["{manager} J"]))["warehouse"][k], run_all(apply_variant(d, alts["{manager} K"]))["warehouse"][k])
+
+
+@pytest.mark.parametrize("k", CASES)
+def test_forfeit_missed_case(k):
+    j, kk = _jk(k)
+    f = kk["manager_forfeitures"]
+    assert f == [{"loan": 0, "date": "2027-03-15", "from": "Thaxter", "to": "Levi", "capital_share": 0.5, "promote_share": 0.5}]
+    ln = kk["manager_loans"][0]
+    assert ln["settled"] == "forfeited" and ln["repaid"] == 0 and ln["due_date"] == "2027-03-15"
+    assert kk["loan_schedules"][0][-1]["kind"] == "forfeited"
+    th, lv = kk["people"][1], kk["people"][0]
+    # from the date on, Thaxter has no cash and Levi has all of LTEC's
+    after = [i for i, d in enumerate(kk["dates"]) if d > "2027-03-15"]
+    assert all(abs(th["flows"][i]) < 1e-9 for i in after)
+    kinds = {e["kind"] for e in th["ledger"]}
+    assert "share_forfeited" in kinds and "loan_settlement" not in kinds
+    assert [e["kind"] for e in lv["ledger"] if e["date"] == "2027-03-15"] == ["share_received"]
+    # cash before the date stays Thaxter's: his flows up to it are the same as in the paid case, less nothing
+    before = [i for i, d in enumerate(kk["dates"]) if d < "2027-03-15"]
+    jb = [i for i, d in enumerate(j["dates"]) if d < "2027-03-15"]
+    assert [th["flows"][i] for i in before] == pytest.approx([j["people"][1]["flows"][i] for i in jb])
+
+
+@pytest.mark.parametrize("k", CASES)
+def test_forfeit_paid_case_and_nothing_created_or_lost(k):
+    j, kk = _jk(k)
+    ln = j["manager_loans"][0]
+    assert ln["settled"] == "paid_at_maturity" and ln["due_date"] == "2027-03-15" and not j["manager_forfeitures"]
+    assert ln["owed_end"] == pytest.approx(175000.0 * (1 + 0.08 * years(j["dates"][0], "2027-03-15")))
+    # a loan and a forfeiture only move money and shares between the partners: their total is the same either way
+    total = lambda r: sum(sum(p["flows"]) for p in r["people"])
+    assert total(kk) == pytest.approx(total(j))
+
+
+@pytest.mark.parametrize("k", CASES)
+def test_paydowns_that_cover_the_loan_avoid_forfeiture(k):
+    t = dict({x: v for x, v in apply_loan_preset(LOAN, "bridge_forfeit", LIB).items() if x not in LOAN}, maturity="2027-06-30",
+             paydowns=[{"date": "2027-03-01", "amount": 175000.0}])
+    _, r = run(**t)
+    assert not r[k]["manager_forfeitures"] and r[k]["manager_loans"][0]["settled"] != "forfeited"
+    # half paid down: still forfeited
+    _, r2 = run(**dict(t, paydowns=[{"date": "2027-03-01", "amount": 87500.0}]))
+    assert r2[k]["manager_forfeitures"] and r2[k]["manager_loans"][0]["settled"] == "forfeited"
