@@ -5,6 +5,20 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.12.0 — 2026-11-18
+
+- Actual payments (#22): a new **Actual payments** panel records what really happened, in the dashboard's shared
+  record (`actuals`; editors write, everyone with access reads): payments between LTEC's partners (capital, loan
+  advances and payments, buy-ins, distributions), our vehicle's cash (receipts from the deal, member distributions,
+  unit sales) and the deal's NOI, rents and LP distributions by year. Entries are never edited or deleted: a wrong one
+  is voided with a reason (it stays, struck through) and re-entered. Each has who recorded it and when.
+- Compared with the projection as of today for the case in Case detail: by person and kind (like with like, "not
+  recorded" where nothing's entered), each partner loan's balance per the record vs projected, the vehicle, and the
+  deal by year.
+- A partner loan's "If not paid at maturity" can be **decided by recorded payments** (`auto`, #44): once the date has
+  passed, paid by then → settled, otherwise the share passes as set; before the date it's projected as paid.
+- Ask: `get_actuals`. The engines still project from the inputs (they run `auto` as settled; the page decides it).
+
 ## 2.11.0 — 2026-11-18
 
 - Contribute by a date or forfeit the share (#42): a partner loan's "If not paid at maturity" can now be **the

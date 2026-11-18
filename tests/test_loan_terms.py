@@ -384,3 +384,11 @@ def test_forfeit_fees_and_promote_only_keeps_the_loan():
 def test_forfeit_capital_only():
     f = _forfeit(forfeit_scope="capital")["manager_forfeitures"][0]
     assert f["capital_share"] == pytest.approx(100000 / 350000) and f["promote_share"] == 0 and f["cancels_loan"]
+
+
+def test_auto_is_settle_in_the_engines():
+    """at_maturity "auto" (#22): the page decides paid / missed from recorded payments; the engines run it as settle."""
+    t = dict({x: v for x, v in apply_loan_preset(LOAN, "bridge_forfeit", LIB).items() if x not in LOAN}, maturity="2027-03-15")
+    _, a = run(**dict(t, at_maturity="auto"))
+    _, b = run(**dict(t, at_maturity="settle"))
+    assert json.dumps(a["base"]["people"], default=str) == json.dumps(b["base"]["people"], default=str)

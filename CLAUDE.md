@@ -13,7 +13,8 @@
 - The dashboard is one page with every deal and a deal picker (`#<slug>` opens a deal):
   https://claude.ai/artifact/DLhZKbmvQwLC1NFoYySKvZ ("LTEC Deal Engine"). Rebuild with `python scripts/build_web.py`
   (no args) and republish `dist/index.html` there. Capabilities: `db` (rule: `scenarios` read view / write interact),
-  `user`, `downloads`, `sample` (the Ask panel); omit `capabilities` on republish to keep them. Saved scenarios carry a `deal` slug and store only what differs from the
+  `user`, `downloads`, `sample` (the Ask panel); since 2.12.0 also the rule `actuals` read view / write admin (#22).
+  Omit `capabilities` on republish to keep them. Saved scenarios carry a `deal` slug and store only what differs from the
   deal file (`diff_json`, dotted path -> value, plus `base_version` / `base_as_of`), so deal-file corrections flow into them;
   older ones store full `inputs` and still load. Update keeps up to 5 earlier versions in `history` (Undo). Read them
   through `scenarioInputs()` in the page, never by parsing `inputs` directly.
@@ -54,8 +55,12 @@
 - Ledger (#21): each vehicle person's `ledger` (dated entries by account and kind; positive = cash to them) and the
   vehicle's `loan_schedules` come from `warehouse_case` in both engines. On every date a person's entries must add up to
   their flows (tests/test_ledger.py, and the randomized parity test). New cash between people (a new feature) must
-  write ledger entries; the page describes kinds in `ledgerLabel`, Ask reads them with `get_statement`. Tracking
-  actual payments is issue #22 (not built).
+  write ledger entries; the page describes kinds in `ledgerLabel`, Ask reads them with `get_statement`.
+- Actuals (#22): recorded payments live in the artifact's shared db collection `actuals` (rule: read view / write admin):
+  {deal, scope partners|vehicle|deal, kind, date (or year), amount, from, to (person ids), note, created_by/at, void
+  {at, by, reason} | null}. Never edit or delete: void and re-enter. The page compares them with the projection
+  (`actVariance`), decides `at_maturity: "auto"` loans from them in `effectiveInputs` (engines run auto as settle), and
+  Ask reads them with `get_actuals`. Tests stub the db and set `window.__today` (tests/web/actuals.test.js).
 - Loan terms (#24, schema 8): each `manager_loans` entry may carry `repayment` / `sweep_pct` / `term_years` / `source` /
   `maturity` / `on_leave` (+ `preset`, a label); missing = the original cash sweep (`loan_terms_of` = `loanTermsOf`).
   Known methods live in `engine/loan_terms.json` (parts with labels and presets; `apply_loan_preset` =
