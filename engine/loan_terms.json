@@ -75,6 +75,43 @@
         "forfeit": "The borrower's whole {manager} share goes to the lender (the loan is cancelled)"
       }
     },
+    "forfeit_scope": {
+      "label": "What passes to the lender",
+      "applies": {
+        "at_maturity": [
+          "forfeit"
+        ]
+      },
+      "options": {
+        "both": "Their {manager} capital and fees & promote share",
+        "capital": "Their {manager} capital only (keeps fees & promote)",
+        "promote": "Their fees & promote share only (keeps capital; the loan stays owed)"
+      }
+    },
+    "forfeit_mode": {
+      "label": "If they paid part of it",
+      "applies": {
+        "at_maturity": [
+          "forfeit"
+        ]
+      },
+      "options": {
+        "all": "They still forfeit all of it",
+        "pro_rata": "They forfeit the unpaid part only (pro rata)"
+      }
+    },
+    "own_capital": {
+      "label": "Capital they paid in themselves",
+      "applies": {
+        "at_maturity": [
+          "forfeit"
+        ]
+      },
+      "options": {
+        "forfeited": "Passes to the lender too",
+        "kept": "Stays theirs (only the part the lender funded passes)"
+      }
+    },
     "paydowns": {
       "label": "Pay-downs from the borrower's own money",
       "note": "Dated payments the borrower makes on top of any repayment from {manager} cash (interest first). Kept when you pick another method."

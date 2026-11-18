@@ -103,4 +103,7 @@ def randomized(base, seed):
                                      "amount": rt.choice([0.0, 5000.0, 50000.0, 1e6])} for _ in range(rt.randint(0, 2))]})
             if ln["at_maturity"] == "forfeit" and rt.random() < 0.6:  # the missed case (#42): no pay-downs, due in the hold
                 ln.update({"paydowns": [], "maturity": rt.choice(["2027-06-30", "2028-06-30", "2029-10-10"])})
+            if ln["at_maturity"] == "forfeit":
+                ln.update({"forfeit_scope": rt.choice(["both", "capital", "promote"]), "forfeit_mode": rt.choice(["all", "pro_rata"]),
+                           "own_capital": rt.choice(["forfeited", "kept"])})
     return inp

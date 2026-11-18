@@ -27,6 +27,13 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
   check(r.preset === 'bridge_forfeit' && /whole LTEC share goes to the lender/.test(r.note), `card: ${JSON.stringify({ preset: r.preset, note: r.note })}`);
   check(r.th && r.sched && r.lv && r.tot === r.want && r.f.length === 1 && r.f[0].date === '2027-03-15', `statements: ${JSON.stringify(r)}`);
   await (await p.$('#cbpTable')).screenshot({ path: __P.join(OUT, 'forfeit_statement.png') });
+  // the options: fees & promote only keeps the capital and the loan; the words follow
+  await p.evaluate(() => { const el = document.querySelector('[data-path="warehouse.manager_loans.0.forfeit_scope"] select'); el.value = 'promote'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await p.waitForTimeout(300);
+  r = await p.evaluate(() => ({ f: results.warehouse.base.manager_forfeitures[0], s: results.warehouse.base.manager_loans[0].settled,
+    fields: ['forfeit_mode', 'own_capital'].every((k) => !!document.querySelector(`[data-path="warehouse.manager_loans.0.${k}"]`)),
+    note: document.querySelector('.loan-terms-note').textContent }));
+  check(r.f.capital_share === 0 && r.f.promote_share === 0.5 && r.s === 'paid_at_maturity' && r.fields && /fees & promote share goes to the lender; the loan stays owed/.test(r.note), `promote only: ${JSON.stringify(r)}`);
   // the paid case by one switch
   await p.evaluate(() => { const el = document.querySelector('[data-path="warehouse.manager_loans.0.at_maturity"] select'); el.value = 'settle'; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await p.waitForTimeout(300);

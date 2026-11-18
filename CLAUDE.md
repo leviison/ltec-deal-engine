@@ -71,6 +71,8 @@
   `forfeit` (#42): not covered by own pay-downs by maturity, the borrower's whole manager share (capital and fees &
   promote) passes to the lender on that date in the share timeline (with buy-ins and departures), the loan is cancelled
   (`settled: forfeited`); results `manager_forfeitures`, ledger kinds `share_forfeited` / `share_received` (no cash).
+  Options: `forfeit_scope` both/capital/promote (promote only keeps the loan), `forfeit_mode` all/pro_rata (by own
+  pay-downs by the date), `own_capital` forfeited/kept (kept moves only the lender-funded part of capital).
   Next: the warehouse lender on the same parts (#26), legal drafts (#27, roadmap).
 - Summary of terms (#25): `termsSummary(inp, wres, cases, slug)` in the page writes the term sheet from the inputs using
   the panel's field specs (`whFields`), each term with its source; "Export terms" (`buildTermsDocx`, docx 8.5.0 from

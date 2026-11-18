@@ -587,7 +587,10 @@ function loanTermsText(spec, borrowerName, mgr) {
   if (t.on_leave === "due") parts.push(`due if ${b} leaves`);
   if (t.on_leave === "forgiven") parts.push(`forgiven if ${b} leaves`);
   if (t.maturity && t.at_maturity === "sweep") parts.push(`if not paid by ${t.maturity}, ${b}'s ${M} cash repays it from then on`);
-  if (t.maturity && t.at_maturity === "forfeit") parts.push(`if not paid by ${t.maturity}, ${b}'s whole ${M} share goes to the lender and the loan is cancelled`);
+  if (t.maturity && t.at_maturity === "forfeit") {
+    const what = t.forfeit_scope === "capital" ? `${M} capital` : t.forfeit_scope === "promote" ? `${M} fees & promote share` : `${M} share`;
+    parts.push(`if not paid by ${t.maturity}, ${t.forfeit_mode === "pro_rata" ? "the unpaid part of " + b + "'s" : b + "'s whole"} ${what} goes to the lender${t.own_capital === "kept" && t.forfeit_scope !== "promote" ? " (capital " + b + " paid in themselves stays theirs)" : ""}${t.forfeit_scope === "promote" ? "; the loan stays owed" : " and the loan is cancelled"}`);
+  }
   if (!late && t.due_on === "exact_date" && (t.maturity || t.on_leave !== "continues")) parts.push(`settled on the exact date from ${b}'s own money`);
   if (late && spec.recourse === false && t.at_maturity === "sweep") parts.push(`what's left at the end is forgiven`);
   if ((t.paydowns || []).length) parts.push(`${b} pays down ${t.paydowns.map((x) => `${fmt.usd(x.amount)} on ${x.date}`).join(", ")} from their own money`);
@@ -1349,6 +1352,7 @@ function whFields() {
       list.push(Object.assign(F(Q + "maturity", L.parts.maturity.label, "date", L.parts.maturity.note), { allowEmpty: true, dflt: t.maturity }),
                 Object.assign(F(Q + "due_on", L.parts.due_on.label, "select", null, opt("due_on")), { dflt: t.due_on }),
                 ...(t.maturity ? [Object.assign(F(Q + "at_maturity", L.parts.at_maturity.label, "select", null, opt("at_maturity")), { dflt: t.at_maturity })] : []),
+        ...(t.maturity && t.at_maturity === "forfeit" ? ["forfeit_scope", "forfeit_mode", "own_capital"].map((k) => Object.assign(F(Q + k, L.parts[k].label, "select", null, opt(k)), { dflt: t[k] })) : []),
                 F(Q + "recourse", L.parts.recourse.label, "bool", L.parts.recourse.note),
                 Object.assign(F(Q + "on_leave", L.parts.on_leave.label, "select", null, opt("on_leave")), { dflt: t.on_leave }));
       // every part changes the "In short" words and which parts show: re-render the card (selects, dates, the box)

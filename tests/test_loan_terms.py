@@ -301,7 +301,7 @@ def _jk(k):
 def test_forfeit_missed_case(k):
     j, kk = _jk(k)
     f = kk["manager_forfeitures"]
-    assert f == [{"loan": 0, "date": "2027-03-15", "from": "Thaxter", "to": "Levi", "capital_share": 0.5, "promote_share": 0.5}]
+    assert f == [{"loan": 0, "date": "2027-03-15", "from": "Thaxter", "to": "Levi", "capital_share": 0.5, "promote_share": 0.5, "cancels_loan": True}]
     ln = kk["manager_loans"][0]
     assert ln["settled"] == "forfeited" and ln["repaid"] == 0 and ln["due_date"] == "2027-03-15"
     assert kk["loan_schedules"][0][-1]["kind"] == "forfeited"
@@ -338,3 +338,49 @@ def test_paydowns_that_cover_the_loan_avoid_forfeiture(k):
     # half paid down: still forfeited
     _, r2 = run(**dict(t, paydowns=[{"date": "2027-03-01", "amount": 87500.0}]))
     assert r2[k]["manager_forfeitures"] and r2[k]["manager_loans"][0]["settled"] == "forfeited"
+
+
+# ---- what passes on forfeiture (#42 options): pro rata to what's unpaid, capital or fees & promote only, own capital kept
+
+def _forfeit(**extra):
+    d = load_deal("siena-villas")
+    w = d["warehouse"]
+    w["people"][0]["manager_capital"] = 250000.0      # Levi
+    w["people"][1]["manager_capital"] = 100000.0      # Thaxter: $25k of his own, $75k lent by Levi
+    w["people"][0]["manager_share"] = w["people"][1]["manager_share"] = 0.5
+    ln = {"lender": "levi", "borrower": "thaxter", "amount": 75000.0, "rate": 0.08, "rate_type": "simple", "recourse": True}
+    ln.update(apply_loan_preset({}, "bridge_forfeit", LIB))
+    ln.update(maturity="2027-03-15", **extra)
+    w["manager_loans"] = [ln]
+    return run_all(d)["warehouse"]["base"]
+
+
+def test_forfeit_all_by_default_takes_own_capital_too():
+    f = _forfeit()["manager_forfeitures"][0]
+    assert f["capital_share"] == pytest.approx(100000 / 350000) and f["promote_share"] == pytest.approx(0.5)
+
+
+def test_forfeit_pro_rata_to_the_unpaid_part():
+    r = _forfeit(forfeit_mode="pro_rata", paydowns=[{"date": "2027-02-01", "amount": 30000.0}])
+    f = r["manager_forfeitures"][0]
+    g = 1 - 30000 / 75000                                   # 60% unpaid
+    assert f["capital_share"] == pytest.approx(g * 100000 / 350000) and f["promote_share"] == pytest.approx(g * 0.5)
+    assert r["manager_loans"][0]["settled"] == "forfeited"   # the unpaid balance is cancelled for the share
+
+
+def test_forfeit_own_capital_kept():
+    f = _forfeit(own_capital="kept")["manager_forfeitures"][0]
+    assert f["capital_share"] == pytest.approx(75000 / 350000)   # only the part Levi lent
+    assert f["promote_share"] == pytest.approx(0.5)
+
+
+def test_forfeit_fees_and_promote_only_keeps_the_loan():
+    r = _forfeit(forfeit_scope="promote")
+    f = r["manager_forfeitures"][0]
+    assert f["capital_share"] == 0 and f["promote_share"] == pytest.approx(0.5) and not f["cancels_loan"]
+    assert r["manager_loans"][0]["settled"] == "paid_at_maturity"   # recourse: he still repays the loan
+
+
+def test_forfeit_capital_only():
+    f = _forfeit(forfeit_scope="capital")["manager_forfeitures"][0]
+    assert f["capital_share"] == pytest.approx(100000 / 350000) and f["promote_share"] == 0 and f["cancels_loan"]

@@ -486,7 +486,7 @@
   const nameKey = (s) => s.trim().toLowerCase();
 
   // A partner loan's repayment terms (#24), defaults = the original rule (see core.py)
-  const LOAN_TERM_DEFAULTS = { repayment: "sweep", sweep_pct: 1, term_years: 5, source: "manager_cash", maturity: "", on_leave: "continues", due_on: "cash_date", paydowns: [], at_maturity: "settle" };
+  const LOAN_TERM_DEFAULTS = { repayment: "sweep", sweep_pct: 1, term_years: 5, source: "manager_cash", maturity: "", on_leave: "continues", due_on: "cash_date", paydowns: [], at_maturity: "settle", forfeit_scope: "both", forfeit_mode: "all", own_capital: "forfeited" };
   function loanTermsOf(ln) {
     const out = {};
     Object.keys(LOAN_TERM_DEFAULTS).forEach((k) => { out[k] = ln[k] !== undefined && ln[k] !== null ? ln[k] : LOAN_TERM_DEFAULTS[k]; });
@@ -642,7 +642,7 @@
     const vestIn = w.manager_vesting || [], departures = [];
     // Forfeiture (#42, see core.py)
     const lastCash = dDays.length || tDay.length ? Math.max(...dDays, ...tDay) : closeDay;
-    const forfeits = [], fEvs = [];
+    const forfeits = [], fEvs = [], fFrac = {};
     (w.manager_loans || []).forEach((ln, q) => {
       const tm = loanTermsOf(ln);
       if (tm.at_maturity !== "forfeit" || !tm.maturity) return;
@@ -651,7 +651,12 @@
       const lo = nameKey(ln.lender) in pidx ? pidx[nameKey(ln.lender)] : null, bo = nameKey(ln.borrower) in pidx ? pidx[nameKey(ln.borrower)] : null;
       if (lo === null || bo === null || lo === bo) return;
       const due = Math.min(ln.amount, people[bo].manager_capital);
-      if (due > 0 && closeDay < md && md <= lastCash && paid < due - 1e-9) fEvs.push([tm.maturity, 2, q]);
+      if (due > 0 && closeDay < md && md <= lastCash && paid < due - 1e-9) {
+        const g = tm.forfeit_mode === "all" ? 1 : 1 - paid / due;
+        const own = tm.own_capital === "kept" ? due / people[bo].manager_capital : 1;
+        fFrac[q] = [["both", "capital"].includes(tm.forfeit_scope) ? g * own : 0, ["both", "promote"].includes(tm.forfeit_scope) ? g : 0];
+        fEvs.push([tm.maturity, 2, q]);
+      }
     });
     const evs = xsIn.map((x, q) => [x.date, 0, q]).concat(vestIn.map((v, k) => [v.leaves, 1, k]).filter((e) => e[0]), fEvs);
     evs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1] || a[2] - b[2]));
@@ -661,9 +666,10 @@
         const lo = nameKey(ln.lender) in pidx ? pidx[nameKey(ln.lender)] : null, bo = nameKey(ln.borrower) in pidx ? pidx[nameKey(ln.borrower)] : null;
         const mat = loanTermsOf(ln).maturity;
         if (lo === null || bo === null || lo === bo) return;
-        forfeits.push({ loan: q, date: mat, from: people[bo].name, to: people[lo].name, capital_share: cap[bo], promote_share: pro[bo] });
-        cap[lo] += cap[bo]; pro[lo] += pro[bo];
-        cap[bo] = 0; pro[bo] = 0;
+        const [gc, gp] = fFrac[q], mc = cap[bo] * gc, mp = pro[bo] * gp;
+        forfeits.push({ loan: q, date: mat, from: people[bo].name, to: people[lo].name, capital_share: mc, promote_share: mp, cancels_loan: gc > 0 });
+        cap[lo] += mc; pro[lo] += mp;
+        cap[bo] -= mc; pro[bo] -= mp;
         snaps.push([toDay(mat), cap.slice(), pro.slice()]);
         return;
       }
@@ -835,7 +841,7 @@
           if (pay > 0) moves.push([mk, j, lo, bo, pay, qL, k === 2 ? "loan_paydown" : "loan_repayment"]);
           sched.push({ date: iso, kind: k === 2 ? "paydown" : k === 3 ? "due" : "period", interest: accrued, paid: pay, balance: prin + acc });
           // forfeited (#42, see core.py)
-          if (ends === "maturity" && tm.at_maturity === "forfeit" && forfeits.some((f) => f.loan === qL)) {
+          if (ends === "maturity" && tm.at_maturity === "forfeit" && forfeits.some((f) => f.loan === qL && f.cancels_loan)) {
             const left_ = Math.max(0, prin + acc);
             rec.interest = rec.repaid + left_ - aL;
             rec.owed_end = left_;

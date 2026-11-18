@@ -733,7 +733,7 @@ def _key(name: str) -> str:
 
 LOAN_TERM_DEFAULTS = {"repayment": "sweep", "sweep_pct": 1.0, "term_years": 5.0, "source": "manager_cash",
                       "maturity": "", "on_leave": "continues", "due_on": "cash_date", "paydowns": [],
-                      "at_maturity": "settle"}
+                      "at_maturity": "settle", "forfeit_scope": "both", "forfeit_mode": "all", "own_capital": "forfeited"}
 
 
 def loan_terms_of(ln: dict) -> dict:
@@ -929,7 +929,7 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
     # by its maturity: on that date the borrower's whole LTEC interest (capital and fees & promote) goes to the lender
     # for nothing, and the loan is cancelled. The scenario is the "missed" outcome; "settle" is "paid".
     last_cash = max([d for d in dates] + t_dates) if (dates or t_dates) else close
-    forfeits, f_evs = [], []
+    forfeits, f_evs, f_frac = [], [], {}
     for q, ln in enumerate(w.get("manager_loans", []) or []):
         tm_ = loan_terms_of(ln)
         if tm_["at_maturity"] != "forfeit" or not tm_["maturity"]:
@@ -941,6 +941,13 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
             continue
         due_ = min(ln["amount"], people[bo_]["manager_capital"])
         if due_ > 0 and close < md <= last_cash and paid_ < due_ - 1e-9:
+            # what passes (#42 options): the share forfeited is all of it, or the unpaid part (pro rata); of capital,
+            # fees & promote or both; capital the borrower paid in themselves passes too, or stays theirs
+            g = 1.0 if tm_["forfeit_mode"] == "all" else 1.0 - paid_ / due_
+            own = due_ / people[bo_]["manager_capital"] if tm_["own_capital"] == "kept" else 1.0
+            gc = g * own if tm_["forfeit_scope"] in ("both", "capital") else 0.0
+            gp = g if tm_["forfeit_scope"] in ("both", "promote") else 0.0
+            f_frac[q] = (gc, gp)
             f_evs.append((tm_["maturity"], 2, q))
     evs = sorted([(x["date"], 0, q) for q, x in enumerate(xs_in)]
                  + [(v["leaves"], 1, k) for k, v in enumerate(vest_in) if v.get("leaves")] + f_evs)
@@ -951,10 +958,12 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
             d = date.fromisoformat(loan_terms_of(ln)["maturity"])
             if lo_ is None or bo_ is None or lo_ == bo_:
                 continue
+            gc, gp = f_frac[q]
+            mc_, mp_ = cap[bo_] * gc, pro[bo_] * gp
             forfeits.append({"loan": q, "date": d.isoformat(), "from": people[bo_]["name"], "to": people[lo_]["name"],
-                             "capital_share": cap[bo_], "promote_share": pro[bo_]})
-            cap[lo_] += cap[bo_]; pro[lo_] += pro[bo_]
-            cap[bo_] = pro[bo_] = 0.0
+                             "capital_share": mc_, "promote_share": mp_, "cancels_loan": gc > 0})
+            cap[lo_] += mc_; pro[lo_] += mp_
+            cap[bo_] -= mc_; pro[bo_] -= mp_
             snaps.append((d, list(cap), list(pro)))
             continue
         if kind_ == 1:
@@ -1165,7 +1174,7 @@ def warehouse_case(siena_lp_dists: list[float], inp: dict, *, pct_sold=None, dat
                               "interest": accrued, "paid": pay, "balance": prin + acc})
                 # not paid at maturity (#33): from then on the borrower's manager cash repays it (a cash sweep)
                 # forfeited (#42): the lender took the borrower's interest instead; nothing more is paid
-                if ends == "maturity" and tm["at_maturity"] == "forfeit" and any(f["loan"] == q_l for f in forfeits):
+                if ends == "maturity" and tm["at_maturity"] == "forfeit" and any(f["loan"] == q_l and f["cancels_loan"] for f in forfeits):
                     left_ = max(0.0, prin + acc)
                     rec["interest"] = rec["repaid"] + left_ - a_l
                     rec["owed_end"] = left_
