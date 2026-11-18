@@ -147,6 +147,11 @@ table.stmt tr.later td, .loan-sched tr.later td { opacity: .45; }
 th.shown, td.shown { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .qc-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
 .qc-green { background: #2e8b57; } .qc-amber { background: #d99a1e; } .qc-red { background: #c0392b; } .qc-na { background: #b8bec7; }
+.act-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 12px; padding: 12px; margin: 8px 0 12px; border: 1px solid var(--line); border-radius: 10px; }
+.act-form label { display: grid; gap: 3px; font-size: 13px; }
+.act-form .act-buttons { grid-column: 1 / -1; display: flex; gap: 8px; }
+#actList tr.void td { color: var(--muted); text-decoration: line-through; }
+#actList tr.void td.why { text-decoration: none; }
 .qc-h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 6px; font-weight: 600; }
 #qcTable td.lbl { cursor: help; }
 th.shown { color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
@@ -488,6 +493,18 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
         <p class="note" id="cbpNote"></p>
       </section>
 
+      <section class="panel" id="actPanel">
+        <header>
+          <div style="min-width:0"><h2>Actual payments</h2><div class="muted small" id="actSub"></div></div>
+          <button class="btn" type="button" id="actAdd" hidden>+ Record a payment</button>
+        </header>
+        <form id="actForm" class="act-form" hidden></form>
+        <div class="tablewrap" id="actVariance"></div>
+        <h3 class="qc-h3">Recorded</h3>
+        <div class="tablewrap" id="actList"></div>
+        <p class="note" id="actNote"></p>
+      </section>
+
       <section class="panel">
         <header><h2>Open diligence</h2><span class="muted small" id="dilSub"></span></header>
         <ul class="plain" id="dilList"></ul>
@@ -587,7 +604,8 @@ function loanTermsText(spec, borrowerName, mgr) {
   if (t.on_leave === "due") parts.push(`due if ${b} leaves`);
   if (t.on_leave === "forgiven") parts.push(`forgiven if ${b} leaves`);
   if (t.maturity && t.at_maturity === "sweep") parts.push(`if not paid by ${t.maturity}, ${b}'s ${M} cash repays it from then on`);
-  if (t.maturity && t.at_maturity === "forfeit") {
+  if (t.maturity && t.at_maturity === "auto") parts.push(`paid or missed is decided by the payments recorded by ${t.maturity} (until then it's projected as paid); if missed:`);
+  if (t.maturity && ["forfeit", "auto"].includes(t.at_maturity)) {
     const what = t.forfeit_scope === "capital" ? `${M} capital` : t.forfeit_scope === "promote" ? `${M} fees & promote share` : `${M} share`;
     parts.push(`if not paid by ${t.maturity}, ${t.forfeit_mode === "pro_rata" ? "the unpaid part of " + b + "'s" : b + "'s whole"} ${what} goes to the lender${t.own_capital === "kept" && t.forfeit_scope !== "promote" ? " (capital " + b + " paid in themselves stays theirs)" : ""}${t.forfeit_scope === "promote" ? "; the loan stays owed" : " and the loan is cancelled"}`);
   }
@@ -1352,7 +1370,7 @@ function whFields() {
       list.push(Object.assign(F(Q + "maturity", L.parts.maturity.label, "date", L.parts.maturity.note), { allowEmpty: true, dflt: t.maturity }),
                 Object.assign(F(Q + "due_on", L.parts.due_on.label, "select", null, opt("due_on")), { dflt: t.due_on }),
                 ...(t.maturity ? [Object.assign(F(Q + "at_maturity", L.parts.at_maturity.label, "select", null, opt("at_maturity")), { dflt: t.at_maturity })] : []),
-        ...(t.maturity && t.at_maturity === "forfeit" ? ["forfeit_scope", "forfeit_mode", "own_capital"].map((k) => Object.assign(F(Q + k, L.parts[k].label, "select", null, opt(k)), { dflt: t[k] })) : []),
+        ...(t.maturity && ["forfeit", "auto"].includes(t.at_maturity) ? ["forfeit_scope", "forfeit_mode", "own_capital"].map((k) => Object.assign(F(Q + k, L.parts[k].label, "select", null, opt(k)), { dflt: t[k] })) : []),
                 F(Q + "recourse", L.parts.recourse.label, "bool", L.parts.recourse.note),
                 Object.assign(F(Q + "on_leave", L.parts.on_leave.label, "select", null, opt("on_leave")), { dflt: t.on_leave }));
       // every part changes the "In short" words and which parts show: re-render the card (selects, dates, the box)
@@ -2176,8 +2194,8 @@ function renderDirect() {
 }
 
 function recompute() {
-  results = E.runAll(inputs);
-  renderCards(); renderChart(); renderDetail(); renderQuickChecks(); renderExit(); renderWarehouse(); renderDirect(); renderCashByPerson(); renderReadout(); updateWhSums(); updateLoanReadout(); updateRefiReadout(); updateExtrasReadout(); markChanged();
+  results = E.runAll(effectiveInputs(inputs, META.slug));
+  renderCards(); renderChart(); renderDetail(); renderQuickChecks(); renderActuals(); renderExit(); renderWarehouse(); renderDirect(); renderCashByPerson(); renderReadout(); updateWhSums(); updateLoanReadout(); updateRefiReadout(); updateExtrasReadout(); markChanged();
 }
 
 /* ------------------------------------------------------------ events */
@@ -2256,7 +2274,7 @@ document.addEventListener("click", (e) => {
   if (!t) return;
   const group = t.parentElement.id;
   if (group === "caseTabs") { editCase = t.dataset.k; renderCaseFields(); recompute(); }
-  if (group === "detailTabs" || group === "flowTabs") { detailCase = t.dataset.k; renderDetail(); renderQuickChecks(); renderChart(); renderExit(); renderWarehouse(); renderDirect(); }
+  if (group === "detailTabs" || group === "flowTabs") { detailCase = t.dataset.k; renderDetail(); renderQuickChecks(); renderActuals(); renderChart(); renderExit(); renderWarehouse(); renderDirect(); }
 });
 document.getElementById("cbpParty").addEventListener("change", (e) => { cbpParty = e.target.value; renderCashByPerson(); });
 document.getElementById("cbpAsOf").addEventListener("change", (e) => { if (e.target.value && !plausibleDate(e.target.value)) return; cbpAsOf = e.target.value; renderCashByPerson(); });
@@ -2514,6 +2532,7 @@ async function connect() {
     b.onclick = () => dl.save({ filename: "deal.json", data: inputsText() }).catch(() => {});
   });
   db = await claude.use("db");
+  connectActuals();
   if (!db) { renderSaved(); return; }
   const timer = setTimeout(() => { document.getElementById("savedList").innerHTML = `<p class="note" style="margin:0">Saved scenarios didn't load. Reopen the page to try again.</p>`; }, 10000);
   db.collection("scenarios").orderBy("created_at", "desc").onSnapshot((snap) => {
@@ -2523,6 +2542,193 @@ async function connect() {
     if (view === "compare") renderCompare();
     if (sampleFn) renderAskChips();
   }, (e) => { clearTimeout(timer); document.getElementById("savedList").innerHTML = `<p class="note" style="margin:0">Couldn't load saved scenarios (${esc(e.code || "error")}).</p>`; });
+}
+
+/* ------------------------------------------------------------ actual payments (#22) */
+// What actually happened, recorded on the page (the artifact's shared `actuals` collection; editors write, everyone
+// with access reads). Entries are never edited or deleted: a wrong one is voided with a reason and re-entered. The
+// engine still projects from the inputs; this panel compares the record with the projection as of today, and a loan
+// set to "decide from recorded payments" takes its paid / missed outcome from them once its date has passed.
+let actuals = [], actCanEdit = false, actFormOpen = false, actVoiding = null, actLoaded = false;
+const ACT_KINDS = {
+  partners: [["contribution", "Puts capital into {manager}"], ["loan_advance", "Lends to a partner"], ["loan_payment", "Repays a partner loan"],
+    ["buyin", "Pays for a buy-in"], ["distribution", "{manager} pays a partner"], ["other", "Other payment between partners"]],
+  vehicle: [["deal_distribution", "{vehicle} receives a distribution from the deal"], ["member_distribution", "{vehicle} pays its members"],
+    ["unit_sale", "Units sold in the sell-down"]],
+  deal: [["noi", "NOI for a year"], ["rents", "Rents for a year"], ["distributions", "LP distributions for a year"]],
+};
+const ACT_SCOPES = [["partners", "Between {manager}'s partners"], ["vehicle", "Our vehicle ({vehicle})"], ["deal", "The deal"]];
+const actLabel = (scope, kind) => E.fillLabel(((ACT_KINDS[scope] || []).find(([k]) => k === kind) || [kind, kind])[1], inputs);
+const actOf = (slug) => actuals.filter((a) => a.deal === (slug || META.slug));
+const actLive = (slug) => actOf(slug).filter((a) => !a.void);
+const actPerson = (r) => (inputs.warehouse.people.find((q) => q.id === r || q.name === r) || {}).name || r || "";
+// signed cash for one person from a partner-level record (positive = to them)
+function actCashFor(a, id) {
+  if (a.scope !== "partners") return 0;
+  const from = a.from === id ? -a.amount : 0, to = a.to === id ? a.amount : 0;
+  return a.kind === "distribution" ? to : a.kind === "contribution" ? from : from + to;
+}
+// A partner loan's balance from the recorded advance and payments, accrued at the loan's rate to `asOf`.
+function actLoanBalance(spec, list, asOf, close) {
+  const lo = spec.lender, bo = spec.borrower;
+  const ev = list.filter((a) => a.scope === "partners" && a.date <= asOf && ((a.kind === "loan_advance" && a.from === lo && a.to === bo) || (a.kind === "loan_payment" && a.from === bo && a.to === lo)))
+    .map((a) => [a.date, a.kind === "loan_advance" ? a.amount : -a.amount]).sort((x, y) => (x[0] < y[0] ? -1 : 1));
+  const assumed = !ev.some((x) => x[1] > 0);
+  if (assumed) ev.unshift([close, spec.amount]);
+  let prin = 0, acc = 0, prev = ev.length ? ev[0][0] : close;
+  const yrs = (a, b) => (E.toDay ? (E.toDay(b) - E.toDay(a)) : (Date.parse(b) - Date.parse(a)) / 864e5) / 365;
+  const accrue = (to) => { const t = yrs(prev, to); acc += spec.rate_type === "compound" ? (prin + acc) * (Math.pow(1 + spec.rate, t) - 1) : prin * spec.rate * t; prev = to; };
+  ev.forEach(([d, x]) => { accrue(d); if (x > 0) prin += x; else { const ti = Math.min(-x, acc); acc -= ti; prin -= -x - ti; } });
+  accrue(asOf);
+  return { balance: Math.max(0, prin + acc), assumed_advance: assumed };
+}
+// Paid by a loan's date per the record (for "decide from recorded payments")
+function actPaidBy(spec, date, slug) {
+  return actLive(slug).filter((a) => a.scope === "partners" && a.kind === "loan_payment" && a.from === spec.borrower && a.to === spec.lender && a.date <= date)
+    .reduce((x, a) => x + a.amount, 0);
+}
+// The inputs the engine runs on: a loan set to "auto" becomes paid (settle) or missed (forfeit) from the record once its
+// maturity has passed; before that it is projected as paid.
+function effectiveInputs(inp, slug) {
+  const loans = (inp.warehouse && inp.warehouse.manager_loans) || [];
+  if (!loans.some((l) => l.at_maturity === "auto")) return inp;
+  const out = clone(inp), t = today();
+  out.warehouse.manager_loans.forEach((l) => {
+    if (l.at_maturity !== "auto") return;
+    const tm = E.loanTermsOf(l), who = out.warehouse.people.find((q) => q.id === l.borrower || q.name === l.borrower);
+    const due = Math.min(l.amount, who ? who.manager_capital : l.amount);
+    l.at_maturity = tm.maturity && tm.maturity <= t && actPaidBy(l, tm.maturity, slug) < due - 1e-6 ? "forfeit" : "settle";
+  });
+  return out;
+}
+function autoOutcome(spec) {
+  const tm = E.loanTermsOf(spec), t = today();
+  if (!tm.maturity) return "no maturity set: projected as paid";
+  const paid = actPaidBy(spec, tm.maturity);
+  if (tm.maturity > t) return `not due until ${tm.maturity}: projected as paid (${fmt.usd(paid)} recorded so far)`;
+  return paid >= Math.min(spec.amount, (inputs.warehouse.people.find((q) => q.id === spec.borrower) || {}).manager_capital || spec.amount) - 1e-6
+    ? `paid by ${tm.maturity} per the record (${fmt.usd(paid)})` : `missed: ${fmt.usd(paid)} recorded by ${tm.maturity}, so the share passes`;
+}
+function actVariance(k) {
+  const t = today(), w = inputs.warehouse, R = results.warehouse[k], C = results.cases[k], list = actLive();
+  // like with like: each recorded kind against the statement entries it corresponds to
+  const CAT = [["contribution", "Capital into {manager}", ["manager_capital"]], ["loan_advance", "Partner loans advanced", ["loan_advance"]],
+    ["loan_payment", "Partner loan payments", ["loan_repayment", "loan_settlement", "loan_paydown"]], ["buyin", "Buy-ins", ["buyin_sale", "buyin_purchase"]],
+    ["distribution", "From {manager}", ["manager_cash"]], ["other", "Other", []]];
+  const people = [];
+  w.people.forEach((q, i) => CAT.forEach(([kind, label, kinds]) => {
+    const proj = R.people[i].ledger.filter((e) => e.date <= t && kinds.includes(e.kind)).reduce((a, e) => a + e.amount, 0);
+    const recs = list.filter((x) => x.scope === "partners" && x.kind === kind && x.date <= t && (x.from === q.id || x.to === q.id));
+    if (Math.abs(proj) < 0.5 && !recs.length) return;
+    people.push({ id: q.id, name: q.name, kind, label: E.fillLabel(label, inputs), projected: proj, recorded: recs.length ? recs.reduce((a, x) => a + actCashFor(x, q.id), 0) : null });
+  }));
+  const loans = (w.manager_loans || []).map((l, q) => {
+    const sch = R.loan_schedules[q] || [], past = sch.filter((x) => x.date <= t);
+    return { q, label: `${actPerson(l.lender)} → ${actPerson(l.borrower)}`, projected: past.length ? past[past.length - 1].balance : 0, rec: actLoanBalance(l, list, t, w.close_date) };
+  });
+  const pd = C.investor.payment_dates || [], pa = C.investor.payments || [];
+  const vehicle = [
+    { label: `${w.names.vehicle} receives from the deal`, projected: pa.reduce((a, x, i) => a + (pd[i] && pd[i] <= t ? x : 0), 0), recorded: list.filter((a) => a.scope === "vehicle" && a.kind === "deal_distribution" && a.date <= t).reduce((a, x) => a + x.amount, 0) },
+    { label: `${w.names.vehicle} pays its members`, projected: R.people.reduce((a, p) => a + p.ledger.filter((e) => e.date <= t && (e.kind === "distribution" || e.kind === "distribution_bought_units")).reduce((b, e) => b + e.amount, 0), 0), recorded: list.filter((a) => a.scope === "vehicle" && a.kind === "member_distribution" && a.date <= t).reduce((a, x) => a + x.amount, 0) },
+    { label: "Units sold in the sell-down", projected: R.people.reduce((a, p) => a + p.ledger.filter((e) => e.date <= t && e.kind === "unit_sale").reduce((b, e) => b + e.amount, 0), 0), recorded: list.filter((a) => a.scope === "vehicle" && a.kind === "unit_sale" && a.date <= t).reduce((a, x) => a + x.amount, 0) },
+  ];
+  const o = C.operations, yrs = o.noi.map((_, i) => i + 1);
+  const lpd = (C.lp && C.lp.distributions) || C.waterfall.cash.map(() => null);
+  const deal = [["noi", "NOI", o.noi], ["rents", "Rents", o.rents], ["distributions", "LP distributions", lpd]].map(([key, label, proj]) => ({ key, label,
+    years: yrs.map((y, i) => { const r = list.filter((a) => a.scope === "deal" && a.kind === key && +a.year === y); return { year: y, projected: proj[i], recorded: r.length ? r.reduce((a, x) => a + x.amount, 0) : null }; }) }));
+  return { as_of: t, case: k, people, loans, vehicle, deal };
+}
+function renderActuals() {
+  const panel = document.getElementById("actPanel");
+  if (!panel) return;
+  const all = actOf(), live = all.filter((a) => !a.void), k = detailCase, v = actVariance(k), money = (x) => (x === null || x === undefined ? "—" : fmt.usd(x));
+  const diff = (a, b) => (b === null || b === undefined ? "—" : `<span class="${b - a >= 0 ? "pos" : "neg"}">${fmt.signedk ? fmt.signedk(b - a) : fmt.usd(b - a)}</span>`);
+  document.getElementById("actSub").textContent = `${live.length} recorded${all.length > live.length ? `, ${all.length - live.length} voided` : ""} · compared with ${results.cases[k].label} as of ${v.as_of}${actLoaded ? "" : " · record not loaded"}`;
+  document.getElementById("actAdd").hidden = !actCanEdit;
+  const anyPartner = live.some((a) => a.scope === "partners"), anyVeh = live.some((a) => a.scope === "vehicle"), anyDeal = live.some((a) => a.scope === "deal");
+  const T = (head, rows) => `<table><thead><tr>${head.map((h, i) => `<th${i ? ' class="n"' : ""}>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  let html = "";
+  if (anyPartner || (inputs.warehouse.manager_loans || []).length) {
+    html += `<h3 class="qc-h3">Between ${esc(inputs.warehouse.names.manager)}'s partners · to date</h3>` + T(["Person · kind", "Projected", "Recorded", "Difference"],
+      v.people.map((p) => `<tr><td class="lbl">${esc(p.name)} · ${esc(p.label)}</td><td class="n">${money(p.projected)}</td><td class="n">${p.recorded === null ? '<span class="muted small">not recorded</span>' : money(p.recorded)}</td><td class="n">${diff(p.projected, p.recorded)}</td></tr>`));
+    if (v.loans.length) html += T(["Partner loan", "Projected balance", "Balance per record", "Difference"], v.loans.map((l) => `<tr><td class="lbl">${esc(l.label)}${l.rec.assumed_advance ? '<br><span class="muted small">no advance recorded: assumed at close</span>' : ""}${inputs.warehouse.manager_loans[l.q].at_maturity === "auto" ? `<br><span class="muted small">outcome: ${esc(autoOutcome(inputs.warehouse.manager_loans[l.q]))}</span>` : ""}</td><td class="n">${money(l.projected)}</td><td class="n">${money(l.rec.balance)}</td><td class="n">${diff(l.projected, l.rec.balance)}</td></tr>`));
+  }
+  if (anyVeh) html += `<h3 class="qc-h3">${esc(inputs.warehouse.names.vehicle)} · to date</h3>` + T(["", "Projected", "Recorded", "Difference"], v.vehicle.map((r) => `<tr><td class="lbl">${esc(r.label)}</td><td class="n">${money(r.projected)}</td><td class="n">${money(r.recorded)}</td><td class="n">${diff(r.projected, r.recorded)}</td></tr>`));
+  if (anyDeal) {
+    const ys = v.deal[0].years.filter((y) => v.deal.some((m) => m.years[y.year - 1].recorded !== null)).map((y) => y.year);
+    html += `<h3 class="qc-h3">The deal · by year</h3>` + T(["", ...ys.map((y) => `Year ${y}: case · actual`)], v.deal.filter((m) => m.years.some((y) => y.recorded !== null)).map((m) =>
+      `<tr><td class="lbl">${esc(m.label)}</td>${ys.map((y) => { const c = m.years[y - 1]; return `<td class="n">${money(c.projected)} · ${money(c.recorded)}<br>${c.projected === null ? "" : diff(c.projected, c.recorded)}</td>`; }).join("")}</tr>`));
+  }
+  document.getElementById("actVariance").innerHTML = html || `<p class="note" style="margin:0">Nothing recorded for ${esc(UI.deal_short)} yet. ${actCanEdit ? "Use + Record a payment as money moves." : "Editors record payments here as money moves."}</p>`;
+  const rows = all.slice().sort((a, b) => (a.date || "" + a.year) < (b.date || "" + b.year) ? -1 : 1).map((a) => {
+    const what = `${esc(actLabel(a.scope, a.kind))}${a.from ? ` · ${esc(actPerson(a.from))}` : ""}${a.to ? ` → ${esc(actPerson(a.to))}` : ""}${a.note ? `<br><span class="muted small">${esc(a.note)}</span>` : ""}`;
+    const when = a.scope === "deal" ? `Year ${esc(String(a.year))}` : esc(a.date);
+    const voidCell = a.void ? `<td class="why muted small">voided ${esc((a.void.at || "").slice(0, 10))}: ${esc(a.void.reason || "")}</td>`
+      : actCanEdit ? (actVoiding === a.id ? `<td class="why"><input class="text" id="actVoidWhy" placeholder="Why void it?" maxlength="120"> <button class="link" type="button" data-act-void-ok="${a.id}">Void</button> <button class="link" type="button" data-act-void-cancel>Cancel</button></td>` : `<td><button class="link" type="button" data-act-void="${a.id}">Void</button></td>`) : "<td></td>";
+    return `<tr class="${a.void ? "void" : ""}"><td class="lbl">${when}</td><td>${what}</td><td class="n">${fmt.usd(a.amount)}</td><td class="muted small">${esc((a.created_at || "").slice(0, 10))}</td>${voidCell}</tr>`;
+  });
+  document.getElementById("actList").innerHTML = rows.length ? `<table><thead><tr><th>When</th><th>What</th><th class="n">Amount</th><th>Recorded</th><th></th></tr></thead><tbody>${rows.join("")}</tbody></table>` : "";
+  document.getElementById("actNote").textContent = "Projected = the engine's statement for this case up to today; recorded = what's been entered here. Entries are never edited or deleted: void a wrong one (with a reason) and record it again. The engine keeps projecting from the inputs; a partner loan set to decide its outcome from recorded payments uses them once its date has passed.";
+  renderActForm();
+}
+function renderActForm() {
+  const f = document.getElementById("actForm");
+  f.hidden = !actFormOpen;
+  if (!actFormOpen) { f.innerHTML = ""; return; }
+  const sc = f.dataset.scope || "partners", ppl = inputs.warehouse.people;
+  const opt = (pairs, sel) => pairs.map(([k, l]) => `<option value="${esc(k)}"${k === sel ? " selected" : ""}>${esc(E.fillLabel(l, inputs))}</option>`).join("");
+  const who = (id, lab) => `<label>${lab}<select id="${id}"><option value="">—</option>${ppl.map((q) => `<option value="${esc(q.id)}">${esc(q.name)}</option>`).join("")}</select></label>`;
+  f.innerHTML = `<label>What it's about<select id="actScope">${opt(ACT_SCOPES, sc)}</select></label>
+    <label>Kind<select id="actKind">${opt(ACT_KINDS[sc], "")}</select></label>
+    ${sc === "deal" ? `<label>Year of the hold<input class="text" id="actYear" type="number" min="1" max="30" value="1"></label>` : `<label>Date<input class="text" id="actDate" type="date" min="${DATE_MIN}" max="${DATE_MAX}" value="${today()}"></label>`}
+    <label>Amount ($)<input class="text" id="actAmount" type="number" min="0" step="0.01"></label>
+    ${sc === "partners" ? who("actFrom", "From") + who("actTo", "To") : ""}
+    <label style="grid-column: span 2">Note (what document shows it)<input class="text" id="actNoteIn" maxlength="160" placeholder="e.g. wire confirmation 3/10"></label>
+    <div class="act-buttons"><button class="btn" type="submit">Record it</button><button class="link" type="button" id="actCancel">Cancel</button><span class="muted small" id="actMsg"></span></div>`;
+  f.querySelector("#actScope").onchange = (e) => { f.dataset.scope = e.target.value; renderActForm(); };
+  f.querySelector("#actCancel").onclick = () => { actFormOpen = false; renderActForm(); };
+}
+async function recordActual(doc) {
+  if (!db) throw new Error("the shared record isn't available here");
+  const by = await whoAmI();
+  const full = Object.assign({ deal: META.slug, created_at: new Date().toISOString(), engine_version: ENGINE_LABEL, void: null }, doc);
+  if (by) full.created_by = by;
+  return db.collection("actuals").add(full);
+}
+async function voidActual(id, reason) {
+  const by = await whoAmI();
+  return db.collection("actuals").doc(id).update({ void: { at: new Date().toISOString(), by: by || "", reason } });
+}
+document.getElementById("actAdd").addEventListener("click", () => { actFormOpen = !actFormOpen; renderActForm(); });
+document.getElementById("actForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target, sc = f.dataset.scope || "partners", g = (id) => { const el = f.querySelector("#" + id); return el ? el.value : ""; };
+  const amount = parseFloat(g("actAmount")), msg = f.querySelector("#actMsg");
+  const doc = { scope: sc, kind: g("actKind"), amount, note: g("actNoteIn").trim() };
+  if (sc === "deal") doc.year = parseInt(g("actYear"), 10); else doc.date = g("actDate");
+  if (sc === "partners") { doc.from = g("actFrom"); doc.to = g("actTo"); }
+  const bad = !(amount >= 0) ? "an amount" : sc !== "deal" && !plausibleDate(doc.date) ? "a date" : sc === "deal" && !(doc.year >= 1) ? "a year"
+    : sc === "partners" && doc.kind !== "distribution" && !doc.from ? "who paid" : sc === "partners" && !["contribution"].includes(doc.kind) && !doc.to ? "who received it" : "";
+  if (bad) { msg.textContent = `Needs ${bad}.`; return; }
+  try { await recordActual(doc); actFormOpen = false; toast("Recorded."); renderActuals(); } catch (err) { msg.textContent = "Couldn't record it: " + (err.message || err.code); }
+});
+document.getElementById("actList").addEventListener("click", async (e) => {
+  const v = e.target.closest("[data-act-void]"), ok = e.target.closest("[data-act-void-ok]"), cancel = e.target.closest("[data-act-void-cancel]");
+  if (v) { actVoiding = v.dataset.actVoid; renderActuals(); const i = document.getElementById("actVoidWhy"); if (i) i.focus(); return; }
+  if (cancel) { actVoiding = null; renderActuals(); return; }
+  if (ok) {
+    const why = (document.getElementById("actVoidWhy").value || "").trim();
+    if (!why) { document.getElementById("actVoidWhy").placeholder = "A reason is needed"; return; }
+    try { await voidActual(ok.dataset.actVoidOk, why); actVoiding = null; toast("Voided; it stays in the record."); } catch (err) { toast("Couldn't void: " + (err.message || err.code), true); }
+  }
+});
+async function connectActuals() {
+  try { const u = await claude.use("user"); actCanEdit = u ? !!(await u.canEdit()) : false; } catch (_) { actCanEdit = false; }
+  if (!db) { renderActuals(); return; }
+  db.collection("actuals").orderBy("created_at", "asc").onSnapshot((snap) => {
+    actuals = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); actLoaded = true;
+    recompute();
+  }, () => { actLoaded = false; renderActuals(); });
 }
 
 /* ------------------------------------------------------------ compare deals */
@@ -2951,6 +3157,20 @@ const ASK_TOOLS = [
         outcome_by_case: t.outcome, loan_schedules: t.exhibits.map((x) => ({ title: x.title, rows: x.rows })), still_to_confirm: t.open,
         download: "The viewer's Export terms button saves this as a Word document." };
     } },
+  { name: "get_actuals",
+    description: "Actual payments recorded on the dashboard for the open deal (what really happened: payments between the manager's partners, the vehicle's receipts, member distributions and unit sales, and the deal's NOI / rents / distributions by year), and how they compare with a case's projection as of today: by person and kind, each partner loan's balance per the record vs projected, the vehicle, and the deal by year. Voided entries are listed but don't count. Only the deal open on the dashboard; recording is done by editors on the page, not by you.",
+    inputSchema: { type: "object", properties: { case: { type: "string", description: "case to compare with (default: the one shown in Case detail)" } } },
+    execute: ({ case: k }) => {
+      const ck = k ? needCase(inputs, k) : detailCase;
+      const v = actVariance(ck), rr = (x) => (x === null || x === undefined ? null : r0(x));
+      return { deal: META.slug, as_of: v.as_of, case: ck, loaded: actLoaded,
+        recorded: actOf().map((a) => ({ scope: a.scope, kind: a.kind, date: a.date, year: a.year, amount: rr(a.amount), from: a.from ? actPerson(a.from) : undefined, to: a.to ? actPerson(a.to) : undefined, note: a.note || undefined, voided: a.void ? a.void.reason || true : undefined })),
+        partners: v.people.map((x) => ({ person: x.name, kind: x.label, projected: rr(x.projected), recorded: rr(x.recorded) })),
+        loans: v.loans.map((l) => ({ loan: l.label, projected_balance: rr(l.projected), balance_per_record: rr(l.rec.balance), advance_assumed_at_close: l.rec.assumed_advance,
+          outcome: inputs.warehouse.manager_loans[l.q].at_maturity === "auto" ? autoOutcome(inputs.warehouse.manager_loans[l.q]) : undefined })),
+        vehicle: v.vehicle.map((x) => ({ item: x.label, projected: rr(x.projected), recorded: rr(x.recorded) })),
+        deal_by_year: v.deal.map((m) => ({ metric: m.label, years: m.years.filter((y) => y.recorded !== null).map((y) => ({ year: y.year, case: rr(y.projected), actual: rr(y.recorded) })) })).filter((m) => m.years.length) };
+    } },
   { name: "get_quick_checks",
     description: "The quick checks for one deal (a first-pass screen, every figure from each case's own numbers): DSCR (worst year), debt yield, breakeven (share of rent needed, worst year), exit cap vs going-in cap, loan-to-value, expense ratio, other-income share, each rated green / amber / red against LTEC's house thresholds (or the deal's own, with its source), by case; per unit per month by year for one case: rent collected, debt service per unit (the rent needed for the loan alone), all-in cost, other income, rent needed to break even, DSCR, debt yield; and price per unit, going-in and exit cap, GRM, year-1 cash-on-cash. Rules of thumb, not lender requirements.",
     inputSchema: { type: "object", properties: { deal: { type: "string" }, case: { type: "string", description: "case for the per-unit table (default: the deal's primary)" }, scenario: { type: "string" },
@@ -3189,7 +3409,7 @@ function askContext() {
     "- Saved scenarios: list_scenarios shows them; pass a scenario's name as `scenario` to any tool to work from it (what-ifs then build on it). get_vehicle covers our SPV: each person's cash, profit and IRR, buyers, fees and promote.",
     "- For payback timing, who owes whom on a date, or what a person has in by a date, use get_statement (a person's dated ledger, partner-loan schedules and balances as of a date).",
     "- For questions about who in our vehicle gets what, measure the person: sweep / solve_for take metric person_profit, person_irr or person_from_manager with `person`; run_what_if and propose_scenario return each person's results when you change warehouse.*.",
-    "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. For a quick screen of a deal (DSCR, debt yield, breakeven rent per unit, cap rates, LTV), use get_quick_checks. For a term sheet or a summary of the terms, use get_terms_summary and point to the Export terms button. A partner loan's terms (repayment: sweep / interest_only / equal_principal / at_exit / none, sweep_pct, term_years, source, maturity, due_on cash_date / exact_date, paydowns [{date, amount}] from the borrower's own money, recourse, on_leave; a bridge = preset bridge with a maturity; a contribute-by-a-date-or-forfeit clause = preset bridge_forfeit (at_maturity forfeit: the borrower's whole share goes to the lender on the maturity date unless pay-downs cover the loan; compare with at_maturity settle for the paid case; results show manager_forfeitures); the other way to fund a share later is a buy-in, warehouse.manager_transfers; presets in list_inputs loan_terms) decide when the borrower repays; get_statement shows the result by date. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
+    "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. For a quick screen of a deal (DSCR, debt yield, breakeven rent per unit, cap rates, LTV), use get_quick_checks. For what has actually been paid (vs projected), use get_actuals. For a term sheet or a summary of the terms, use get_terms_summary and point to the Export terms button. A partner loan's terms (repayment: sweep / interest_only / equal_principal / at_exit / none, sweep_pct, term_years, source, maturity, due_on cash_date / exact_date, paydowns [{date, amount}] from the borrower's own money, recourse, on_leave; a bridge = preset bridge with a maturity; a contribute-by-a-date-or-forfeit clause = preset bridge_forfeit (at_maturity forfeit: the borrower's whole share goes to the lender on the maturity date unless pay-downs cover the loan; compare with at_maturity settle for the paid case; results show manager_forfeitures); the other way to fund a share later is a buy-in, warehouse.manager_transfers; presets in list_inputs loan_terms) decide when the borrower repays; get_statement shows the result by date. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
     "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),
@@ -3602,7 +3822,7 @@ function loadLib(k) {
   }));
 }
 let downloadsApi = null;
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => window.__today || new Date().toISOString().slice(0, 10);  // __today: tests set the date
 const CASE_RGB = { sponsor: [122, 135, 150], base: [43, 87, 151], downside: [183, 121, 31], stress: [180, 67, 47], custom: [106, 76, 156] };
 const COL_RGB = [[43, 87, 151], [183, 121, 31], [106, 76, 156], [180, 67, 47], [122, 135, 150], [46, 125, 90]];
 

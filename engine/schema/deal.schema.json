@@ -826,9 +826,10 @@
                 "enum": [
                   "settle",
                   "sweep",
-                  "forfeit"
+                  "forfeit",
+                  "auto"
                 ],
-                "description": "If the loan isn't paid at maturity: settle it (recourse decides: paid or forgiven) or, from then on, the borrower's manager cash repays it (#33). forfeit (#42): the borrower's whole manager share goes to the lender and the loan is cancelled (unless pay-downs by maturity cover it)."
+                "description": "If the loan isn't paid at maturity: settle it (recourse decides: paid or forgiven) or, from then on, the borrower's manager cash repays it (#33). forfeit (#42): the borrower's whole manager share goes to the lender and the loan is cancelled (unless pay-downs by maturity cover it). auto (#22/#44): the page decides paid (settle) or missed (forfeit) from recorded payments once the date has passed; the engines treat it as settle."
               },
               "forfeit_scope": {
                 "enum": [
