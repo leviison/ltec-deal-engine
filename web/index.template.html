@@ -578,18 +578,26 @@ function loanTermsText(spec, borrowerName, mgr) {
     : t.repayment === "equal_principal" ? `equal principal over ${t.term_years} yrs plus interest${t.source === "borrower" ? ", paid by " + b + " when due" : " from " + b + "'s " + M + " cash"}`
     : t.repayment === "at_exit" ? `nothing until ${end}; then from ${b}'s ${M} cash`
     : `nothing from ${b}'s ${M} cash`;
-  const parts = [how];
-  if (t.maturity && t.repayment !== "interest_only" && t.repayment !== "at_exit") parts.push(`due ${t.maturity}`);
-  if (spec.recourse === false) parts.push(`what's left is forgiven at ${end}`);
-  else if (!["interest_only", "at_exit"].includes(t.repayment)) parts.push(`what's left is paid at ${end}`);
+  const parts = [how], late = t.maturity && t.at_maturity !== "settle";  // "if not paid by …" says what happens then
+  const own = t.due_on === "exact_date" ? " from their own money" : "";
+  if (t.maturity && t.repayment !== "interest_only" && t.repayment !== "at_exit") parts.push(late ? `${b} to pay it${own} by ${t.maturity}` : `due ${t.maturity}`);
+  if (late && t.repayment !== "none" && t.repayment !== "sweep") parts.push(`${b} to pay the rest${own} by ${t.maturity}`);
+  if (!late && spec.recourse === false) parts.push(`what's left is forgiven at ${end}`);
+  else if (!late && !["interest_only", "at_exit"].includes(t.repayment)) parts.push(`what's left is paid at ${end}`);
   if (t.on_leave === "due") parts.push(`due if ${b} leaves`);
   if (t.on_leave === "forgiven") parts.push(`forgiven if ${b} leaves`);
   if (t.maturity && t.at_maturity === "sweep") parts.push(`if not paid by ${t.maturity}, ${b}'s ${M} cash repays it from then on`);
-  if (t.due_on === "exact_date" && (t.maturity || t.on_leave !== "continues")) parts.push(`settled on the exact date from ${b}'s own money`);
+  if (t.maturity && t.at_maturity === "forfeit") {
+    const what = t.forfeit_scope === "capital" ? `${M} capital` : t.forfeit_scope === "promote" ? `${M} fees & promote share` : `${M} share`;
+    parts.push(`if not paid by ${t.maturity}, ${t.forfeit_mode === "pro_rata" ? "the unpaid part of " + b + "'s" : b + "'s whole"} ${what} goes to the lender${t.own_capital === "kept" && t.forfeit_scope !== "promote" ? " (capital " + b + " paid in themselves stays theirs)" : ""}${t.forfeit_scope === "promote" ? "; the loan stays owed" : " and the loan is cancelled"}`);
+  }
+  if (!late && t.due_on === "exact_date" && (t.maturity || t.on_leave !== "continues")) parts.push(`settled on the exact date from ${b}'s own money`);
+  if (late && spec.recourse === false && t.at_maturity === "sweep") parts.push(`what's left at the end is forgiven`);
   if ((t.paydowns || []).length) parts.push(`${b} pays down ${t.paydowns.map((x) => `${fmt.usd(x.amount)} on ${x.date}`).join(", ")} from their own money`);
   return parts.join("; ");
 }
 const settledText = (x) => x.settled === "repaid" ? "repaid" : x.settled === "paid_at_end" ? `${fmt.usd(x.owed_end)} paid at the end`
+  : x.settled === "forfeited" ? `share forfeited to the lender instead (${x.due_date})`
   : x.settled === "paid_at_maturity" ? `${fmt.usd(x.owed_end)} paid at maturity (${x.due_date})` : x.settled === "paid_on_leaving" ? `${fmt.usd(x.owed_end)} paid on leaving (${x.due_date})`
   : `${fmt.usd(x.owed_end)} forgiven${x.due_date ? " (" + x.due_date + ")" : ""}`;
 const SLUGS = Object.keys(DEALS);
@@ -1129,6 +1137,8 @@ function ledgerLabel(e) {
     case "loan_repayment": return e.amount < 0 ? `Repays ${cp} (partner loan)` : `Repayment from ${cp} (partner loan)`;
     case "loan_settlement": return e.amount < 0 ? `Pays ${cp} what's left on the loan` : `${cp} pays what's left on the loan`;
     case "loan_paydown": return e.amount < 0 ? `Pays down the loan from ${cp} (own money)` : `Pay-down from ${cp} (partner loan)`;
+    case "share_forfeited": return `Signs ${M} share over to ${cp} (${fmt.pct(e.units || 0, 0)} of capital, ${fmt.pct(e.price || 0, 0)} of fees & promote): loan not paid by its date`;
+    case "share_received": return `Takes over ${cp}'s ${M} share (${fmt.pct(e.units || 0, 0)} of capital, ${fmt.pct(e.price || 0, 0)} of fees & promote) in place of the loan`;
     case "buyin_sale": return `Sells part of ${M} to ${cp}`;
     case "buyin_purchase": return `Buys part of ${M} from ${cp}`;
     default: return esc(e.kind);
@@ -1184,7 +1194,7 @@ function renderStatement(me) {
     return `<tr class="${later ? "later" : ""}"><td class="lbl">${head ? esc(r.when) : ""}</td><td>${r.label}${r.n > 1 ? ` <span class="muted small">× ${r.n}</span>` : ""}</td><td class="n ${r.amount >= 0 ? "pos" : "neg"}">${fmt.usd(r.amount)}</td><td class="n">${fmt.usd(cum)}</td></tr>`;
   }).join("");
   const loans = personLoans(me).map(({ ln, sch, spec, lends }) => {
-    const rowsL = sch.map((x) => `<tr class="${cbpAsOf && x.date > cbpAsOf ? "later" : ""}"><td class="lbl">${esc(x.date)}</td><td>${x.kind === "advance" ? "Lent" : x.kind === "paid_at_end" ? "Rest paid at the end" : x.kind === "paid_at_maturity" ? "Rest paid at maturity" : x.kind === "paid_on_leaving" ? "Rest paid on leaving" : x.kind === "forgiven" ? "Rest forgiven" : x.kind === "paydown" ? "Pay-down (own money)" : x.kind === "due" ? "Due" : x.kind === "switch" ? `Not paid at maturity: ${esc(inputs.warehouse.names.manager)} cash repays it from here` : x.switched ? `Period · not paid at maturity: ${esc(inputs.warehouse.names.manager)} cash repays it from here` : "Period"}</td><td class="n">${x.interest ? fmt.usd(x.interest) : "—"}</td><td class="n">${x.paid ? fmt.usd(x.paid) : "—"}</td><td class="n">${fmt.usd(x.balance)}</td></tr>`).join("");
+    const rowsL = sch.map((x) => `<tr class="${cbpAsOf && x.date > cbpAsOf ? "later" : ""}"><td class="lbl">${esc(x.date)}</td><td>${x.kind === "advance" ? "Lent" : x.kind === "paid_at_end" ? "Rest paid at the end" : x.kind === "paid_at_maturity" ? "Rest paid at maturity" : x.kind === "paid_on_leaving" ? "Rest paid on leaving" : x.kind === "forgiven" ? "Rest forgiven" : x.kind === "paydown" ? "Pay-down (own money)" : x.kind === "due" ? "Due" : x.kind === "forfeited" ? "Not paid: share forfeited to the lender, loan cancelled" : x.kind === "switch" ? `Not paid at maturity: ${esc(inputs.warehouse.names.manager)} cash repays it from here` : x.switched ? `Period · not paid at maturity: ${esc(inputs.warehouse.names.manager)} cash repays it from here` : "Period"}</td><td class="n">${x.interest ? fmt.usd(x.interest) : "—"}</td><td class="n">${x.paid ? fmt.usd(x.paid) : "—"}</td><td class="n">${fmt.usd(x.balance)}</td></tr>`).join("");
     return `<details class="loan-sched"><summary>Partner loan: ${esc(ln.lender)} → ${esc(ln.borrower)}, ${fmt.usd(ln.amount)} at ${fmt.pct(spec.rate, 1)} ${spec.rate_type === "compound" ? "compounding" : "simple"} · ${fmt.usd(ln.interest)} interest · ${esc(settledText(ln))}<br><span class="muted small">${esc(loanTermsText(spec, ln.borrower))}</span></summary>
       <div class="tablewrap"><table><thead><tr><th>Date</th><th></th><th class="n">Interest</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody>${rowsL}</tbody></table></div></details>`;
   }).join("");
@@ -1342,6 +1352,7 @@ function whFields() {
       list.push(Object.assign(F(Q + "maturity", L.parts.maturity.label, "date", L.parts.maturity.note), { allowEmpty: true, dflt: t.maturity }),
                 Object.assign(F(Q + "due_on", L.parts.due_on.label, "select", null, opt("due_on")), { dflt: t.due_on }),
                 ...(t.maturity ? [Object.assign(F(Q + "at_maturity", L.parts.at_maturity.label, "select", null, opt("at_maturity")), { dflt: t.at_maturity })] : []),
+        ...(t.maturity && t.at_maturity === "forfeit" ? ["forfeit_scope", "forfeit_mode", "own_capital"].map((k) => Object.assign(F(Q + k, L.parts[k].label, "select", null, opt(k)), { dflt: t[k] })) : []),
                 F(Q + "recourse", L.parts.recourse.label, "bool", L.parts.recourse.note),
                 Object.assign(F(Q + "on_leave", L.parts.on_leave.label, "select", null, opt("on_leave")), { dflt: t.on_leave }));
       // every part changes the "In short" words and which parts show: re-render the card (selects, dates, the box)
@@ -3001,6 +3012,7 @@ const ASK_TOOLS = [
           manager_capital_share_end: r4(x.manager_capital_share_end), from_manager: r0(x.from_manager), manager_loans_net_at_close: r0(x.manager_loans_net) }; }),
         manager_split: { enabled: v.manager_split.enabled, to_capital_holders: r0(v.manager_split.to_capital), by_fees_and_promote_shares: r0(v.manager_split.to_promote) },
         manager_loans: v.manager_loans.map((x, q) => ({ lender: x.lender, borrower: x.borrower, amount: r0(x.amount), interest: r0(x.interest), repaid: r0(x.repaid), owed_at_end: r0(x.owed_end), settled: x.settled, due_date: x.due_date, terms: x.terms, terms_in_words: loanTermsText((wh.manager_loans || [])[q] || {}, x.borrower, wh.names.manager) })),
+      manager_forfeitures: (v.manager_forfeitures || []).map((f) => ({ date: f.date, from: f.from, to: f.to, capital_share: r4(f.capital_share), fees_promote_share: r4(f.promote_share) })),
         manager_departures: v.manager_departures.map((x) => ({ person: x.person, date: x.date, vested: r4(x.vested), share_before: r4(x.share_before), share_kept: r4(x.share_kept) })),
         buyers: (v.buyers || []).map((b, i) => Object.assign({ name: b.name || (wh.selldown.tranches[i] || {}).buyer || "buyer " + (i + 1) }, sm.buyers[i] ? { units: r0(sm.buyers[i].units), cost: r0(sm.buyers[i].cost), profit: r0(sm.buyers[i].profit), irr: r4(sm.buyers[i].irr) } : {})),
         share_sold: r4(sm.share_sold), manager_fees_total: r0(sm.manager_fees_total), manager_promote_total: r0(sm.manager_promote_total), loan_interest_total: r0(sm.loan_interest_total),
@@ -3177,7 +3189,7 @@ function askContext() {
     "- Saved scenarios: list_scenarios shows them; pass a scenario's name as `scenario` to any tool to work from it (what-ifs then build on it). get_vehicle covers our SPV: each person's cash, profit and IRR, buyers, fees and promote.",
     "- For payback timing, who owes whom on a date, or what a person has in by a date, use get_statement (a person's dated ledger, partner-loan schedules and balances as of a date).",
     "- For questions about who in our vehicle gets what, measure the person: sweep / solve_for take metric person_profit, person_irr or person_from_manager with `person`; run_what_if and propose_scenario return each person's results when you change warehouse.*.",
-    "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. For a quick screen of a deal (DSCR, debt yield, breakeven rent per unit, cap rates, LTV), use get_quick_checks. For a term sheet or a summary of the terms, use get_terms_summary and point to the Export terms button. A partner loan's terms (repayment: sweep / interest_only / equal_principal / at_exit / none, sweep_pct, term_years, source, maturity, due_on cash_date / exact_date, paydowns [{date, amount}] from the borrower's own money, recourse, on_leave; a bridge = preset bridge with a maturity; the other way to fund a share later is a buy-in, warehouse.manager_transfers; presets in list_inputs loan_terms) decide when the borrower repays; get_statement shows the result by date. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
+    "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. For a quick screen of a deal (DSCR, debt yield, breakeven rent per unit, cap rates, LTV), use get_quick_checks. For a term sheet or a summary of the terms, use get_terms_summary and point to the Export terms button. A partner loan's terms (repayment: sweep / interest_only / equal_principal / at_exit / none, sweep_pct, term_years, source, maturity, due_on cash_date / exact_date, paydowns [{date, amount}] from the borrower's own money, recourse, on_leave; a bridge = preset bridge with a maturity; a contribute-by-a-date-or-forfeit clause = preset bridge_forfeit (at_maturity forfeit: the borrower's whole share goes to the lender on the maturity date unless pay-downs cover the loan; compare with at_maturity settle for the paid case; results show manager_forfeitures); the other way to fund a share later is a buy-in, warehouse.manager_transfers; presets in list_inputs loan_terms) decide when the borrower repays; get_statement shows the result by date. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
     "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),
@@ -3503,7 +3515,7 @@ function termsSummaryOf(inp, wres, cases, slug, opts) {
   });
   const exhibits = (w.manager_loans || []).map((x, q) => {
     const sch = (wres[prim] || wres[keys[0]]).loan_schedules[q] || [];
-    const kindT = { advance: "Lent", period: "Payment date", paid_at_end: "Rest paid at the end", paid_at_maturity: "Rest paid at maturity", paid_on_leaving: "Rest paid on leaving", forgiven: "Rest forgiven", paydown: "Pay-down (own money)", due: "Due", switch: `Not paid at maturity: ${n.manager} cash repays it from here` };
+    const kindT = { advance: "Lent", period: "Payment date", paid_at_end: "Rest paid at the end", paid_at_maturity: "Rest paid at maturity", paid_on_leaving: "Rest paid on leaving", forgiven: "Rest forgiven", paydown: "Pay-down (own money)", due: "Due", forfeited: "Not paid: share forfeited to the lender, loan cancelled", switch: `Not paid at maturity: ${n.manager} cash repays it from here` };
     return { title: `Partner loan ${q + 1}: projected schedule (${cases[prim] || prim})`, columns: ["Date", "", "Interest", "Paid", "Balance"],
       rows: sch.map((e) => [e.date, kindT[e.kind] || e.kind, e.interest ? fmt.usd(e.interest) : "—", e.paid ? fmt.usd(e.paid) : "—", fmt.usd(e.balance)]) };
   }).filter((e) => e.rows.length);

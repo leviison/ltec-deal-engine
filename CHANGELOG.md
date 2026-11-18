@@ -5,6 +5,22 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.11.0 — 2026-11-18
+
+- Contribute by a date or forfeit the share (#42): a partner loan's "If not paid at maturity" can now be **the
+  borrower's whole LTEC share goes to the lender** (`at_maturity: forfeit`). On the maturity date, unless the
+  borrower's own pay-downs by then cover the loan, their capital and fees & promote share pass to the lender for
+  nothing and the loan is cancelled; cash before the date stays theirs. New method "Bridge, share forfeited if not
+  paid". Results list `manager_forfeitures`; each partner's statement shows the share changing hands on the date
+  (no cash), and the loan schedule ends "forfeited". Switching back to "settled" gives the paid case.
+- What passes on forfeiture is up to you: **what** (capital and fees & promote, capital only, or fees & promote only,
+  in which case the loan stays owed), **if they paid part** (forfeit all, or only the unpaid part, pro rata) and
+  **capital they paid in themselves** (passes too, or stays theirs). Defaults: all of it.
+- Siena variants **LTEC J** (Thaxter funds his $175,000 by Mar 15, 2027) and **LTEC K** (he misses it; his 50% goes
+  to Levi), the clause from the LTEC operating-agreement amendment draft. Hand checks: the shares, the dates, cash
+  before the date unchanged, and nothing created or lost between the two outcomes.
+- Ask: `get_vehicle` returns forfeitures; the loan-terms guidance covers the clause.
+
 ## 2.10.1 — 2026-11-18
 
 - Flow diagram (#39): investors in the deal directly, outside our vehicle, get their own box off the deal with their

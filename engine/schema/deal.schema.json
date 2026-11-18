@@ -825,9 +825,32 @@
               "at_maturity": {
                 "enum": [
                   "settle",
-                  "sweep"
+                  "sweep",
+                  "forfeit"
                 ],
-                "description": "If the loan isn't paid at maturity: settle it (recourse decides: paid or forgiven) or, from then on, the borrower's manager cash repays it (#33)."
+                "description": "If the loan isn't paid at maturity: settle it (recourse decides: paid or forgiven) or, from then on, the borrower's manager cash repays it (#33). forfeit (#42): the borrower's whole manager share goes to the lender and the loan is cancelled (unless pay-downs by maturity cover it)."
+              },
+              "forfeit_scope": {
+                "enum": [
+                  "both",
+                  "capital",
+                  "promote"
+                ],
+                "description": "On forfeiture (#42): what passes to the lender."
+              },
+              "forfeit_mode": {
+                "enum": [
+                  "all",
+                  "pro_rata"
+                ],
+                "description": "On forfeiture (#42): all of it, or the unpaid part only."
+              },
+              "own_capital": {
+                "enum": [
+                  "forfeited",
+                  "kept"
+                ],
+                "description": "On forfeiture (#42): capital the borrower paid in themselves passes too, or stays theirs."
               }
             }
           }

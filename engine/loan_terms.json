@@ -71,7 +71,45 @@
       },
       "options": {
         "settle": "Settled then: paid or forgiven (box below)",
-        "sweep": "From then on the borrower's {manager} cash repays it"
+        "sweep": "From then on the borrower's {manager} cash repays it",
+        "forfeit": "The borrower's whole {manager} share goes to the lender (the loan is cancelled)"
+      }
+    },
+    "forfeit_scope": {
+      "label": "What passes to the lender",
+      "applies": {
+        "at_maturity": [
+          "forfeit"
+        ]
+      },
+      "options": {
+        "both": "Their {manager} capital and fees & promote share",
+        "capital": "Their {manager} capital only (keeps fees & promote)",
+        "promote": "Their fees & promote share only (keeps capital; the loan stays owed)"
+      }
+    },
+    "forfeit_mode": {
+      "label": "If they paid part of it",
+      "applies": {
+        "at_maturity": [
+          "forfeit"
+        ]
+      },
+      "options": {
+        "all": "They still forfeit all of it",
+        "pro_rata": "They forfeit the unpaid part only (pro rata)"
+      }
+    },
+    "own_capital": {
+      "label": "Capital they paid in themselves",
+      "applies": {
+        "at_maturity": [
+          "forfeit"
+        ]
+      },
+      "options": {
+        "forfeited": "Passes to the lender too",
+        "kept": "Stays theirs (only the part the lender funded passes)"
       }
     },
     "paydowns": {
@@ -181,6 +219,18 @@
         "recourse": true,
         "on_leave": "due",
         "at_maturity": "sweep"
+      }
+    },
+    "bridge_forfeit": {
+      "title": "Bridge, share forfeited if not paid",
+      "summary": "The lender funds the borrower's share now; if the borrower hasn't paid it off from their own money by the maturity date, they sign their whole {manager} share (capital and fees & promote) over to the lender and the loan is cancelled. This models the missed case; switch \"If not paid at maturity\" to settled for the paid case. Pay-downs that cover the loan by the date avoid it.",
+      "terms": {
+        "repayment": "none",
+        "due_on": "exact_date",
+        "maturity": "",
+        "recourse": true,
+        "on_leave": "due",
+        "at_maturity": "forfeit"
       }
     },
     "forgivable": {
