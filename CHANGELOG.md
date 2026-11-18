@@ -5,6 +5,13 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.10.1 — 2026-11-18
+
+- Flow diagram (#39): investors in the deal directly, outside our vehicle, get their own box off the deal with their
+  cash in and back for the case shown; the deal box totals every LP check ("3 LPs"); clicking a box opens that
+  investor in the panel. The term sheet lists them under The investment ("Alongside: …"). Page test
+  `tests/web/flow_direct.test.js`.
+
 ## 2.10.0 — 2026-11-17
 
 - Quick checks (#37, schema 11): a new panel of standard first-pass screens, computed from each case's own numbers by

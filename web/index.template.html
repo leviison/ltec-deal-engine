@@ -1991,9 +1991,12 @@ function renderFlow() {
   const nodes = [], edges = [];
   // each box opens the panel cards that control it: section | group | field
   const opens = (id) => id === "deal" ? "sec-cases" : id === "veh" ? "sec-wh" : id === "mgr" ? "sec-ltec|wh-ltec"
-    : id[0] === "g" ? "sec-wh|wh-sales" : `sec-wh|wh-people|warehouse.people.${id.slice(1)}.name`;
+    : id[0] === "g" ? "sec-wh|wh-sales" : id[0] === "d" ? `sec-direct||direct_investors.${id.slice(1)}.name` : `sec-wh|wh-people|warehouse.people.${id.slice(1)}.name`;
   const node = (id, col, row, t, sub, cash, hub) => nodes.push({ id, x: X(col), y: 10 + row * (BH + GY), t, sub, cash, hub, open: opens(id) });
-  node("deal", 0, 0, DEALS[META.slug].meta.name, UI.sponsor_short || META.sponsor || "LP interest", `${fmt.usdk(check)} in → ${fmt.usdk(back)} back`);
+  // other investors in the deal directly, beside our vehicle (#39): their own boxes off the deal; the deal box adds them
+  const dis = (inputs.direct_investors || []).map((d, i) => ({ d, i, r: cs.direct_investors[i] })).filter(({ d }) => d.check > 0.5);
+  const inAll = check + sum(dis.map((x) => x.d.check)), backAll = back + sum(dis.map((x) => sum(x.r.payments)));
+  node("deal", 0, 0, DEALS[META.slug].meta.name, dis.length ? `${UI.sponsor_short || META.sponsor || "LP interest"} · ${dis.length + 1} LPs` : (UI.sponsor_short || META.sponsor || "LP interest"), `${fmt.usdk(inAll)} in → ${fmt.usdk(backAll)} back`);
   const pcol = direct ? 2 : 3;
   let mRow = 0;
   if (direct) {
@@ -2007,6 +2010,10 @@ function renderFlow() {
     node("mgr", 2, mRow, n.manager, `${fmt.usdk(mc)} of units`, `fees ${fmt.usdk(sm.manager_fees_total)} · promote ${fmt.usdk(sm.manager_promote_total)}`, true);
     edges.push(["veh", "mgr"]);
   }
+  dis.forEach(({ d, i, r }, k) => {
+    node("d" + i, 1, 1 + k, d.name, `direct LP · outside ${n.vehicle}`, `${fmt.usdk(d.check)} in → ${fmt.usdk(sum(r.payments))} back`);
+    edges.push(["deal", "d" + i]);
+  });
   partners.forEach(({ p, i }, k) => {
     node("p" + i, pcol, (direct ? 0 : mRow) + k, p.name, `${fmt.pct(mcap > 0 ? p.manager_capital / mcap : 0, 0)} capital · ${fmt.pct(p.manager_share, 0)} promote`, `${fmt.usdk(p.manager_capital)} in → ${fmt.usdk(sm.people[i].from_manager)} back`);
     edges.push(["mgr", "p" + i]);
@@ -3406,6 +3413,7 @@ function termsSummaryOf(inp, wres, cases, slug, opts) {
   const tpl = STRUCTURES && STRUCTURES.templates[w.structure];
   const inv = [text("Deal", `${M.name}${M.location ? ", " + M.location : ""}`), text("Sponsor", M.sponsor || "—"),
     text("Investor", inp.investor.name, "investor.name"), text("Check", fmt.usd(inp.investor.check), "investor.check")];
+  (inp.direct_investors || []).filter((x) => x.check > 0.5).forEach((x, i) => inv.push(text(`Alongside: ${x.name}`, `${fmt.usd(x.check)} into ${M.name} directly, outside ${n.vehicle}, on the same LP terms`, `direct_investors.${i}.check`)));
   const sl = inp.investor.side_letter;
   if (sl && Object.keys((base.investor.side_letter || {}).terms || {}).length) inv.push(text("Side letter", sl.enabled ? [sl.terms.pref_rate != null ? `${pctT(sl.terms.pref_rate)} pref` : "", sl.terms.residual_lp_share != null ? `${Math.round(sl.terms.residual_lp_share * 100)}/${Math.round(100 - sl.terms.residual_lp_share * 100)} split` : ""].filter(Boolean).join(", ") || "On" : "Not applied", "investor.side_letter"));
   inv.push(text(`How ${n.manager} holds it`, tpl ? `${E.fillLabel(tpl.label, inp)}. ${E.templateNote(tpl, inp)}` : "Set up by hand (no structure template).", "warehouse.structure"));
