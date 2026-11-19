@@ -255,6 +255,9 @@ td.lbl { white-space: normal; min-width: 170px; }
 .compare-only { display: none; }
 .wrap.comparing .compare-only { display: block; }
 .wrap.comparing .deal-only { display: none !important; }
+/* asset-class modules (#46): a module's deal replaces the real-estate layout and its controls */
+.wrap.module-open #reLayout, .wrap.module-open:not(.comparing) .re-only { display: none !important; }
+.wrap.comparing #modView { display: none !important; }
 .view-seg { min-width: 220px; }
 .view-seg button { padding: 7px 12px; font-size: 13px; }
 #compareView { display: grid; gap: 24px; }
@@ -334,19 +337,19 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
     <div class="status">
       <div class="seg view-seg" id="viewSeg" role="group" aria-label="View" hidden><button type="button" data-view="deal" aria-pressed="true">This deal</button><button type="button" data-view="compare" aria-pressed="false">Compare deals</button></div>
       <div class="row" id="exportBtns" style="gap:6px" hidden>
-        <button class="btn" type="button" id="expPdf" title="A summary to share: cases, chart, assumptions, diligence">Export PDF</button>
-        <button class="btn" type="button" id="expXlsx" title="Every case year by year, the waterfall, inputs with sources">Export Excel</button>
-        <button class="btn deal-only" type="button" id="expTerms" title="Summary of terms (Word): how we hold the deal, the vehicle, the manager's terms between its partners and each loan, with sources; outcomes by case; loan schedules; terms still to confirm">Export terms</button>
+        <button class="btn re-only" type="button" id="expPdf" title="A summary to share: cases, chart, assumptions, diligence">Export PDF</button>
+        <button class="btn re-only" type="button" id="expXlsx" title="Every case year by year, the waterfall, inputs with sources">Export Excel</button>
+        <button class="btn deal-only re-only" type="button" id="expTerms" title="Summary of terms (Word): how we hold the deal, the vehicle, the manager's terms between its partners and each loan, with sources; outcomes by case; loan schedules; terms still to confirm">Export terms</button>
         <span class="toast" id="expToast" aria-live="polite"></span>
       </div>
       <label class="deal-pick deal-only" id="dealPickWrap" hidden><span class="eyebrow">Deal</span><select id="dealPick" aria-label="Deal"></select></label>
       <span class="chip deal-only" id="scenarioChip">Defaults</span>
-      <span class="chip deal-only" id="changeChip" hidden></span>
+      <span class="chip deal-only re-only" id="changeChip" hidden></span>
       <span class="chip muted deal-only" id="versionChip"></span>
     </div>
   </header>
 
-  <div class="layout deal-only">
+  <div class="layout deal-only" id="reLayout">
     <aside class="rail" aria-label="Assumptions">
       <section>
         <div class="row" style="justify-content:space-between"><h2>Assumptions</h2><button class="link" id="resetBtn" type="button">Reset to defaults</button></div>
@@ -498,6 +501,9 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
     </main>
   </div>
 
+  <!-- a module's deal view (#46): filled by its view (web/modules/<module>.js) -->
+  <div class="deal-only" id="modView" hidden></div>
+
   <section class="panel" id="askPanel" hidden aria-label="Ask about the deals">
     <header>
       <div style="min-width:0"><h2>Ask</h2><span class="muted small" id="askSub">Questions about the cases and deals. Every number comes from the engine on this page. Uses your Claude account.</span></div>
@@ -543,6 +549,14 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; max-width: 75
 
 <script>
 /*__ENGINE__*/
+</script>
+<script>
+// Asset-class modules (engine/modules.json, #46) and each module's data (input catalog, quick-check thresholds).
+// Module views register in MODULE_VIEWS (web/modules/<module>.js); they read page helpers only when called.
+const MODULES = /*__MODULES__*/null || { default: "real_estate", modules: { real_estate: { label: "Real estate" } } };
+const MODULE_DATA = /*__MODULE_DATA__*/null || {};
+window.MODULE_VIEWS = window.MODULE_VIEWS || {};
+/*__MODULE_VIEWS__*/
 </script>
 <script>
 // Every deal on this page, by slug (one for a single-deal build). The picker and #slug links switch between them.
@@ -602,6 +616,13 @@ const settledText = (x) => x.settled === "repaid" ? "repaid" : x.settled === "pa
   : `${fmt.usd(x.owed_end)} forgiven${x.due_date ? " (" + x.due_date + ")" : ""}`;
 const SLUGS = Object.keys(DEALS);
 const E = window.DealEngine;
+// Which module a deal belongs to; real-estate deals use the page below, others their module's view (#46).
+// META / inputs always hold the last real-estate deal shown; SHOWN is the deal on screen, of any module.
+const assetOf = (slug) => (DEALS[slug] && DEALS[slug].meta.asset_class) || MODULES.default || "real_estate";
+const RE_SLUGS = SLUGS.filter((s) => assetOf(s) === "real_estate");
+const modView = (slug) => (slug && assetOf(slug) !== "real_estate" ? window.MODULE_VIEWS[assetOf(slug)] || null : null);
+const moduleLabel = (slug) => ((MODULES.modules || {})[assetOf(slug)] || {}).label || assetOf(slug);
+let SHOWN = null;
 let DEFAULTS, META, UI, PRIMARY, CASES, DEFAULT_RESULTS;
 // Everything deal-specific on the page comes from the deal file: meta (name, facts, diligence, alternatives) and
 // meta.ui (short names, primary case, field hints, notes). meta.ui.hints, when present, replaces the built-in field
@@ -622,7 +643,7 @@ function initialSlug() {
   try { const last = localStorage.getItem("deal-engine.last"); if (DEALS[last]) return last; } catch (_) {}
   return SLUGS[0];
 }
-setDeal(initialSlug());
+setDeal(assetOf(initialSlug()) === "real_estate" ? initialSlug() : RE_SLUGS[0]);
 const CASE_COLOR = { sponsor: "var(--c-sponsor)", base: "var(--c-base)", downside: "var(--c-down)", stress: "var(--c-stress)", custom: "var(--c-custom)" };
 const hint = (path, d) => (UI.hints ? (UI.hints[path] ?? null) : d);
 const exitNoiLabel = (H) => `Year-${inputs.deal.exit_noi_basis === "forward" ? H + 1 : H} NOI`;
@@ -1640,7 +1661,9 @@ function editLink(path, html, slug) {
   return `<button type="button" class="edit-link" data-edit="${esc(path)}"${slug ? ` data-deal="${esc(slug)}"` : ""} title="Change this in the panel">${html}<span class="pencil" aria-hidden="true">✎</span></button>`;
 }
 function goToInput(path, slug) {
+  if (modView(slug || SHOWN)) { const sl = slug || SHOWN; openDeal(sl); modView(sl).goToInput(path); return; }
   if (slug && slug !== META.slug && DEALS[slug]) openDeal(slug);
+  else if (SHOWN !== META.slug) openDeal(META.slug);
   if (view !== "deal") { setHash(META.slug); setView("deal"); }
   // list items by id -> their position, which is how the panel's fields are addressed
   let p = path.replace(/warehouse\.people\[([^\]]+)\]/, (m0, id) => { const i = inputs.warehouse.people.findIndex((x) => x.id === id); return i < 0 ? m0 : `warehouse.people.${i}`; });
@@ -2182,6 +2205,7 @@ function recompute() {
 
 /* ------------------------------------------------------------ events */
 document.addEventListener("click", (e) => {
+  if (e.target.closest("#modView")) return;  // a module's view handles its own clicks (#46)
   const cc = e.target.closest("button[data-cbp-case]");
   if (cc) { cbpCase = cc.dataset.cbpCase; renderCashByPerson(); return; }
   const cf = e.target.closest("button[data-cbp-freq]");
@@ -2282,9 +2306,16 @@ function scenarioDiff(inp, slug) {
   return out;
 }
 function applyDiff(slug, diff) {
-  const inp = clone(DEALS[slug]);
-  Object.entries(diff || {}).forEach(([pp, v]) => { try { set(inp, pp, clone(v)); } catch (_) {} });
+  const inp = clone(DEALS[slug]), mv = modView(slug);
+  Object.entries(diff || {}).forEach(([pp, v]) => { try { if (mv) setDeep(inp, pp, clone(v)); else set(inp, pp, clone(v)); } catch (_) {} });
   return inp;
+}
+// set a dotted path, creating objects on the way (module deals: a derived case stores only what it changes)
+function setDeep(obj, path, v) {
+  const ks = String(path).split("."), last = ks.pop();
+  let o = obj;
+  ks.forEach((k) => { if (o[k] == null || typeof o[k] !== "object") o[k] = {}; o = o[k]; });
+  o[last] = v;
 }
 function scenarioInputs(sc, slug) {
   slug = slug || sc.deal || SLUGS[0];
@@ -2294,6 +2325,7 @@ function scenarioInputs(sc, slug) {
 // Older saves name people instead of giving ids: give each person an id (the deal file's id for the same name, else
 // one made from the name) and point loans, vesting, buy-ins and person sales at ids. Changes inp in place.
 function withPeopleIds(inp, base) {
+  if (!inp.warehouse) return inp;  // modules without a vehicle (#46)
   const w = inp.warehouse, bw = (base || DEFAULTS).warehouse, taken = [];
   w.people.forEach((p) => {
     if (!p.id) { const m = bw.people.find((q) => q.id && q.name.trim().toLowerCase() === p.name.trim().toLowerCase() && !taken.includes(q.id)); p.id = m ? m.id : E.personId(p.name, taken.concat(w.people.map((q) => q.id).filter(Boolean))); }
@@ -2308,6 +2340,7 @@ function withPeopleIds(inp, base) {
 // what to put on the dashboard for a scenario (old full-input saves go through upgradeInputs, as before)
 function loadScenarioInputs(sc) { return sc.diff_json ? scenarioInputs(sc, META.slug) : upgradeInputs(JSON.parse(sc.inputs)); }
 function scenarioSummary(inp, slug) {
+  if (modView(slug)) return modView(slug).summary(inp, slug);
   const prim = (DEALS[slug].meta.ui || {}).primary_case || Object.keys(inp.cases)[0];
   const b = E.runCase(prim, inp), parts = [`${shortLabel(prim)} ${fmt.pct(b.lp.irr)}`];
   if (inp.cases.custom) parts.push(`Custom ${fmt.pct(E.runCase("custom", inp).lp.irr)}`);
@@ -2520,6 +2553,7 @@ async function connect() {
     clearTimeout(timer);
     scenarios = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
     renderSaved(); updateScenarioChip();
+    if (modView(SHOWN) && modView(SHOWN).onScenarios) modView(SHOWN).onScenarios();
     if (view === "compare") renderCompare();
     if (sampleFn) renderAskChips();
   }, (e) => { clearTimeout(timer); document.getElementById("savedList").innerHTML = `<p class="note" style="margin:0">Couldn't load saved scenarios (${esc(e.code || "error")}).</p>`; });
@@ -2556,8 +2590,12 @@ function compareData() {
     const { inp, version, edited, scenario } = columnInputs(col);
     const key = `${col.slug}|${scenario ? col.src + "@" + (scenario.updated_at || scenario.created_at || "") : edited ? "" : "defaults"}`;
     let cases, veh;
+    const mv = modView(col.slug);
     if (!edited && cmpCache[key]) ({ cases, veh } = cmpCache[key]);
-    else {
+    else if (mv) {
+      cases = mv.engine.runAll(inp).cases; veh = {};  // a module's cases share the common measures (#46)
+      if (!edited) cmpCache[key] = { cases, veh };
+    } else {
       cases = {};
       CMP_ROLES.forEach(([k]) => { if (inp.cases[k]) cases[k] = E.runCase(k, inp); });  // all five, so toggles are instant
       try { veh = E.warehouse(inp, cases); } catch (_) { veh = {}; }  // our vehicle: each person, per case
@@ -2599,11 +2637,16 @@ function renderCompare() {
     const cs = data.map((d) => d.cases[k]);
     const from = k === "custom" ? data.map((d) => d.inp.cases.custom ? `${d.meta.name}: from ${(d.inp.cases[d.inp.cases.custom.built_from] || {}).label || "—"}` : "").filter(Boolean).join(" · ") : "";
     body += `<tr class="cgrp"><td colspan="${data.length + 1}">${name}${from ? ` <span class="muted" style="font-weight:400">· ${esc(from)}</span>` : ""}</td></tr>`;
-    body += row("LP IRR", cs.map((c) => c && c.lp.irr), (v) => fmt.pct(v));
-    if (cs.some((c) => c && c.investor.irr != null && Math.abs(c.investor.irr - c.lp.irr) > 1e-6)) body += row("IRR on our check", cs.map((c) => c && c.investor.irr), (v) => fmt.pct(v));
-    body += row("Multiple", cs.map((c) => c && c.lp.multiple), fmt.x);
-    body += row("Cash yield, Years 1–4", cs.map((c) => c && c.lp.avg_cash_yield_y1_4), (v) => fmt.pct(v));
+    body += row("LP IRR", cs.map((c) => c && cmpIrr(c)), (v) => fmt.pct(v));
+    if (cs.some((c) => c && c.lp && c.investor.irr != null && Math.abs(c.investor.irr - c.lp.irr) > 1e-6)) body += row("IRR on our check", cs.map((c) => c && c.investor.irr), (v) => fmt.pct(v));
+    if (cs.some((c) => c && c.common && c.common.after_tax_irr != null)) body += row("After-tax IRR", cs.map((c) => c && c.common ? c.common.after_tax_irr : null), (v) => fmt.pct(v));
+    body += row("Multiple", cs.map((c) => c && cmpMult(c)), fmt.x);
+    body += row("Cash yield, Years 1–4", cs.map((c) => c && cmpYield(c)), (v) => fmt.pct(v));
     body += row("Profit on $1M", cs.map((c, i) => c && c.investor.profit * per(c, data[i].inp)), fmt.signedk);
+    if (data.some((d) => modView(d.slug))) {  // a module in the comparison: the common measures every module reports (#46)
+      body += row("Payback (years)", cs.map((c) => c && c.common ? c.common.payback_years : null), (v) => v.toFixed(1), true);
+      body += row("PV10 per $1 in", cs.map((c) => c && c.common ? c.common.pv10_per_dollar : null), (v) => "$" + v.toFixed(2));
+    }
     // our vehicle: each person (matched by name across columns), profit with what came from the manager under it
     const vs = data.map((d) => d.veh && d.veh[k]);
     // people match by id across columns (a renamed person stays one row), labelled with the latest name
@@ -2616,13 +2659,15 @@ function renderCompare() {
       body += `<tr><td class="lbl">${esc(nm)}</td>${sm.map((x) => `<td class="n">${x ? `${fmt.signedk(x.s.profit)}<br><span class="muted small">${fmt.usdk(x.s.from_manager)} from ${esc(x.mgr)}</span>` : "—"}</td>`).join("")}</tr>`;
     });
   });
-  if (cmpShown.has("sponsor") && cmpShown.has("base")) body += `<tr class="cgrp"><td colspan="${data.length + 1}">Gap</td></tr>` + row("Sponsor's IRR minus ours", data.map((d) => d.cases.sponsor && d.cases.base ? d.cases.sponsor.lp.irr - d.cases.base.lp.irr : null),
+  if (cmpShown.has("sponsor") && cmpShown.has("base")) body += `<tr class="cgrp"><td colspan="${data.length + 1}">Gap</td></tr>` + row("Sponsor's IRR minus ours", data.map((d) => d.cases.sponsor && d.cases.base && cmpIrr(d.cases.sponsor) != null && cmpIrr(d.cases.base) != null ? cmpIrr(d.cases.sponsor) - cmpIrr(d.cases.base) : null),
     (v) => (v * 100).toFixed(1) + " pts", true);
   document.getElementById("cmpReturns").innerHTML = `<table class="cmp">${head}<tbody>${body}</tbody></table>`;
-  document.getElementById("cmpNote").textContent = "Each deal uses your edits where you've made them this session (marked “your edits”), otherwise the deal file as underwritten. LP returns on each deal's waterfall, annual periods. Our cases are LTEC assumptions recorded with sources in each deal file; bold is the better value in each row.";
+  document.getElementById("cmpNote").textContent = "Each deal uses your edits where you've made them this session (marked “your edits”), otherwise the deal file as underwritten. LP returns on each deal's waterfall, annual periods. Our cases are LTEC assumptions recorded with sources in each deal file; bold is the better value in each row." +
+    (data.some((d) => modView(d.slug)) ? " Deals of other asset classes (" + [...new Set(data.filter((d) => modView(d.slug)).map((d) => moduleLabel(d.slug)))].join(", ") + ") show the same measures from their own engine: IRR and multiple on the investor's dated cash, after-tax IRR where the module models tax; real-estate rows they don't have read “—”." : "");
 
   // context
-  const ctx = (label, f) => `<tr><td class="lbl">${label}</td>${data.map((d) => `<td class="n">${f(d)}</td>`).join("")}</tr>`;
+  // real-estate context reads "—" for other modules; each module adds its own rows (mv.compareContext) (#46)
+  const ctx = (label, f, any) => `<tr><td class="lbl">${label}</td>${data.map((d) => `<td class="n">${any || !modView(d.slug) ? f(d) : "—"}</td>`).join("")}</tr>`;
   const sp = (d) => d.cases.sponsor, dl = (d) => d.inp.deal;
   const cbody = [
     ctx("Units", (d) => dl(d).units),
@@ -2635,9 +2680,9 @@ function renderCompare() {
     ctx("LP equity", (d) => fmt.usdk(dl(d).lp_equity)),
     ctx("Waterfall", (d) => waterfallText(d.inp.waterfall)),
     ctx("Hold", (d) => `${dl(d).hold_years} years`),
-    ctx("Our check", (d) => fmt.usdk(d.inp.investor.check) + (d.inp.investor.side_letter && d.inp.investor.side_letter.enabled ? " · side letter" : "")),
-    ctx("Open diligence items", (d) => (d.meta.diligence || []).filter((x) => x.status !== "closed").length),
-  ].join("");
+    ctx("Our check", (d) => fmt.usdk(d.inp.investor.check) + (d.inp.investor.side_letter && d.inp.investor.side_letter.enabled ? " · side letter" : ""), true),
+    ctx("Open diligence items", (d) => (d.meta.diligence || []).filter((x) => x.status !== "closed").length, true),
+  ].join("") + moduleContextRows(data, ctx);
   document.getElementById("cmpContext").innerHTML = `<table class="cmp">${head}<tbody>${cbody}</tbody></table>`;
   document.querySelectorAll("#compareView [data-open]").forEach((b) => b.addEventListener("click", () => openColumn(+b.dataset.open)));
   document.querySelectorAll("#compareView [data-remove]").forEach((b) => b.addEventListener("click", () => { cmpCols.splice(+b.dataset.remove, 1); saveCols(); renderCompare(); }));
@@ -2654,9 +2699,11 @@ function renderCompare() {
   document.querySelectorAll("#cmpCaseSeg button").forEach((b) => b.addEventListener("click", () => { cmpRole = b.dataset.role; renderCompare(); }));
   const series = data.filter((d) => d.cases[cmpRole]).map((d) => {
     const m = per(null, d.inp); let cum = -1e6; const pts = [cum];
-    d.cases[cmpRole].investor.distributions.forEach((x) => { cum += x * m; pts.push(cum); });
+    cmpYears(d.cases[cmpRole]).forEach((x) => { cum += x * m; pts.push(cum); });
     return { d, pts };
   });
+  // long-lived assets (wells) are cut at CMP_MAX_YEARS so short holds stay readable; the label says so
+  series.forEach((s) => { if (s.pts.length - 1 > CMP_MAX_YEARS) { s.cut = s.pts.length - 1; s.pts = s.pts.slice(0, CMP_MAX_YEARS + 1); } });
   const HY = Math.max(...series.map((s) => s.pts.length - 1));
   const all = series.flatMap((s) => s.pts);
   let lo = Math.min(...all), hi = Math.max(...all, 0);
@@ -2679,8 +2726,19 @@ function renderCompare() {
   });
   ends.forEach((e) => { g += `<text x="${e.xx + 8}" y="${e.yy + 4}" style="fill:${e.s.d.color}">${fmt.signedk(e.v)}</text>`; });
   document.getElementById("cmpChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:520px;display:block" role="img" aria-label="Cumulative cash on $1M by deal">${g}</svg>`;
-  document.getElementById("cmpLegend").innerHTML = series.map((s) => `<span><i style="background:${s.d.color}"></i>${esc(s.d.meta.name)} · ${esc(s.d.version)} · ${esc(s.d.cases[cmpRole].label)}</span>`).join("");
+  document.getElementById("cmpLegend").innerHTML = series.map((s) => `<span><i style="background:${s.d.color}"></i>${esc(s.d.meta.name)} · ${esc(s.d.version)} · ${esc(s.d.cases[cmpRole].label)}${s.cut ? ` (runs ${s.cut} years; first ${CMP_MAX_YEARS} shown)` : ""}</span>`).join("");
   document.getElementById("cmpChartSub").textContent = "Cumulative net cash per $1M invested; the last point includes the sale.";
+}
+// Measures every module has (#46): real-estate LP figures, or the module's common block (the investor's own cash).
+const cmpIrr = (c) => (c.lp ? c.lp.irr : c.common ? c.common.irr : null);
+const cmpMult = (c) => (c.lp ? c.lp.multiple : c.common ? c.common.multiple : null);
+const cmpYield = (c) => { if (c.lp) return c.lp.avg_cash_yield_y1_4; const y = c.common ? c.common.cash_by_year.slice(0, 4) : []; return y.length && c.common.paid_in > 0 ? y.reduce((a, b) => a + b, 0) / y.length / c.common.paid_in : null; };
+const cmpYears = (c) => (c.investor.distributions || (c.common ? c.common.cash_by_year : []));
+const CMP_MAX_YEARS = 12;
+function moduleContextRows(data, ctx) {
+  const labels = [], byDeal = data.map((d) => (modView(d.slug) && modView(d.slug).compareContext ? modView(d.slug).compareContext(d) : []));
+  byDeal.forEach((rows) => rows.forEach(([l]) => { if (!labels.includes(l)) labels.push(l); }));
+  return labels.map((l) => `<tr><td class="lbl">${esc(l)}</td>${byDeal.map((rows) => { const r = rows.find((x) => x[0] === l); return `<td class="n">${r ? r[1] : "—"}</td>`; }).join("")}</tr>`).join("");
 }
 let view = "deal";
 function setView(v) {
@@ -2711,13 +2769,14 @@ const ASK_MAX_TURNS = 12;
 function placeAsk() {
   const panel = document.getElementById("askPanel");
   if (view === "compare") document.getElementById("compareView").children[0].after(panel);
+  else if (modView(SHOWN) && document.querySelector("#modView .mod-main > section")) document.querySelector("#modView .mod-main > section").after(panel);
   else document.querySelector("#dealMain > section").after(panel);
   renderAskChips();
 }
 function renderAskChips() {
   const el = document.getElementById("askChips");
   if (!el) return;
-  const qs = view === "compare" ? [
+  const qs = view !== "compare" && modView(SHOWN) && modView(SHOWN).askChips ? modView(SHOWN).askChips(SHOWN) : view === "compare" ? [
     "Which deal looks better for us, and why?",
     "Compare the downside risk of each deal in plain English.",
     "Where do our cases differ most from each sponsor's, deal by deal?",
@@ -2792,6 +2851,7 @@ function baseInputs(slug, scenario) {
 // A what-if: start from the deal as on the dashboard (or a saved scenario), optionally rebuild Custom from another
 // case (like "Start from"), then apply the changes (dotted paths; array items by index, e.g. cases.custom.rents.0).
 function withChanges(slug, changes, customFrom, scenario) {
+  if (modView(slug)) return modView(slug).withChanges(slug, changes, scenario);
   const inp = clone(baseInputs(slug, scenario));
   if (customFrom) {
     const k = String(customFrom);
@@ -2925,8 +2985,9 @@ const ASK_TOOLS = [
         try { inp = scenarioInputs(x, slug); } catch (e) { err = "unreadable"; }
         const out = { deal: slug, name: x.name, saved: x.created_at, built_by_ask: x.source === "ask", note: x.note || "", summary: x.summary || "" };
         if (err) return Object.assign(out, { error: err });
-        const prim = (DEALS[slug].meta.ui || {}).primary_case || Object.keys(inp.cases)[0];
         out.changed_inputs = diffPaths(inp, DEALS[slug]).slice(0, 30);
+        if (modView(slug)) return Object.assign(out, modView(slug).scenarioRow(inp, slug));
+        const prim = (DEALS[slug].meta.ui || {}).primary_case || Object.keys(inp.cases)[0];
         out.lp_irr_by_case = Object.fromEntries(Object.keys(inp.cases).map((c) => [c, r4(E.runCase(c, inp).lp.irr)]));
         try {
           const v = E.warehouse(inp, { [prim]: E.runCase(prim, inp) })[prim];
@@ -3099,7 +3160,7 @@ const ASK_TOOLS = [
     } },
   { name: "sweep",
     description: "Sensitivity probe: recompute one case across values of one input (or a grid of two inputs) and return a table of a metric (lp_irr, our_irr, lp_multiple, our_profit, min_dscr; or for one person in our vehicle, with `person`: person_profit, person_irr, person_from_manager). E.g. exit cap 5.5-7.5% against rent_factor 0.9-1.05, or warehouse.manager_waterfall.pref 0-12% for Thaxter's person_profit. At most 15 values per input. Optional other_changes and custom_from apply first.",
-    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr", "debt_yield", "rent_needed", "cap_spread", "breakeven_rent_y1", "person_profit", "person_irr", "person_from_manager"] }, person: { type: "string", description: "for person_* metrics: a vehicle person's name" },
+    inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr", "debt_yield", "rent_needed", "cap_spread", "breakeven_rent_y1", "person_profit", "person_irr", "person_from_manager", "irr", "after_tax_irr", "multiple", "profit", "after_tax_profit", "pv10_per_dollar", "payback_years", "first_12_months"] }, person: { type: "string", description: "for person_* metrics: a vehicle person's name" },
       path: { type: "string" }, values: { type: "array", items: { type: "number" } }, path2: { type: "string" }, values2: { type: "array", items: { type: "number" } },
       other_changes: { type: "object" }, custom_from: { type: "string" } }, required: ["deal", "case", "metric", "path", "values"] },
     execute: ({ deal, scenario, case: k, metric, person, path, values, path2, values2, other_changes, custom_from }) => {
@@ -3128,7 +3189,7 @@ const ASK_TOOLS = [
   { name: "solve_for",
     description: "Find the value of one numeric input that makes a result hit a target, by search between low and high (the engine recomputes each try). metric: lp_irr, our_irr, lp_multiple, our_profit, the quick checks (min_dscr, debt_yield, rent_needed = worst year's share of rent needed to break even, cap_spread = exit cap minus going-in, breakeven_rent_y1 per unit per month), or for one person in our vehicle (pass `person`) person_profit, person_irr, person_from_manager. E.g. the exit cap at which our Downside's LP IRR is 0, the pref rate that gives our check 15%, or the LTEC pref (warehouse.manager_waterfall.pref) at which Thaxter's person_profit equals a target. Returns the value, the result achieved, and the result at both ends.",
     inputSchema: { type: "object", properties: { deal: { type: "string" }, scenario: { type: "string", description: "optional: a saved scenario's name to start from (see list_scenarios)" }, case: { type: "string" }, path: { type: "string", description: "dotted input path" },
-      metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr", "debt_yield", "rent_needed", "cap_spread", "breakeven_rent_y1", "person_profit", "person_irr", "person_from_manager"] }, person: { type: "string", description: "for person_* metrics: a vehicle person's name" }, target: { type: "number" }, low: { type: "number" }, high: { type: "number" },
+      metric: { type: "string", enum: ["lp_irr", "our_irr", "lp_multiple", "our_profit", "min_dscr", "debt_yield", "rent_needed", "cap_spread", "breakeven_rent_y1", "person_profit", "person_irr", "person_from_manager", "irr", "after_tax_irr", "multiple", "profit", "after_tax_profit", "pv10_per_dollar", "payback_years", "first_12_months"] }, person: { type: "string", description: "for person_* metrics: a vehicle person's name" }, target: { type: "number" }, low: { type: "number" }, high: { type: "number" },
       other_changes: { type: "object", description: "optional fixed changes applied first" }, custom_from: { type: "string", description: "optional: rebuild Custom from this case first" } }, required: ["deal", "case", "path", "metric", "target", "low", "high"] },
     execute: ({ deal, scenario, case: k, path, metric, person, target, low, high, other_changes, custom_from }) => {
       const slug = needDeal(deal), ck = needCase(baseInputs(slug, scenario), k), M = String(metric), T = Number(target);
@@ -3153,7 +3214,7 @@ const ASK_TOOLS = [
     description: "Every deal side by side for every case: LP IRR, multiple, cash yield Years 1-4, profit per $1M, plus price per unit, going-in cap, loan / total capital, Year-1 debt coverage, waterfall, open diligence count.",
     execute: () => {
       setAskStatus("Comparing deals…");
-      return compareData().map((d) => ({ deal: d.slug, name: d.meta.name, version: d.version, status: d.meta.status, using_edits: d.edited,
+      return compareData().map((d) => modView(d.slug) ? modView(d.slug).compareSummary(d) : ({ deal: d.slug, name: d.meta.name, version: d.version, status: d.meta.status, using_edits: d.edited,
         price_per_unit: r0(d.inp.deal.purchase_price / d.inp.deal.units), going_in_cap: d.cases.sponsor ? r4(d.cases.sponsor.operations.noi[0] / d.inp.deal.purchase_price) : null,
         loan_to_capital: r4(d.inp.deal.loan_amount / (d.inp.deal.loan_amount + d.inp.deal.lp_equity)), waterfall: waterfallText(d.inp.waterfall),
         open_diligence: (d.meta.diligence || []).filter((x) => x.status !== "closed").length,
@@ -3169,6 +3230,19 @@ const ASK_TOOLS = [
     } },
 ];
 let askWhatIfs = [];
+// Module deals (#46): a tool that names a deal of another module runs that module's version of the tool; tools
+// with no module version say so. get_sources reads any deal file as it is.
+const ASK_ANY_MODULE = ["get_sources", "list_scenarios", "compare_deals"];
+ASK_TOOLS.forEach((t) => {
+  const run = t.execute;
+  t.execute = (args) => {
+    const slug = args && args.deal && DEALS[String(args.deal)] ? String(args.deal) : null, mv = modView(slug);
+    if (!mv || ASK_ANY_MODULE.includes(t.name)) return run(args);
+    const f = mv.tools && mv.tools[t.name];
+    if (!f) throw new Error(`${t.name} is for real-estate deals; ${DEALS[slug].meta.name} is ${moduleLabel(slug)}. For it use: ${Object.keys(mv.tools).join(", ")}`);
+    return f(args || {});
+  };
+});
 
 function askContext() {
   return [
@@ -3192,9 +3266,10 @@ function askContext() {
     "- The manager's own terms between its partners (warehouse.manager_waterfall, manager_loans, manager_vesting) test structures like one partner funding all the manager's capital: capital + pref back first, a partner loan, or a vesting promote share for a new partner. For a quick screen of a deal (DSCR, debt yield, breakeven rent per unit, cap rates, LTV), use get_quick_checks. For a term sheet or a summary of the terms, use get_terms_summary and point to the Export terms button. A partner loan's terms (repayment: sweep / interest_only / equal_principal / at_exit / none, sweep_pct, term_years, source, maturity, due_on cash_date / exact_date, paydowns [{date, amount}] from the borrower's own money, recourse, on_leave; a bridge = preset bridge with a maturity; a contribute-by-a-date-or-forfeit clause = preset bridge_forfeit (at_maturity forfeit: the borrower's whole share goes to the lender on the maturity date unless pay-downs cover the loan; compare with at_maturity settle for the paid case; results show manager_forfeitures); the other way to fund a share later is a buy-in, warehouse.manager_transfers; presets in list_inputs loan_terms) decide when the borrower repays; get_statement shows the result by date. Try them with run_what_if / get_vehicle `changes` and propose the one that answers the question.",
     "- When the viewer asks you to build or adjust cases or scenarios, build them with propose_scenario (a clear name, what it assumes and why). The viewer saves them with one click; you never save or change their dashboard yourself.",
     "",
-    "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${META.name} deal view (slug "${META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),
+    "Where the viewer is: " + (view === "compare" ? "the Compare deals view." : `the ${DEALS[SHOWN || META.slug].meta.name} deal view (slug "${SHOWN || META.slug}").`) + (SLUGS.some(isEdited) ? ` The viewer has unsaved edits on: ${SLUGS.filter(isEdited).map((k) => DEALS[k].meta.name).join(", ")}; tools use those edits.` : ""),
     (db ? "Saved scenarios: " + (scenarios.length ? SLUGS.map((k) => scenariosFor(k).length ? `${DEALS[k].meta.name}: ${scenariosFor(k).map((x) => `"${x.name}"`).join(", ")}` : "").filter(Boolean).join(" | ") : "none yet") +
       (activeScenario && scenarios.find((x) => x.id === activeScenario) ? `. Loaded on the dashboard now: "${scenarios.find((x) => x.id === activeScenario).name}" (${META.name})${isEdited(META.slug) ? ", plus edits" : ""}.` : ".") : "Saved scenarios can't be read in this view.") + "\n" +
+    (SLUGS.some((k) => modView(k)) ? "Asset classes: deals are real estate unless marked; " + SLUGS.filter((k) => modView(k)).map((k) => `${DEALS[k].meta.name} is ${moduleLabel(k)}: ${modView(k).askContextLine(k)}`).join(" ") + "\n" : "") +
     "Deals: " + SLUGS.map((k) => `${DEALS[k].meta.name} (slug "${k}", ${DEALS[k].meta.status}, cases: ${Object.keys(dealInputs(k).cases).map((c) => `${c} = ${dealInputs(k).cases[c].label}`).join("; ")})`).join(" | "),
   ].join("\n");
 }
@@ -3204,7 +3279,8 @@ function mdInline(t) {
   return esc(t)
     // an input Ask names: [label](input:path) for the deal on screen, or [label](input:slug/path); unknown paths stay text
     .replace(/\[([^\]]+)\]\(input:(?:([a-z0-9-]+)\/)?([^)\s]+)\)/g, (m0, label, slug, path) => {
-      const sl = slug && DEALS[slug] ? slug : META.slug;
+      const sl = slug && DEALS[slug] ? slug : (modView(SHOWN) ? SHOWN : META.slug);
+      if (modView(sl)) return modView(sl).inputLink(path, label, sl);
       return get(slug ? DEALS[sl] : inputs, path) === undefined && get(DEALS[sl], path) === undefined ? label : editLink(path, label, sl !== META.slug ? sl : null);
     })
     .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
@@ -3298,6 +3374,12 @@ async function ask(q) {
   }
 }
 function openWhatIf(w) {
+  if (modView(w.slug)) {
+    openDeal(w.slug);
+    let inp; try { inp = withChanges(w.slug, w.changes, w.customFrom, w.scenario); } catch (_) { return; }
+    const base = w.scenario ? scenariosFor(w.slug).find((x) => x.name === w.scenario) : null;
+    modView(w.slug).load(inp, base ? base.id : null); window.scrollTo(0, 0); return;
+  }
   if (w.slug !== META.slug) openDeal(w.slug); else if (view !== "deal") { setHash(w.slug); setView("deal"); }
   try { inputs = withChanges(w.slug, w.changes, w.customFrom, w.scenario); } catch (_) { return; }
   // built on a saved scenario: keep it as the loaded one, so Update applies the what-if to it
@@ -3608,7 +3690,8 @@ const COL_RGB = [[43, 87, 151], [183, 121, 31], [106, 76, 156], [180, 67, 47], [
 
 function exportState() {
   // what the export covers, from what is on screen now
-  if (view === "compare") return { kind: "compare", cols: compareData(), roles: CMP_ROLES.filter(([k]) => cmpShown.has(k)) };
+  // the compare exports cover real-estate columns; other modules' deals are left out for now and named in the note (#46)
+  if (view === "compare") { const all = compareData(); return { kind: "compare", cols: all.filter((d) => !modView(d.slug)), skipped: all.filter((d) => modView(d.slug)).map((d) => d.meta.name), roles: CMP_ROLES.filter(([k]) => cmpShown.has(k)) }; }
   const runs = CASES.map((k) => ({ k, r: results.cases[k] }));
   return { kind: "deal", slug: META.slug, meta: META, inp: inputs, edits: diffPaths(inputs, DEFAULTS), scenario: activeScenario && (scenarios.find((x) => x.id === activeScenario) || {}).name, runs, res: results };
 }
@@ -4003,6 +4086,7 @@ function refreshPicker() {
 }
 function bootDeal(slug) {
   if (META && inputs && META.slug !== slug) working[META.slug] = { inputs, activeScenario, activeVariant };
+  hideModule(); SHOWN = slug;
   setDeal(slug);
   const w = working[slug];
   inputs = w ? w.inputs : clone(DEFAULTS); editCase = detailCase = cbpCase = PRIMARY; cbpParty = "p0"; whPerson = 0;
@@ -4017,10 +4101,40 @@ function bootDeal(slug) {
   if (sampleFn) placeAsk();
 }
 function switchDeal(slug) {
-  if (!DEALS[slug] || slug === META.slug) return;
+  if (!DEALS[slug] || slug === SHOWN) return;
   setHash(slug);
-  bootDeal(slug);
+  if (modView(slug)) showModule(slug);
+  else if (slug !== META.slug) bootDeal(slug);
+  else restoreRealEstate();
   window.scrollTo(0, 0);
+}
+// A module's deal (#46): its view fills #modView; the real-estate layout keeps its state, hidden, for coming back.
+function showModule(slug) {
+  if (META && inputs) working[META.slug] = { inputs, activeScenario, activeVariant };
+  SHOWN = slug;
+  document.getElementById("wrap").classList.add("module-open");
+  document.getElementById("modView").hidden = false;
+  document.getElementById("dealPick").value = slug;
+  try { localStorage.setItem("deal-engine.last", slug); } catch (_) {}
+  modView(slug).open(slug);
+  refreshPicker();
+  if (sampleFn) placeAsk();
+}
+function hideModule() {
+  const w = document.getElementById("wrap");
+  if (!w.classList.contains("module-open")) return;
+  w.classList.remove("module-open");
+  document.getElementById("modView").hidden = true;
+}
+// Back to the real-estate deal that was on screen before, with its edits.
+function restoreRealEstate() {
+  hideModule(); SHOWN = META.slug;
+  document.getElementById("dealName").textContent = META.name;
+  document.getElementById("versionChip").textContent = "Model " + DEFAULTS.version + " · inputs " + DEFAULTS.as_of;
+  document.getElementById("dealPick").value = META.slug;
+  try { localStorage.setItem("deal-engine.last", META.slug); } catch (_) {}
+  renderDiligence(); renderAllFields(); recompute(); renderSaved(); updateScenarioChip();
+  if (sampleFn) placeAsk();
 }
 (() => {
   const pick = document.getElementById("dealPick");
@@ -4029,7 +4143,7 @@ function switchDeal(slug) {
   pick.addEventListener("change", () => switchDeal(pick.value));
   document.getElementById("viewSeg").hidden = SLUGS.length < 2;
   document.querySelectorAll("#viewSeg button").forEach((b) => b.addEventListener("click", () => {
-    if (b.dataset.view === "compare") { setHash("compare"); setView("compare"); } else openDeal(META.slug);
+    if (b.dataset.view === "compare") { setHash("compare"); setView("compare"); } else openDeal(SHOWN || META.slug);
   }));
   window.addEventListener("hashchange", () => {
     const h = decodeURIComponent(location.hash.slice(1));
@@ -4037,6 +4151,7 @@ function switchDeal(slug) {
   });
 })();
 bootDeal(META.slug);
+if (modView(initialSlug())) switchDeal(initialSlug());
 if (location.hash === "#compare" && SLUGS.length > 1) setView("compare");
 connect();
 connectAsk();

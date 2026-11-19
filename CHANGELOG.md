@@ -5,6 +5,39 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.12.0 — 2026-11-19
+
+- Asset-class modules (#46): the engine can now value more than real estate. `engine/modules.json` lists each asset
+  class with its own engine and schema and an on/off switch; a deal names its class in `meta.asset_class` (missing =
+  real estate). A class that is off is hidden from the engine, the tests and the dashboard. Real-estate results,
+  deal files and the dashboard are unchanged.
+- First new module: oil & gas (non-operated working interests through a sponsor's venture), `engine/oil_gas.py` =
+  `engine/oil_gas.js`. Month by month: per-well decline calibrated to a stated current rate, price deck, the
+  investor's working and net revenue interests, production taxes, gathering, LOE, fees and assessments; investor cash
+  by pay date (back production on its own date); a tax layer (year-1 deduction, then cost or percentage depletion, or
+  the rest next year) for after-tax IRR; PV10, payback, EUR, and the sponsor's load over the operator's AFEs.
+- First oil & gas deal: Lapetco OXY 2 JV (`deals/lapetco-oxy-2`), with sources, diligence and the sponsor's documents.
+  The sponsor's one-page conversion table is rebuilt to the printed dollar (it implies a unit NRI that ignores the
+  managing venturer's 1%, and a fixed ~$1,597/month per unit it doesn't state). Cases per $250k: Sponsor's figures
+  3.36x / 121%; Our Base 1.40x / 12.8% pre-tax, 8.4% after tax; Downside 0.67x; Stress 0.35x.
+- On the dashboard: an oil & gas deal opens its own view from the deal picker: case cards (multiple, IRR, after-tax
+  IRR, profit, first-12-month cash, payback, PV10 per dollar, EUR per well), cash back by year before or after tax,
+  each case by year (volumes, WTI, revenue, costs, net cash, deductions, tax), quick checks, where the money goes and
+  the sponsor's table rebuilt, wells, diligence and sources. Every field comes from the module's input catalog; edits
+  stay when you switch deals; saved scenarios save and load like real estate's.
+- The module contract: every case of every module carries a `common` block (money in and back, profit, multiple,
+  IRR, after-tax IRR, payback, first-12-month cash, PV10 per dollar, cash by year). Real-estate results gain it too;
+  nothing else in them changes.
+- Compare: an oil & gas deal sits in a column beside the real-estate deals. New rows where a module is present:
+  after-tax IRR, payback, PV10 per $1; real-estate-only rows read "—" for it and it adds its own context (wells, our
+  WI / NRI, the sponsor's load, how long the money is out). The chart cuts long-lived assets at 12 years and says so.
+  The compare exports still cover the real-estate columns only.
+- Ask: tools that name an oil & gas deal run its versions (get_deal, get_case_years, list_inputs, run_what_if, sweep,
+  solve_for, propose_scenario, get_quick_checks), with metrics such as after_tax_irr, multiple, pv10_per_dollar and
+  payback_years; vehicle and term-sheet tools say they are for real estate. compare_deals covers every module.
+- Oil & gas quick checks (`engine/screens_oil_gas.json`): load over AFE cost, multiple, payback, PV10 per dollar,
+  after-tax IRR, first-year cash.
+
 ## 2.11.0 — 2026-11-18
 
 - Contribute by a date or forfeit the share (#42): a partner loan's "If not paid at maturity" can now be **the

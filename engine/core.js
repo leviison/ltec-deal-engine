@@ -282,8 +282,44 @@
     const inpC = deal === inp.deal ? inp : Object.assign({}, inp, { deal });
     const ops = caseOperations(c, deal, inp.cases);
     const ex = caseExit(c, ops, deal);
-    return Object.assign({ key, label: c.label, note: c.note || "", operations: ops, exit: ex },
-                         returnsFor(ops, ex.net_sale_proceeds, inpC));
+    const out = returnsFor(ops, ex.net_sale_proceeds, inpC), iv = out.investor;
+    const common = commonSummary(inp.warehouse.close_date, [inp.warehouse.close_date].concat(iv.payment_dates),
+                                 [-inp.investor.check].concat(iv.payments), iv.irr);
+    return Object.assign({ key, label: c.label, note: c.note || "", operations: ops, exit: ex }, out, { common });
+  }
+
+  // ---- the module contract (#46): measures every asset class reports the same way (see core.py)
+  function commonSummary(start, dates, flows, irr, afterTaxIrr, afterTaxProfit) {
+    const d0 = toDay(start);
+    const paidIn = -flows.filter((c) => c < 0).reduce((s, c) => s + c, 0);
+    const back = flows.filter((c) => c > 0).reduce((s, c) => s + c, 0);
+    const order = dates.map((_, i) => i).sort((a, b) => (dates[a] < dates[b] ? -1 : dates[a] > dates[b] ? 1 : a - b));
+    let cum = 0.0, payback = null;
+    order.forEach((i) => {
+      cum += flows[i];
+      if (payback === null && dates[i] > start && cum >= -0.005) payback = dates[i];
+    });
+    const yr12 = addMonths(start, 12);
+    const last = dates.length ? dates.reduce((m, x) => (x > m ? x : m)) : start;
+    let n = 0;
+    while (addMonths(start, 12 * n) < last) n += 1;
+    const byYear = new Array(n).fill(0.0);
+    dates.forEach((x, i) => {
+      if (x <= start) return;
+      let k = 0;
+      while (addMonths(start, 12 * (k + 1)) < x) k += 1;
+      byYear[k] += flows[i];
+    });
+    const pv10 = dates.reduce((s, x, i) => (x > start ? s + flows[i] / Math.pow(1.1, (toDay(x) - d0) / 365) : s), 0);
+    return {
+      start, paid_in: paidIn, total_back: back, profit: flows.reduce((s, c) => s + c, 0),
+      multiple: paidIn > 0 ? back / paidIn : null, irr,
+      after_tax_irr: afterTaxIrr === undefined ? null : afterTaxIrr, after_tax_profit: afterTaxProfit === undefined ? null : afterTaxProfit,
+      payback, payback_years: payback ? (toDay(payback) - d0) / 365 : null,
+      first_12_months: dates.reduce((s, x, i) => (x > start && x <= yr12 && flows[i] > 0 ? s + flows[i] : s), 0),
+      pv10, pv10_per_dollar: paidIn > 0 ? pv10 / paidIn : null,
+      cash_by_year: byYear, life_years: (toDay(last) - d0) / 365,
+    };
   }
 
   // Year-5 sale added to operating cash, run through the waterfall.
@@ -1258,7 +1294,7 @@
     w.people.forEach((p) => { if (p.id) names[p.id] = p.name; });
     return (text || "").replace(/\{([a-z0-9_]+)\}/g, (m0, k) => (k in names ? names[k] : m0));
   }
-  const api = { runAll, quickChecks, runCase, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths, applyStructure, structurePartners, loanTermsOf, applyLoanPreset, LOAN_TERM_DEFAULTS,
+  const api = { runAll, quickChecks, runCase, commonSummary, caseOperations, caseDeal, sensitivity, warehouse, warehouseCase, runWaterfall, irr, xirr, addMonths, applyStructure, structurePartners, loanTermsOf, applyLoanPreset, LOAN_TERM_DEFAULTS,
     personId, getPath, setPath, mergeDeep, applyVariant, fillLabel, referenceIssues, templateNote };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DealEngine = api;

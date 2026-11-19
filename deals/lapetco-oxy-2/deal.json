@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "slug": "lapetco-oxy-2",
+    "name": "Lapetco OXY 2 JV",
+    "asset_class": "oil_gas",
+    "sponsor": "Lapetco Inc. (Reed Cagle), Addison TX",
+    "operator": "Anadarko E&P Onshore LLC (Occidental)",
+    "location": "Converse County, WY (Powder River Basin)",
+    "vehicle": "Direct: each investor is a general partner (venturer) in a Texas joint venture",
+    "status": "screening",
+    "summary": "Units in a Texas general-partnership JV buying 7.98% WI / 5.99% NRI in five Oxy-operated 2-mile horizontals in Converse County, WY, for a fixed $4.5M turnkey price. Offered to existing investors at $250k; sponsor pitches 600 BOE/d per well, ~$60k back production per $250k by Dec 20 and an 85% write-off in 2026. Cutoff Nov 25, 2026.",
+    "documents": [
+      {
+        "key": "cim",
+        "title": "Confidential Information Memorandum, Oct 8 2026 (126 pages)",
+        "path": "reference/Lapetco_Oxy_2_JV_CIM_2026-10-08.pdf"
+      },
+      {
+        "key": "table",
+        "title": "Monthly Income Conversion Table (one page)",
+        "path": "reference/OXY_2_Monthly_Income_Conversion_Table.pdf"
+      },
+      {
+        "key": "email",
+        "title": "Lapetco email to Levi, Nov 2026: $250k offer, 600 BOE/d, back production, 85% write-off",
+        "path": "reference/Lapetco_email_2026-11.txt"
+      },
+      {
+        "key": "jva",
+        "title": "Operating Agreement (Oxy), Turnkey Contract: NOT RECEIVED (CIM: available on request)"
+      },
+      {
+        "key": "exhibit_e",
+        "title": "CIM Exhibit E 'Investment Return Illustrations and Assumptions': blank in the CIM received"
+      }
+    ],
+    "diligence": [
+      "27% load: of the $4.5M turnkey, $3.28M is wells and acquisition; $776k management fee, $360k commissions, $87k overhead (CIM p.19). At Oxy's AFEs the venture's WI costs $3.18M, so investors pay 1.41x cost.",
+      "Tax: the CIM (p.40, capitals) warns investors after drilling may not get IDC; per the email the wells have produced since August. No tax opinion or ruling. Get a CPA opinion on the 85%.",
+      "Production: verify 600 BOE/d per well with WOGCC monthly volumes by API and Oxy revenue statements; the sponsor's numbers are gross revenue (no production taxes, LOE, gathering; gas priced as oil).",
+      "Liability: general partners, unlimited joint and several liability; special assessments with a 500% non-payment penalty; Lapetco's overrun cover capped at $250k and it has 'minimal capital' (CIM p.1-5).",
+      "Documents: CIM (Oct 8) says drilled but uncompleted; email says online since August. 'Near Keenesburg' is a Colorado town. Exhibit E blank. Prior-activity record lists gross well BOE, not investor distributions; 474,114 BOE appears under three ventures.",
+      "Track record: ask for distributions per unit from prior Converse County ventures (Nettie Bracken 12, Nitro Fed, Lake Solitude).",
+      "Regulatory history (CIM p.53): Virginia 1989 order, Illinois 2009 cease and desist, Colorado securities case (dismissed 2025).",
+      "Minimum: CIM minimum is 1/2 unit ($500k); the $250k ticket relies on the sponsor's discretion (CIM p.1)."
+    ]
+  },
+  "sources": {
+    "deal.units_offered": "CIM cover and p.1: up to 4.5 Units",
+    "deal.unit_price": "CIM cover: $1,000,000 per Unit",
+    "deal.venture_wi": "CIM p.1 and p.16-17 Prospect Wells table: 7.982427% WI (includes Lapetco's 1%)",
+    "deal.venture_nri": "CIM p.1 and p.16-17: 5.986820% NRI; ~25% landowner royalty / ORRI",
+    "deal.manager_share": "CIM p.1 and p.20: Lapetco contributes and is allocated 1%",
+    "deal.turnkey_price": "CIM p.2, p.16, p.18: fixed Turnkey Price $4,500,000",
+    "deal.turnkey_uses": "CIM p.19: Estimated Costs for Services under Turnkey Contract",
+    "deal.afe_gross_total": "CIM Exhibit D: Oxy AFEs dated 5/7/2025, five wells, gross total (sum of the five)",
+    "deal.monthly_management_fee": "CIM p.3 and p.21: monthly management fee of $1,000",
+    "deal.wells": "CIM Exhibit D (names, APIs, formations, AFEs). Online dates: email (3 wells from ~Aug 20, 2026; the other 2 assumed Oct 1, 2026: TODO confirm with Oxy statements)",
+    "deal.fund_date": "Email: money cut-off Wednesday of next week (Nov 25, 2026)",
+    "deal.back_pay_date": "Email: over $60k paid out by the 20th of next month (Dec 20, 2026)",
+    "deal.pay_day": "Email: paid by the 20th (assumption: every month)",
+    "deal.pay_lag_months": "Assumption: a production month is paid the month after (typical operator lag is 1-2 months)",
+    "deal.horizon_months": "Assumption: 30 years, ended earlier by the economic limit",
+    "investor.check": "Email: $250k minimum for the first 20 current investors",
+    "investor.tax_rate": "One-pager: assumed individual total effective marginal tax rate 40% (used in every case for comparability)",
+    "sponsor_table": "One-pager 'Monthly Income Conversion Table': $80/bbl, 85% deductible, 40% tax, rows as printed. fixed_per_unit_month is implied by the printed rows (not stated; Exhibit E blank)",
+    "cases.sponsor": "Sponsor's figures where given (email: $87 oil, 600 BOE/d per well, 85% this year and 15% after; table: every BOE at the oil price, no production taxes or LOE, the table's fixed monthly deduction). The sponsor gives no decline: uses LTEC's base decline.",
+    "cases.base": "LTEC assumptions, Nov 19 2026. WTI: Aug-Nov 2026 approx. actuals (Oct ~$104, Nov 11 $89.62, FRED via MarketXLS); EIA Nov STEO sees Brent ~$100 to year-end falling to ~$77 by Q4 2027. 80% oil (nearby Oxy Powell 3670-4-T2XH: 291k bbl / 257 MMcf). WY severance ~6% + ad valorem ~6%. Year-1 deduction 50% (post-completion entry; see diligence).",
+    "cases.downside": "LTEC: current rate 500 BOE/d (600+ may be flush or the best wells), steeper decline, $65 long-term WTI, 35% year-1 deduction",
+    "cases.stress": "LTEC: 450 BOE/d, steep decline, $55 WTI, a $100k-per-unit special assessment in mid-2027 (CIM p.2: assessments possible), 30% year-1 deduction",
+    "cases.custom": "Starts as Our Base; for what-ifs"
+  },
+  "version": "2026-11-19.1",
+  "as_of": "2026-11-19",
+  "deal": {
+    "units_offered": 4.5,
+    "unit_price": 1000000,
+    "venture_wi": 0.07982427,
+    "venture_nri": 0.0598682,
+    "manager_share": 0.01,
+    "turnkey_price": 4500000,
+    "turnkey_uses": {
+      "wells_and_acquisition": 3277242,
+      "commissions": 360000,
+      "overhead": 86508,
+      "management_fee": 776250
+    },
+    "afe_gross_total": 39859914,
+    "monthly_management_fee": 1000,
+    "wells": [
+      {
+        "id": "p1h",
+        "name": "Powell 3670-4-P1H",
+        "api": "49-009-50003",
+        "formation": "Parkman",
+        "afe": 8202765,
+        "online": "2026-08-20"
+      },
+      {
+        "id": "p2h",
+        "name": "Powell 3670-21-P2H",
+        "api": "49-009-50008",
+        "formation": "Parkman",
+        "afe": 7156373,
+        "online": "2026-08-20"
+      },
+      {
+        "id": "tp1h",
+        "name": "Powell 3670-4-TP1H",
+        "api": "49-009-50004",
+        "formation": "Teapot",
+        "afe": 8051717,
+        "online": "2026-08-20"
+      },
+      {
+        "id": "tp2h",
+        "name": "Powell 3670-21-TP2H",
+        "api": "49-009-50007",
+        "formation": "Teapot",
+        "afe": 7377497,
+        "online": "2026-10-01"
+      },
+      {
+        "id": "t2h",
+        "name": "Powell 3670-21-T2H",
+        "api": "49-009-50009",
+        "formation": "Frontier/Turner",
+        "afe": 9071562,
+        "online": "2026-10-01"
+      }
+    ],
+    "fund_date": "2026-11-25",
+    "back_pay_date": "2026-12-20",
+    "pay_day": 20,
+    "pay_lag_months": 1,
+    "horizon_months": 360
+  },
+  "investor": {
+    "check": 250000,
+    "tax_rate": 0.4
+  },
+  "sponsor_table": {
+    "price": 80,
+    "wells": 5,
+    "fixed_per_unit_month": 1596.5,
+    "tax_rate": 0.4,
+    "deductible": 0.85,
+    "tickets": [
+      2,
+      1,
+      0.5
+    ],
+    "rates": [
+      1100,
+      900,
+      700,
+      500,
+      300,
+      0
+    ],
+    "totals": [
+      1500000,
+      1000000,
+      800000,
+      500000,
+      200000,
+      0
+    ]
+  },
+  "cases": {
+    "sponsor": {
+      "label": "Sponsor (their figures)",
+      "note": "600 BOE/d per well, every BOE at $87 oil, no production taxes, gathering or LOE beyond the table's fixed deduction; 85% deducted in 2026 and the rest in 2027. The sponsor states no decline, so this uses LTEC's base decline.",
+      "production": {
+        "rate": 600,
+        "rate_month": "2026-11",
+        "b": 1.0,
+        "di": 1.6,
+        "dmin": 0.06
+      },
+      "oil_share": 1.0,
+      "gas_ngl_price": null,
+      "wti": {
+        "history": {},
+        "years": {},
+        "long_term": 87
+      },
+      "differential": 0,
+      "production_tax": 0,
+      "gathering": 0,
+      "loe_per_boe": 0,
+      "loe_per_well_month": 0,
+      "fixed_per_unit_month": 1596.5,
+      "tax": {
+        "year1_deductible": 0.85,
+        "rest": "next_year",
+        "percentage_depletion": 0
+      },
+      "assessments": []
+    },
+    "base": {
+      "label": "Our Base",
+      "from": "sponsor",
+      "note": "600 BOE/d per well now, hyperbolic decline (b 1.0, 62% first year), 80% oil; WTI ~actuals through Nov 2026, $88 Dec, $80 2027, $72 2028, $70 after, less $6; gas/NGL $18/BOE; 12% production taxes, $2/BOE gathering, LOE $8/BOE + $10k per well-month; 50% deducted in 2026, rest by depletion (15% percentage depletion).",
+      "oil_share": 0.8,
+      "gas_ngl_price": 18,
+      "wti": {
+        "history": {
+          "2026-08": 92,
+          "2026-09": 95,
+          "2026-10": 104,
+          "2026-11": 91
+        },
+        "years": {
+          "2026": 88,
+          "2027": 80,
+          "2028": 72
+        },
+        "long_term": 70
+      },
+      "differential": 6,
+      "production_tax": 0.12,
+      "gathering": 2.0,
+      "loe_per_boe": 8,
+      "loe_per_well_month": 10000,
+      "fixed_per_unit_month": 0,
+      "tax": {
+        "year1_deductible": 0.5,
+        "rest": "cost_depletion",
+        "percentage_depletion": 0.15
+      }
+    },
+    "downside": {
+      "label": "Downside",
+      "from": "base",
+      "note": "500 BOE/d now, steeper decline (b 0.9, Di 2.5), WTI $85 Dec 2026, $70 2027, $65 after; 35% deducted in 2026.",
+      "production": {
+        "rate": 500,
+        "b": 0.9,
+        "di": 2.5
+      },
+      "wti": {
+        "years": {
+          "2026": 85,
+          "2027": 70,
+          "2028": 65
+        },
+        "long_term": 65
+      },
+      "tax": {
+        "year1_deductible": 0.35
+      }
+    },
+    "stress": {
+      "label": "Stress",
+      "from": "base",
+      "note": "450 BOE/d now, steep decline (b 0.8, Di 3.0), WTI $80 Dec 2026 then $60, $55 long-term; $100k per unit special assessment Jun 2027; 30% deducted in 2026.",
+      "production": {
+        "rate": 450,
+        "b": 0.8,
+        "di": 3.0
+      },
+      "wti": {
+        "years": {
+          "2026": 80,
+          "2027": 60,
+          "2028": 55
+        },
+        "long_term": 55
+      },
+      "tax": {
+        "year1_deductible": 0.3
+      },
+      "assessments": [
+        {
+          "date": "2027-06-20",
+          "per_unit": 100000
+        }
+      ]
+    },
+    "custom": {
+      "label": "Custom",
+      "from": "base",
+      "note": "Starts as Our Base."
+    }
+  }
+}

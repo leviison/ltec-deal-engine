@@ -32,8 +32,30 @@ def load_deal(slug_or_path: str | Path) -> dict:
     return json.loads(deal_path(slug_or_path).read_text())
 
 
-def list_deals() -> list[str]:
-    return sorted(p.parent.name for p in DEALS_DIR.glob("*/deal.json"))
+def load_modules() -> dict:
+    """The asset-class modules and whether each is on (engine/modules.json, #46)."""
+    return json.loads((Path(__file__).resolve().parent / "modules.json").read_text())
+
+
+def deal_asset_class(deal: dict, mods: dict | None = None) -> str:
+    """A deal's module (meta.asset_class); deals written before modules are real estate."""
+    mods = mods or load_modules()
+    return (deal.get("meta") or {}).get("asset_class") or mods["default"]
+
+
+def list_deals(asset_class: str | None = "real_estate", *, include_disabled: bool = False) -> list[str]:
+    """Deal slugs of one module (default real estate, which every real-estate test and the dashboard use), or of
+    every module with asset_class=None. Deals of a module that is switched off are left out."""
+    mods = load_modules()
+    out = []
+    for p in sorted(DEALS_DIR.glob("*/deal.json")):
+        ac = deal_asset_class(json.loads(p.read_text()), mods)
+        mod = mods["modules"].get(ac)
+        if mod is None or not (mod["enabled"] or include_disabled):
+            continue
+        if asset_class is None or ac == asset_class:
+            out.append(p.parent.name)
+    return out
 
 
 def uw_years(deal: dict) -> int:
@@ -458,7 +480,50 @@ def run_case(key: str, inp: dict) -> dict:
     ops = case_operations(case, deal, inp["cases"])
     ex = case_exit(case, ops, deal)
     out = _returns(ops, ex["net_sale_proceeds"], inp_c)
-    return {"key": key, "label": case["label"], "note": case.get("note", ""), "operations": ops, "exit": ex, **out}
+    iv = out["investor"]
+    common = common_summary(inp["warehouse"]["close_date"], [inp["warehouse"]["close_date"]] + iv["payment_dates"],
+                            [-inp["investor"]["check"]] + iv["payments"], iv["irr"])
+    return {"key": key, "label": case["label"], "note": case.get("note", ""), "operations": ops, "exit": ex, **out,
+            "common": common}
+
+
+# ---- the module contract (#46): measures every asset class reports the same way, from the investor's dated cash ----
+
+def common_summary(start: str, dates: list[str], flows: list[float], irr, after_tax_irr=None, after_tax_profit=None) -> dict:
+    """The investor's money in a deal, measured the same way for every module: `flows` are dated cash to the
+    investor (the check negative, on `start`). Compare, Ask and the exports read these, whatever the asset."""
+    d0 = date.fromisoformat(start)
+    paid_in = -sum(c for c in flows if c < 0)
+    back = sum(c for c in flows if c > 0)
+    order = sorted(range(len(dates)), key=lambda i: dates[i])
+    cum, payback = 0.0, None
+    for i in order:
+        cum += flows[i]
+        if payback is None and dates[i] > start and cum >= -0.005:
+            payback = dates[i]
+    yr12 = add_months(d0, 12).isoformat()
+    last = max(dates) if dates else start
+    n = 0
+    while add_months(d0, 12 * n).isoformat() < last:
+        n += 1
+    by_year = [0.0] * n
+    for x, c in zip(dates, flows):
+        if x <= start:
+            continue
+        k = 0
+        while add_months(d0, 12 * (k + 1)).isoformat() < x:
+            k += 1
+        by_year[k] += c
+    pv10 = sum(c / 1.1 ** ((date.fromisoformat(x) - d0).days / 365) for x, c in zip(dates, flows) if x > start)
+    return {
+        "start": start, "paid_in": paid_in, "total_back": back, "profit": sum(flows),
+        "multiple": back / paid_in if paid_in > 0 else None, "irr": irr,
+        "after_tax_irr": after_tax_irr, "after_tax_profit": after_tax_profit,
+        "payback": payback, "payback_years": (date.fromisoformat(payback) - d0).days / 365 if payback else None,
+        "first_12_months": sum(c for x, c in zip(dates, flows) if start < x <= yr12 and c > 0),
+        "pv10": pv10, "pv10_per_dollar": pv10 / paid_in if paid_in > 0 else None,
+        "cash_by_year": by_year, "life_years": (date.fromisoformat(last) - d0).days / 365,
+    }
 
 
 def _tier_lp_gp(rows: dict, t: int, wf: dict) -> tuple[float, float]:

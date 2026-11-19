@@ -76,7 +76,8 @@ const CARD_ONLY = [
   check(a6.deal === 'the-bend' && a6.edit === 'downside' && (await focused(p)) === 'cases.downside.exit_cap', `a link to another deal should open it: ${JSON.stringify(a6)} ${await focused(p)}`);
 
   // 6. coverage: every input in every deal file has somewhere to go
-  for (const slug of await p.evaluate(() => SLUGS)) {
+  // real-estate deals; a module deal's fields come from its input catalog and are checked in oil_gas.test.js (#46)
+  for (const slug of await p.evaluate(() => RE_SLUGS)) {
     const missing = await p.evaluate(([slug, NS, CO]) => {
       openDeal(slug);
       const skip = NS.map((re) => new RegExp(re));

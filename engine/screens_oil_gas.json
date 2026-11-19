@@ -1,0 +1,17 @@
+{
+  "_about": "LTEC's house thresholds for the oil & gas quick checks (#46), rated per case by oil_gas.quick_checks = quickChecks in oil_gas.js, the same green / amber / red rules as engine/screens.json. A deal overrides a check in its `screens` {id: {green, amber, source}}. Missing data reads n/a.",
+  "checks": [
+    {"id": "load", "label": "Sponsor's load over the operator's cost (AFE)", "metric": "load", "better": "lower", "green": 0.15, "amber": 0.3, "format": "pct",
+     "why": "What the investor pays above its share of the operator's well costs: commissions, fees and the turnkey margin. Industry programs typically run 10-20%."},
+    {"id": "multiple", "label": "Multiple on money in", "metric": "multiple", "better": "higher", "green": 1.75, "amber": 1.25, "format": "x",
+     "why": "Wells deplete: there is no sale at the end, so the multiple has to cover the risk on its own."},
+    {"id": "payback", "label": "Payback (years)", "metric": "payback_years", "better": "lower", "green": 3, "amber": 5, "format": "yrs",
+     "why": "Steep early decline means most cash comes early; a long payback leaves the capital exposed to prices and decline for years."},
+    {"id": "pv10", "label": "PV10 per dollar in", "metric": "pv10_per_dollar", "better": "higher", "green": 1.3, "amber": 1.0, "format": "x",
+     "why": "The industry's standard value of future net cash (discounted at 10%); below 1.0 the price paid exceeds that value."},
+    {"id": "after_tax_irr", "label": "After-tax IRR", "metric": "after_tax_irr", "better": "higher", "green": 0.15, "amber": 0.08, "format": "pct",
+     "why": "The pitch rests on the deduction; this is the return with it, at the case's tax treatment."},
+    {"id": "first_year_cash", "label": "Cash in the first 12 months, share of money in", "metric": "first_year_cash", "better": "higher", "green": 0.35, "amber": 0.2, "format": "pct",
+     "why": "New horizontal wells should return a large share early; a low figure means the production claims are not holding up."}
+  ]
+}
