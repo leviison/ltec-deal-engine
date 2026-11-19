@@ -175,3 +175,30 @@ def test_every_deal_has_a_known_module():
     mods = core.load_modules()
     for p in DEALS_DIR.glob("*/deal.json"):
         assert core.deal_asset_class(json.loads(p.read_text()), mods) in mods["modules"], p
+
+
+CATALOG = json.loads((ROOT / "engine" / "inputs_oil_gas.json").read_text())
+
+
+@pytest.mark.parametrize("slug", DEALS)
+def test_input_catalog_covers_the_deal(slug):
+    """Every catalog path reaches an input (deal paths on the file, case paths on every case's full parameters), and
+    every input of the deal file is in the catalog or listed in not_editable with a reason."""
+    d = load_deal(slug)
+    deal_paths = [f["path"] for g in CATALOG["groups"] if g["scope"] == "deal" for f in g["fields"]]
+    case_paths = [f["path"] for g in CATALOG["groups"] if g["scope"] == "case" for f in g["fields"]]
+    for pth in deal_paths:
+        assert resolves(d, pth), pth
+    for k in d["cases"]:
+        p = oil_gas.case_params(d, k)
+        for pth in case_paths:
+            assert resolves(p, pth) or pth == "assessments", (k, pth)
+    covered = deal_paths + list(CATALOG["not_editable"])
+    for leaf in leaves({k: v for k, v in d.items() if k not in ("schema_version", "meta", "sources", "version", "as_of")}):
+        if leaf.startswith("cases."):
+            rest = leaf.split(".", 2)[2] if leaf.count(".") >= 2 else ""
+            if rest in ("label", "note", "from") or not rest:
+                continue
+            assert any(rest == c or rest.startswith(c + ".") for c in case_paths), leaf
+        else:
+            assert any(leaf == c or leaf.startswith(c + ".") for c in covered), leaf

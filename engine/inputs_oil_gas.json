@@ -1,0 +1,58 @@
+{
+  "_about": "The oil & gas module's input catalog (#46): every input a person can change, with its label, kind and help. The dashboard's edit panel, 'Find an input', Ask's list_inputs / run_what_if / sweep / solve_for and saved scenarios all read this list, so the page needs no field code per input. scope 'case' paths are relative to a case (cases.<key>.<path>); a derived case shows its inherited value and stores only what you change. tests/test_oil_gas.py checks every path resolves and every deal-file input is here or in not_editable with a reason.",
+  "groups": [
+    {"id": "production", "scope": "case", "title": "Production", "fields": [
+      {"path": "production.rate", "label": "Current rate per well", "kind": "num", "unit": "BOE/d", "step": 10, "help": "Average of the wells online in the month below; the decline curve is fitted to it"},
+      {"path": "production.rate_month", "label": "Rate as of", "kind": "month"},
+      {"path": "production.di", "label": "Initial decline (nominal / yr)", "kind": "num", "step": 0.1, "help": "1.6 with b 1.0 = 62% in the first year; 0 = flat"},
+      {"path": "production.b", "label": "b-factor", "kind": "num", "step": 0.1, "help": "Hyperbolic shape; 0 = exponential"},
+      {"path": "production.dmin", "label": "Terminal decline", "kind": "pct", "help": "The decline rate the curve flattens to"},
+      {"path": "oil_share", "label": "Oil share of BOE", "kind": "pct"}
+    ]},
+    {"id": "price", "scope": "case", "title": "Prices", "fields": [
+      {"path": "wti.history", "label": "WTI actuals by month", "kind": "month_map", "unit": "$/bbl"},
+      {"path": "wti.years", "label": "WTI by year", "kind": "year_map", "unit": "$/bbl"},
+      {"path": "wti.long_term", "label": "WTI after that", "kind": "usd2", "unit": "$/bbl"},
+      {"path": "differential", "label": "Differential to WTI", "kind": "usd2", "unit": "$/bbl", "help": "Subtracted from WTI for the oil"},
+      {"path": "gas_ngl_price", "label": "Gas & NGL price", "kind": "usd2_or_null", "unit": "$/BOE", "help": "Blank = priced as oil (the sponsor's way)"}
+    ]},
+    {"id": "costs", "scope": "case", "title": "Costs", "fields": [
+      {"path": "production_tax", "label": "Production taxes", "kind": "pct", "help": "Severance and ad valorem, share of revenue"},
+      {"path": "gathering", "label": "Gathering & transport", "kind": "usd2", "unit": "$/BOE"},
+      {"path": "loe_per_boe", "label": "LOE per BOE", "kind": "usd2", "unit": "$/BOE"},
+      {"path": "loe_per_well_month", "label": "LOE per well per month", "kind": "usd"},
+      {"path": "fixed_per_unit_month", "label": "Fixed deduction per unit per month", "kind": "usd", "help": "Implied by the sponsor's table; 0 in our cases"},
+      {"path": "assessments", "label": "Special assessments", "kind": "assessments", "help": "Extra capital called per unit, on a date"}
+    ]},
+    {"id": "tax", "scope": "case", "title": "Tax", "fields": [
+      {"path": "tax.year1_deductible", "label": "Deducted in the year we fund", "kind": "pct"},
+      {"path": "tax.rest", "label": "The rest", "kind": "select", "options": [["cost_depletion", "By depletion, as produced"], ["next_year", "All the next year"]]},
+      {"path": "tax.percentage_depletion", "label": "Percentage depletion", "kind": "pct", "help": "15% of gross income for independent producers, capped at the property's net income"}
+    ]},
+    {"id": "position", "scope": "deal", "title": "Our position", "fields": [
+      {"path": "investor.check", "label": "Our check", "kind": "usd"},
+      {"path": "investor.tax_rate", "label": "Our tax rate", "kind": "pct", "help": "Federal and state, marginal"},
+      {"path": "deal.fund_date", "label": "We fund on", "kind": "date"}
+    ]},
+    {"id": "deal", "scope": "deal", "title": "The venture", "fields": [
+      {"path": "deal.venture_wi", "label": "Venture working interest", "kind": "pct4"},
+      {"path": "deal.venture_nri", "label": "Venture net revenue interest", "kind": "pct4"},
+      {"path": "deal.manager_share", "label": "Sponsor's share of the venture", "kind": "pct"},
+      {"path": "deal.units_offered", "label": "Units offered", "kind": "num", "step": 0.5},
+      {"path": "deal.unit_price", "label": "Price per unit", "kind": "usd"},
+      {"path": "deal.turnkey_price", "label": "Turnkey price", "kind": "usd"},
+      {"path": "deal.afe_gross_total", "label": "Operator's well costs (AFEs, gross)", "kind": "usd"},
+      {"path": "deal.monthly_management_fee", "label": "Management fee per month", "kind": "usd"},
+      {"path": "deal.back_pay_date", "label": "Back production paid on", "kind": "date"},
+      {"path": "deal.pay_day", "label": "Paid on day", "kind": "num", "step": 1},
+      {"path": "deal.pay_lag_months", "label": "Months paid in arrears", "kind": "num", "step": 1},
+      {"path": "deal.horizon_months", "label": "Horizon (months)", "kind": "num", "step": 12}
+    ]}
+  ],
+  "not_editable": {
+    "deal.wells": "Wells, APIs, AFEs and online dates: change them in the deal file",
+    "deal.turnkey_uses": "The sponsor's own breakdown of the turnkey price (CIM p.19), shown, not used in the cash",
+    "sponsor_table": "The sponsor's printed table: rebuilt as published, not an assumption",
+    "screens": "Per-deal overrides of the house quick-check thresholds"
+  }
+}

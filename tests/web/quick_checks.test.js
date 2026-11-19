@@ -13,7 +13,8 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); };
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1440, height: 1600 } });
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.goto(PAGE); await p.waitForTimeout(400);
-  const slugs = await p.evaluate(() => Object.keys(DEALS));
+  // real-estate deals: the oil & gas checks have their own panel and test (oil_gas.test.js, #46)
+  const slugs = await p.evaluate(() => RE_SLUGS);
   for (const slug of slugs) {
     await p.goto(PAGE + '#' + slug); await p.waitForTimeout(500);
     const r = await p.evaluate(() => {

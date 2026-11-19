@@ -1,5 +1,5 @@
 {
-  "_about": "Asset-class modules (#46). Each deal names its module in meta.asset_class (missing = real_estate). A module that is off hides its deals from list_deals, the tests and the dashboard build; its engine and schema stay in the repo. Turn modules on or off per offering here.",
+  "_about": "Asset-class modules (#46). Each deal names its module in meta.asset_class (missing = real_estate). A module that is off hides its deals from list_deals, the tests and the dashboard build; its engine and schema stay in the repo. Per module: engine (engine/<engine>.py = .js), schema, inputs (the input catalog the page and Ask read), screens (quick-check thresholds), view (its deal view on the dashboard, web/modules/<m>.js) and dashboard (on the page or not). Turn modules on or off per offering here.",
   "default": "real_estate",
   "modules": {
     "real_estate": {
@@ -7,15 +7,18 @@
       "enabled": true,
       "engine": "core",
       "schema": "deal.schema.json",
-      "dashboard": true
+      "dashboard": true,
+      "screens": "screens.json"
     },
     "oil_gas": {
       "label": "Oil & gas (non-operated working interest)",
       "enabled": true,
       "engine": "oil_gas",
       "schema": "oil_gas.schema.json",
-      "dashboard": false,
-      "_dashboard": "Engine, deal files and tests only for now; the dashboard cards are phase 2 of #46."
+      "dashboard": true,
+      "view": "web/modules/oil_gas.js",
+      "inputs": "inputs_oil_gas.json",
+      "screens": "screens_oil_gas.json"
     }
   }
 }

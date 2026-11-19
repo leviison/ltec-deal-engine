@@ -6,7 +6,7 @@
 (function (root) {
   "use strict";
   const core = typeof module !== "undefined" && module.exports ? require("./core.js") : root.DealEngine;
-  const { addMonths, mergeDeep } = core;
+  const { addMonths, mergeDeep, commonSummary } = core;
   const CASE_META = ["label", "note", "from"];
   const IRR_GRID = [-0.9, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 10.0];
   const sum = (a) => a.reduce((s, x) => s + x, 0);
@@ -217,9 +217,10 @@
     for (let a = 0; a <= last; a++) eur += wellShape((a + 0.5) / 12, b, di, dmin) * 365 / 12;
     eur = qi * eur;
     const costShare = d.afe_gross_total * d.venture_wi * (1 - d.manager_share) * sh.of_raise;
+    const common = commonSummary(fund, preDates, pre, mPre.irr, mPost.irr, mPost.profit);
     return {
       key, label: inp.cases[key].label, note: inp.cases[key].note || "",
-      params: p,
+      params: p, common,
       wells: { ip: qi, eur, last_month: last >= 0 ? monthKey(months[last]) : null, life_years: (last + 1) / 12 },
       production: { months: months.map(monthKey), boe, wells_on: wellsOn, wti, price, revenue: rev, production_tax: ptax,
         gathering: gath, loe, fees, net },
@@ -250,14 +251,39 @@
     return { unit_nri: nriU, risk_capital: risk, tax_saving: unit - risk, monthly, totals };
   }
 
-  function runAll(inp) {
-    const cases = {};
-    Object.keys(inp.cases).forEach((k) => { cases[k] = runCase(k, inp); });
-    return { inputs_version: inp.version == null ? null : inp.version, asset_class: "oil_gas", cases,
-      sponsor_table: inp.sponsor_table ? sponsorTable(inp) : null };
+  // ------------------------------------------------------------ quick checks
+  function rate(v, chk) {
+    if (v == null) return "n/a";
+    if (chk.better === "higher") return v >= chk.green ? "green" : v >= chk.amber ? "amber" : "red";
+    return v <= chk.green ? "green" : v <= chk.amber ? "amber" : "red";
+  }
+  function quickChecks(caseRes, inp, house) {
+    const c = caseRes.common;
+    const vals = { load: caseRes.cost.load, multiple: c.multiple, payback_years: c.payback_years,
+      pv10_per_dollar: c.pv10_per_dollar, after_tax_irr: c.after_tax_irr,
+      first_year_cash: c.paid_in > 0 ? c.first_12_months / c.paid_in : null };
+    const over = inp.screens || {};
+    const checks = house.checks.map((h0) => {
+      const h = Object.assign({}, h0);
+      Object.entries(over[h0.id] || {}).forEach(([k, v]) => { if (["green", "amber", "source"].includes(k)) h[k] = v; });
+      const v = vals[h.metric] === undefined ? null : vals[h.metric];
+      let st = rate(v, h);
+      if (h.metric === "payback_years" && v == null && c.profit < 0) st = "red";  // never pays back
+      return { id: h.id, label: h.label, value: v, status: st, green: h.green, amber: h.amber, better: h.better,
+        format: h.format, source: h.source || "House rule (engine/screens_oil_gas.json)" };
+    });
+    return { values: vals, checks };
   }
 
-  const api = { runAll, runCase, caseParams, sponsorTable, wellShape, xirr };
+  function runAll(inp, house) {
+    const cases = {}, qc = {};
+    Object.keys(inp.cases).forEach((k) => { cases[k] = runCase(k, inp); });
+    if (house) Object.keys(cases).forEach((k) => { qc[k] = quickChecks(cases[k], inp, house); });
+    return { inputs_version: inp.version == null ? null : inp.version, asset_class: "oil_gas", cases,
+      quick_checks: house ? qc : null, sponsor_table: inp.sponsor_table ? sponsorTable(inp) : null };
+  }
+
+  const api = { runAll, runCase, caseParams, sponsorTable, wellShape, xirr, quickChecks };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.OilGasEngine = api;
 })(typeof window !== "undefined" ? window : this);

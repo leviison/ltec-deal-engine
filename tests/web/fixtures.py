@@ -2,6 +2,7 @@
     python tests/web/fixtures.py
 - scen.json:  The Bend with the side letter on and a 6.0% Downside exit cap (a saved "Aggressive ask")
 - siena_variants.json: Python results for each Siena variant (LTEC structures), which the page must match
+- og_results.json: Python results for every oil & gas deal (#46): each case's common measures, which the page must match
 - test1.json: Siena with the changes of the first live saved scenario, "test 1 _ hold all capital" (Nov 6, 2026),
               including its fees & promote shares totalling 50% (a known input problem the page must flag)
 """
@@ -54,6 +55,19 @@ def main():
     (OUT / "siena_variants.json").write_text(json.dumps(exp))
 
 
+def oil_gas_fixture():
+    """Python's oil & gas results (engine/oil_gas.py) for each oil & gas deal, for the page test to match."""
+    from engine import oil_gas
+    from engine.core import list_deals
+    out = {}
+    for slug in list_deals("oil_gas"):
+        res = oil_gas.run_all(load_deal(slug))
+        out[slug] = {k: {x: c["common"][x] for x in ("multiple", "irr", "after_tax_irr", "first_12_months", "payback_years", "pv10_per_dollar")}
+                     for k, c in res["cases"].items()}
+        out[slug]["_checks"] = {k: [c["status"] for c in q["checks"]] for k, q in res["quick_checks"].items()}
+    (OUT / "og_results.json").write_text(json.dumps(out))
+
+
 def _merge(b, c):
     """The page's mergeDeep: objects merge, everything else (lists too) replaces."""
     o = copy.deepcopy(b)
@@ -64,3 +78,4 @@ def _merge(b, c):
 
 if __name__ == "__main__":
     main()
+    oil_gas_fixture()

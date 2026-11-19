@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from engine.core import add_months, load_deal, merge_deep  # noqa: E402
+from engine.core import add_months, common_summary, load_deal, merge_deep  # noqa: E402
 
 IRR_GRID = [-0.9, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 10.0]
 
@@ -271,9 +271,10 @@ def run_case(key: str, inp: dict) -> dict:
     pv10 = sum(c / 1.1 ** ((date.fromisoformat(x) - d0).days / 365) for x, c in zip(pre_dates, pre) if x > fund)
     eur = qi * sum(well_shape((a + 0.5) / 12, b, di, dmin) * 365 / 12 for a in range(last + 1))
     cost_share = d["afe_gross_total"] * d["venture_wi"] * (1 - d["manager_share"]) * sh["of_raise"]
+    common = common_summary(fund, pre_dates, pre, m_pre["irr"], m_post["irr"], m_post["profit"])
     return {
         "key": key, "label": inp["cases"][key]["label"], "note": inp["cases"][key].get("note", ""),
-        "params": p,
+        "params": p, "common": common,
         "wells": {"ip": qi, "eur": eur, "last_month": month_key(months[last]) if last >= 0 else None,
                   "life_years": (last + 1) / 12},
         "production": {"months": [month_key(x) for x in months], "boe": boe, "wells_on": wells_on, "wti": wti,
@@ -313,9 +314,46 @@ def sponsor_table(inp: dict) -> dict:
     return {"unit_nri": nri_u, "risk_capital": risk, "tax_saving": unit - risk, "monthly": monthly, "totals": totals}
 
 
-def run_all(inp: dict) -> dict:
-    return {"inputs_version": inp.get("version"), "asset_class": "oil_gas",
-            "cases": {k: run_case(k, inp) for k in inp["cases"]},
+# ---------------------------------------------------------------- quick checks
+
+def load_screens() -> dict:
+    """LTEC's house thresholds for oil & gas (engine/screens_oil_gas.json)."""
+    return json.loads((Path(__file__).resolve().parent / "screens_oil_gas.json").read_text())
+
+
+def rate(v, chk: dict) -> str:
+    if v is None:
+        return "n/a"
+    if chk["better"] == "higher":
+        return "green" if v >= chk["green"] else "amber" if v >= chk["amber"] else "red"
+    return "green" if v <= chk["green"] else "amber" if v <= chk["amber"] else "red"
+
+
+def quick_checks(case_res: dict, inp: dict, house: dict) -> dict:
+    """One case's screens, from its own results only, rated by the house thresholds (a deal may override one)."""
+    c = case_res["common"]
+    vals = {"load": case_res["cost"]["load"], "multiple": c["multiple"], "payback_years": c["payback_years"],
+            "pv10_per_dollar": c["pv10_per_dollar"], "after_tax_irr": c["after_tax_irr"],
+            "first_year_cash": c["first_12_months"] / c["paid_in"] if c["paid_in"] > 0 else None}
+    over = inp.get("screens") or {}
+    checks = []
+    for h in house["checks"]:
+        h = dict(h, **{k: v for k, v in (over.get(h["id"]) or {}).items() if k in ("green", "amber", "source")})
+        v = vals.get(h["metric"])
+        st = rate(v, h)
+        if h["metric"] == "payback_years" and v is None and c["profit"] < 0:
+            st = "red"  # never pays back
+        checks.append({"id": h["id"], "label": h["label"], "value": v, "status": st, "green": h["green"],
+                       "amber": h["amber"], "better": h["better"], "format": h["format"],
+                       "source": h.get("source") or "House rule (engine/screens_oil_gas.json)"})
+    return {"values": vals, "checks": checks}
+
+
+def run_all(inp: dict, house: dict | None = None) -> dict:
+    house = house or load_screens()
+    cases = {k: run_case(k, inp) for k in inp["cases"]}
+    return {"inputs_version": inp.get("version"), "asset_class": "oil_gas", "cases": cases,
+            "quick_checks": {k: quick_checks(c, inp, house) for k, c in cases.items()},
             "sponsor_table": sponsor_table(inp) if inp.get("sponsor_table") else None}
 
 

@@ -36,13 +36,23 @@ def build_info(preview=False):
 
 def build(slugs, out, title, preview=False):
     tpl = (ROOT / "web" / "index.template.html").read_text()
-    engine = (ROOT / "engine" / "core.js").read_text()
     deals = {s: load_deal(s) for s in slugs}
-    for marker in ("/*__ENGINE__*/", "/*__DEALS__*/null", "/*__BUILD__*/null", "/*__STRUCTURES__*/null", "/*__LOAN_TERMS__*/null", "/*__SCREENS__*/null", "__DEAL_NAME__", "__PAGE_TITLE__"):
+    # modules on the page (#46): core.js always (shared helpers), then each module's engine, view and data
+    mods = load_modules()
+    used = [ac for ac, m in mods["modules"].items() if m["enabled"] and m.get("dashboard") and ac != "real_estate"
+            and any((d["meta"].get("asset_class") or mods["default"]) == ac for d in deals.values())]
+    engine = "\n".join([(ROOT / "engine" / "core.js").read_text()] + [(ROOT / "engine" / f"{mods['modules'][ac]['engine']}.js").read_text() for ac in used])
+    views = "\n".join((ROOT / mods["modules"][ac]["view"]).read_text() for ac in used)
+    mdata = {ac: {k: json.loads((ROOT / "engine" / mods["modules"][ac][k]).read_text()) for k in ("inputs", "screens") if mods["modules"][ac].get(k)} for ac in used}
+    for marker in ("/*__ENGINE__*/", "/*__DEALS__*/null", "/*__BUILD__*/null", "/*__STRUCTURES__*/null", "/*__LOAN_TERMS__*/null", "/*__SCREENS__*/null", "__DEAL_NAME__", "__PAGE_TITLE__",
+                   "/*__MODULES__*/null", "/*__MODULE_DATA__*/null", "/*__MODULE_VIEWS__*/"):
         assert marker in tpl, marker
     # JSON inside <script>: keep "</" from closing the tag
     data = json.dumps(deals).replace("</", "<\\/")
     page = (tpl.replace("/*__ENGINE__*/", engine)
+               .replace("/*__MODULES__*/null", json.dumps(mods).replace("</", "<\\/"))
+               .replace("/*__MODULE_DATA__*/null", json.dumps(mdata).replace("</", "<\\/"))
+               .replace("/*__MODULE_VIEWS__*/", views)
                .replace("/*__DEALS__*/null", data)
                .replace("/*__BUILD__*/null", json.dumps(build_info(preview)))
                .replace("/*__STRUCTURES__*/null", (ROOT / "engine" / "structures.json").read_text().replace("</", "<\\/"))
@@ -50,6 +60,7 @@ def build(slugs, out, title, preview=False):
                .replace("/*__SCREENS__*/null", (ROOT / "engine" / "screens.json").read_text().replace("</", "<\\/"))
                .replace("__PAGE_TITLE__", html.escape(title))
                .replace("__DEAL_NAME__", html.escape(deals[slugs[0]]["meta"]["name"])))
+    assert "/*__" not in page.replace("/*__ENGINE__*/", ""), "a build marker was left in the page"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page)
     print(f"wrote {out.relative_to(ROOT)} ({len(page):,} bytes, {len(slugs)} deal{'s' if len(slugs) > 1 else ''})")
