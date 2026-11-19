@@ -1,0 +1,21 @@
+{
+  "_about": "The sponsor's one-page 'Monthly Income Conversion Table' (reference/OXY_2_Monthly_Income_Conversion_Table.pdf), as printed. tests/test_oil_gas.py rebuilds it with oil_gas.sponsor_table and checks every dollar figure to within $1 and every percentage to the printed whole percent.",
+  "tax_saving": 340000,
+  "risk_capital": 660000,
+  "monthly": [
+    {"rate": 1100, "by_ticket": [352912, 176456, 88228], "cash_on_cash": 212, "with_tax": 321},
+    {"rate": 900, "by_ticket": [288166, 144083, 72041], "cash_on_cash": 173, "with_tax": 262},
+    {"rate": 700, "by_ticket": [223419, 111710, 55855], "cash_on_cash": 134, "with_tax": 203},
+    {"rate": 500, "by_ticket": [158673, 79336, 39668], "cash_on_cash": 95, "with_tax": 144},
+    {"rate": 300, "by_ticket": [93927, 46963, 23482], "cash_on_cash": 56, "with_tax": 85},
+    {"rate": 0, "by_ticket": [0, 0, 0], "cash_on_cash": 0, "with_tax": 0}
+  ],
+  "totals": [
+    {"boe": 1500000, "by_ticket": [15964854, 7982427, 3991214], "roi": 798, "with_tax": 1209},
+    {"boe": 1000000, "by_ticket": [10643236, 5321618, 2660809], "roi": 532, "with_tax": 806},
+    {"boe": 800000, "by_ticket": [8514589, 4257294, 2128647], "roi": 426, "with_tax": 645},
+    {"boe": 500000, "by_ticket": [5321618, 2660809, 1330405], "roi": 266, "with_tax": 403},
+    {"boe": 200000, "by_ticket": [2128647, 1064324, 532162], "roi": 106, "with_tax": 161},
+    {"boe": 0, "by_ticket": [0, 0, 0], "roi": 0, "with_tax": 0}
+  ]
+}

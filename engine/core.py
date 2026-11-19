@@ -32,8 +32,30 @@ def load_deal(slug_or_path: str | Path) -> dict:
     return json.loads(deal_path(slug_or_path).read_text())
 
 
-def list_deals() -> list[str]:
-    return sorted(p.parent.name for p in DEALS_DIR.glob("*/deal.json"))
+def load_modules() -> dict:
+    """The asset-class modules and whether each is on (engine/modules.json, #46)."""
+    return json.loads((Path(__file__).resolve().parent / "modules.json").read_text())
+
+
+def deal_asset_class(deal: dict, mods: dict | None = None) -> str:
+    """A deal's module (meta.asset_class); deals written before modules are real estate."""
+    mods = mods or load_modules()
+    return (deal.get("meta") or {}).get("asset_class") or mods["default"]
+
+
+def list_deals(asset_class: str | None = "real_estate", *, include_disabled: bool = False) -> list[str]:
+    """Deal slugs of one module (default real estate, which every real-estate test and the dashboard use), or of
+    every module with asset_class=None. Deals of a module that is switched off are left out."""
+    mods = load_modules()
+    out = []
+    for p in sorted(DEALS_DIR.glob("*/deal.json")):
+        ac = deal_asset_class(json.loads(p.read_text()), mods)
+        mod = mods["modules"].get(ac)
+        if mod is None or not (mod["enabled"] or include_disabled):
+            continue
+        if asset_class is None or ac == asset_class:
+            out.append(p.parent.name)
+    return out
 
 
 def uw_years(deal: dict) -> int:

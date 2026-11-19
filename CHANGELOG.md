@@ -5,6 +5,23 @@ the dashboard and on every export, and recorded on each saved scenario (`engine_
 `vX.Y.Z`. Major = results change on purpose or the schema breaks; minor = new inputs/features, results unchanged when
 they are off; patch = fixes.
 
+## 2.12.0 — 2026-11-19
+
+- Asset-class modules (#46): the engine can now value more than real estate. `engine/modules.json` lists each asset
+  class with its own engine and schema and an on/off switch; a deal names its class in `meta.asset_class` (missing =
+  real estate). A class that is off is hidden from the engine, the tests and the dashboard. Real-estate results,
+  deal files and the dashboard are unchanged.
+- First new module: oil & gas (non-operated working interests through a sponsor's venture), `engine/oil_gas.py` =
+  `engine/oil_gas.js`. Month by month: per-well decline calibrated to a stated current rate, price deck, the
+  investor's working and net revenue interests, production taxes, gathering, LOE, fees and assessments; investor cash
+  by pay date (back production on its own date); a tax layer (year-1 deduction, then cost or percentage depletion, or
+  the rest next year) for after-tax IRR; PV10, payback, EUR, and the sponsor's load over the operator's AFEs.
+- First oil & gas deal: Lapetco OXY 2 JV (`deals/lapetco-oxy-2`), with sources, diligence and the sponsor's documents.
+  The sponsor's one-page conversion table is rebuilt to the printed dollar (it implies a unit NRI that ignores the
+  managing venturer's 1%, and a fixed ~$1,597/month per unit it doesn't state). Cases per $250k: Sponsor's figures
+  3.36x / 121%; Our Base 1.40x / 12.8% pre-tax, 8.4% after tax; Downside 0.67x; Stress 0.35x.
+- Not on the dashboard yet: oil & gas cards, after-tax columns in Compare and Ask tools are phase 2 of #46.
+
 ## 2.11.0 — 2026-11-18
 
 - Contribute by a date or forfeit the share (#42): a partner loan's "If not paid at maturity" can now be **the

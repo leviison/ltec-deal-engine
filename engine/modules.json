@@ -1,0 +1,21 @@
+{
+  "_about": "Asset-class modules (#46). Each deal names its module in meta.asset_class (missing = real_estate). A module that is off hides its deals from list_deals, the tests and the dashboard build; its engine and schema stay in the repo. Turn modules on or off per offering here.",
+  "default": "real_estate",
+  "modules": {
+    "real_estate": {
+      "label": "Real estate (LP equity)",
+      "enabled": true,
+      "engine": "core",
+      "schema": "deal.schema.json",
+      "dashboard": true
+    },
+    "oil_gas": {
+      "label": "Oil & gas (non-operated working interest)",
+      "enabled": true,
+      "engine": "oil_gas",
+      "schema": "oil_gas.schema.json",
+      "dashboard": false,
+      "_dashboard": "Engine, deal files and tests only for now; the dashboard cards are phase 2 of #46."
+    }
+  }
+}

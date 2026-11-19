@@ -14,9 +14,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from engine.core import list_deals, load_deal  # noqa: E402
+from engine.core import list_deals, load_deal, load_modules  # noqa: E402
 
 TITLE_ALL = "LTEC Deal Engine"
+
+
+def dashboard_deals():
+    """Deals of every module that is on and marked for the dashboard (engine/modules.json, #46)."""
+    mods = load_modules()["modules"]
+    return [s for ac, m in mods.items() if m["enabled"] and m.get("dashboard") for s in list_deals(ac)]
 
 
 def build_info(preview=False):
@@ -52,7 +58,7 @@ def build(slugs, out, title, preview=False):
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     # most recently added deal first, so the picker opens on the newest
-    order = sorted(list_deals(), key=lambda s: load_deal(s)["meta"].get("status") != "screening")
+    order = sorted(dashboard_deals(), key=lambda s: load_deal(s)["meta"].get("status") != "screening")
     if "--preview" in sys.argv:
         build(order, ROOT / "dist" / "preview" / "index.html", TITLE_ALL + " (preview)", preview=True)
     elif not args:

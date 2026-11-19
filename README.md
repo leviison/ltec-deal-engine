@@ -1,7 +1,8 @@
 # LTEC Deal Engine
 
-One engine and one dashboard for the real-estate syndications LTEC evaluates and invests in (usually through its own
-SPV). Each deal is a data file; the engines, tests and dashboard are shared.
+One engine and one dashboard for the deals LTEC evaluates and invests in (usually through its own SPV): real-estate
+syndications first, other asset classes as modules. Each deal is a data file; the engines, tests and dashboard are
+shared.
 
 ## Deals
 
@@ -9,6 +10,7 @@ SPV). Each deal is a data file; the engines, tests and dashboard are shared.
 |---|---|---|---|
 | `siena-villas` | Redstone | active (SV26) | v10 + SV26 workbooks, to the cent |
 | `the-bend` | Focused Capital / Elkstone Capital | screening | sponsor model 9-23-26, to the cent (both of its waterfalls) |
+| `lapetco-oxy-2` (oil & gas) | Lapetco Inc. | screening | sponsor's conversion table, to the dollar |
 
 **Deal #1:** Siena Villas, migrated from `leviison/siena-villas-model` @ `siena-v1.0` (`2ee8ccd`). Its results are
 bit-identical to that version (Python and JS, defaults + 200 randomized set-ups) and it still ties to its v10 and SV26
@@ -20,6 +22,28 @@ TIF rebate, fees, sale (incl. reserves returned and the TIF NPV), the default wa
 LP IRR 17.0861%, 2.0611x), the 'UW Model' tab waterfall as an alternative (17.0639%) with its exit-cap sensitivity
 table, and the deck's $100k sample. `meta.alternatives` holds named variants (UW-tab waterfall, the Oct 14
 side-letter offer, no TIF value at sale); `meta.diligence` the open questions.
+
+**Deal #3:** Lapetco OXY 2 JV, the first oil & gas deal (see Modules). Five Oxy-operated horizontals in Converse
+County, WY; a $250k ticket into a general-partnership joint venture. The sponsor gives no model, only a one-page
+conversion table, which the engine rebuilds to the dollar; its cases are the sponsor's figures and LTEC's Base,
+Downside and Stress. `python -m engine.oil_gas lapetco-oxy-2` prints them.
+
+## Modules (asset classes)
+
+`engine/modules.json` lists the asset classes the engine can value, each with its own engine, schema and an on/off
+switch; a deal names its module in `meta.asset_class` (missing = real estate).
+
+| Module | Engine | Schema | Dashboard |
+|---|---|---|---|
+| `real_estate` | `engine/core.py` = `core.js` | `deal.schema.json` | yes |
+| `oil_gas` | `engine/oil_gas.py` = `oil_gas.js` | `oil_gas.schema.json` | not yet (#46 phase 2) |
+
+A module that is off hides its deals from `list_deals`, the tests and the dashboard build; turning one on or off is
+how an offering includes an asset class. Every module returns the same investor fields (`payment_dates`, `payments`,
+`total`, `profit`, `irr`, `multiple`), so the shared layers (compare, Ask, the vehicle) can read any of them.
+The oil & gas engine runs month by month: a per-well decline curve calibrated to a stated current rate, a price deck,
+the investor's look-through WI / NRI, production taxes, gathering, LOE, fees and assessments, then a tax layer (year-1
+deduction, the rest by cost or percentage depletion or the next year) for after-tax IRR, plus PV10, payback and EUR.
 
 ## Dashboard
 

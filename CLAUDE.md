@@ -112,5 +112,19 @@
 - Backlog: bugs, ideas and deferred work are GitHub Issues on leviison/ltec-deal-engine (labels: bug, enhancement,
   diligence, deferred, structure). Entity-structure work follows the roadmap in issue #11
   (options on top of today's deal → vehicle → LTEC shape; off = unchanged results). Reference the issue in the commit (`Fixes #n`). The project doc keeps deal context, not a to-do list.
+- Modules (#46): `engine/modules.json` lists asset classes (real_estate, oil_gas), each with `enabled`, `engine`,
+  `schema`, `dashboard`; a deal names its module in `meta.asset_class` (missing = real_estate). `list_deals()` returns
+  real-estate deals only (every existing test and the dashboard use it); `list_deals("oil_gas")` / `list_deals(None)`
+  for others / all; deals of a module that is off are left out everywhere. The dashboard build takes modules marked
+  `dashboard` (`dashboard_deals` in build_web.py). A new module: its engine pair (`engine/<m>.py` = `<m>.js`), its schema,
+  an entry in modules.json and in `scripts/run_engine.js`, a test file like `tests/test_oil_gas.py` (schema, sources,
+  sponsor tie-out, parity incl. a randomizer, hand checks), and the shared investor fields (`payment_dates`,
+  `payments`, `total`, `profit`, `irr`, `multiple`). Keep module code out of core.py / core.js.
+- Oil & gas (#46): `engine/oil_gas.py` = `engine/oil_gas.js` (line for line; `tests/test_oil_gas.py` checks parity on
+  defaults and `deals/<slug>/tests/randomize.py`). Cases are full parameter sets or `from` another case plus
+  overrides (deep merge). Production is calibrated so the average rate of the wells online in `rate_month` equals
+  `rate`; EUR is an output. A sponsor table, if given, ties out in `reference/sponsor_table_printed.json`. Its XIRR
+  brackets the highest root on a fixed grid (long well lives and after-tax flows have extra sign changes); don't swap
+  in core's. Dashboard cards, compare columns and Ask tools for it are phase 2 (not built).
 - Context and diligence: claude.ai Project "deal engine" (doc `claude/deal-engine-context.md`); Siena's own context is
   in the "Siena Villas" project.
